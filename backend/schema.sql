@@ -1,0 +1,313 @@
+-- ============================================================
+-- Электронный журнал обхода площадок САО г. Москвы
+-- DDL: PostgreSQL 15+ / PostGIS 3+
+-- ============================================================
+
+-- Расширения
+CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- ============================================================
+-- 1. ТЕРРИТОРИАЛЬНАЯ ИЕРАРХИЯ
+-- ============================================================
+
+-- Районы САО Москвы
+CREATE TABLE districts (
+    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name        VARCHAR(100) NOT NULL UNIQUE,
+    code        VARCHAR(50),                          -- краткий код: aeroport, sokol ...
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Дворовые территории (адреса)
+CREATE TABLE courtyards (
+    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    district_id UUID NOT NULL REFERENCES districts(id),
+    name        VARCHAR(500) NOT NULL,                 -- "Красноармейская ул. 26 к.2"
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(district_id, name)
+);
+
+-- ============================================================
+-- 2. ПЛОЩАДКИ
+-- ============================================================
+
+CREATE TYPE site_type AS ENUM ('Детская площадка', 'Спортивная площадка');
+
+CREATE TABLE sites (
+    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    courtyard_id    UUID NOT NULL REFERENCES courtyards(id),
+    type            site_type NOT NULL,
+    area_m2         NUMERIC(10,2) NOT NULL,             -- площадь из KML (уже скорректирована)
+    cleaning_type   VARCHAR(50) DEFAULT 'Ручная уборка',
+    geometry        GEOMETRY(POLYGON, 4326) NOT NULL,   -- WGS84
+    centroid        GEOMETRY(POINT, 4326)               -- авто-вычисляемый центр
+        GENERATED ALWAYS AS (ST_Centroid(geometry)) STORED,
+    kml_original_id VARCHAR(200),                       -- для обратной трассировки
+    is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ
+);
+
+CREATE INDEX idx_sites_type ON sites(type);
+CREATE INDEX idx_sites_courtyard ON sites(courtyard_id);
+CREATE INDEX idx_sites_geom ON sites USING GIST(geometry);
+
+-- ============================================================
+-- 3. ОБОРУДОВАНИЕ (на площадке)
+-- ============================================================
+
+CREATE TYPE equipment_type AS ENUM (
+    'Качели', 'Горка', 'Турник', 'Песочница', 'Карусель',
+    'Баскетбольное кольцо', 'Футбольные ворота', 'Тренажёр',
+    'Скамейка', 'Урна', 'Ограждение', 'Покрытие', 'Прочее'
+);
+
+CREATE TABLE equipment (
+    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    site_id     UUID NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    type        equipment_type NOT NULL,
+    name        VARCHAR(200),
+    quantity    INT DEFAULT 1,
+    is_active   BOOLEAN DEFAULT TRUE,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_equipment_site ON equipment(site_id);
+
+-- ============================================================
+-- 4. ПОЛЬЗОВАТЕЛИ
+-- ============================================================
+
+CREATE TYPE user_role AS ENUM (
+    'inspector',          -- инспектор (обходит)
+    'district_manager',   -- руководитель района
+    'okrug_admin',        -- администратор округа
+    'system_admin'        -- администратор системы
+);
+
+CREATE TABLE users (
+    id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    login          VARCHAR(50) NOT NULL UNIQUE,
+    password_hash  VARCHAR(255) NOT NULL,
+    full_name      VARCHAR(200) NOT NULL,
+    role           user_role NOT NULL,
+    district_id    UUID REFERENCES districts(id),     -- для inspector и district_manager
+    phone          VARCHAR(20),
+    is_active      BOOLEAN DEFAULT TRUE,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ============================================================
+-- 5. ЧЕК-ЛИСТЫ
+-- ============================================================
+
+CREATE TABLE checklist_templates (
+    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name        VARCHAR(200) NOT NULL,                  -- "Осмотр детской площадки"
+    site_type   site_type,                              -- к какому типу площадки привязан
+    is_active   BOOLEAN DEFAULT TRUE,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE checklist_items (
+    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    template_id     UUID NOT NULL REFERENCES checklist_templates(id) ON DELETE CASCADE,
+    category        VARCHAR(200),                        -- "Покрытие", "Оборудование", "Ограждение"
+    question        VARCHAR(500) NOT NULL,               -- "Целостность покрытия"
+    sort_order      INT DEFAULT 0,
+    is_critical     BOOLEAN DEFAULT FALSE,               -- критический пункт?
+    requires_photo  BOOLEAN DEFAULT FALSE,               -- требуется ли фото
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_checklist_items_template ON checklist_items(template_id);
+
+-- ============================================================
+-- 6. ОБХОДЫ
+-- ============================================================
+
+CREATE TYPE inspection_status AS ENUM (
+    'planned',       -- запланирован
+    'in_progress',   -- выполняется
+    'completed',     -- без замечаний
+    'issues_found',  -- есть замечания
+    'critical'       -- критические замечания
+);
+
+CREATE TYPE inspection_type AS ENUM (
+    'regular',       -- плановый
+    'unscheduled',   -- внеплановый
+    'control',       -- контрольный (после устранения)
+    'seasonal'       -- сезонный
+);
+
+CREATE TABLE inspections (
+    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    site_id         UUID NOT NULL REFERENCES sites(id),
+    inspector_id    UUID NOT NULL REFERENCES users(id),
+    template_id     UUID REFERENCES checklist_templates(id),
+    type            inspection_type NOT NULL DEFAULT 'regular',
+    status          inspection_status NOT NULL DEFAULT 'planned',
+    started_at      TIMESTAMPTZ,
+    completed_at    TIMESTAMPTZ,
+    gps_lat         NUMERIC(9,6),                        -- фактическая геометка обходчика
+    gps_lon         NUMERIC(9,6),
+    comment         TEXT,                                -- общий комментарий
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_inspections_site ON inspections(site_id);
+CREATE INDEX idx_inspections_inspector ON inspections(inspector_id);
+CREATE INDEX idx_inspections_status ON inspections(status);
+CREATE INDEX idx_inspections_date ON inspections(created_at);
+
+-- ============================================================
+-- 7. ОТВЕТЫ ПО ЧЕК-ЛИСТУ
+-- ============================================================
+
+CREATE TYPE checklist_result AS ENUM ('ok', 'defect', 'not_applicable', 'not_checked');
+
+CREATE TABLE checklist_answers (
+    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    inspection_id   UUID NOT NULL REFERENCES inspections(id) ON DELETE CASCADE,
+    checklist_item_id UUID NOT NULL REFERENCES checklist_items(id),
+    result          checklist_result NOT NULL,
+    comment         TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(inspection_id, checklist_item_id)
+);
+
+CREATE INDEX idx_checklist_answers_inspection ON checklist_answers(inspection_id);
+
+-- ============================================================
+-- 8. ФОТОГРАФИИ
+-- ============================================================
+
+CREATE TYPE photo_target AS ENUM ('inspection', 'issue', 'equipment');
+
+CREATE TABLE photos (
+    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    target_type     photo_target NOT NULL,
+    inspection_id   UUID REFERENCES inspections(id) ON DELETE CASCADE,
+    issue_id        UUID,                                -- FK added below
+    equipment_id    UUID REFERENCES equipment(id),
+    storage_path    VARCHAR(500) NOT NULL,               -- путь в S3/MinIO
+    thumbnail_path  VARCHAR(500),                        -- превью
+    gps_lat         NUMERIC(9,6),
+    gps_lon         NUMERIC(9,6),
+    taken_at        TIMESTAMPTZ,                         -- EXIF-дата съёмки
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_photos_inspection ON photos(inspection_id);
+CREATE INDEX idx_photos_issue ON photos(issue_id);
+
+-- ============================================================
+-- 9. ЗАМЕЧАНИЯ / ДЕФЕКТЫ
+-- ============================================================
+
+CREATE TYPE issue_criticality AS ENUM ('low', 'medium', 'high', 'critical');
+CREATE TYPE issue_status AS ENUM (
+    'open',            -- открыто
+    'assigned',        -- назначен ответственный
+    'in_work',         -- в работе
+    'fixed',           -- устранено
+    'control',         -- на контроле
+    'closed',          -- закрыто
+    'overdue'          -- просрочено
+);
+
+CREATE TABLE issues (
+    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    inspection_id   UUID NOT NULL REFERENCES inspections(id),
+    site_id         UUID NOT NULL REFERENCES sites(id),
+    title           VARCHAR(300) NOT NULL,
+    description     TEXT,
+    criticality     issue_criticality NOT NULL DEFAULT 'medium',
+    status          issue_status NOT NULL DEFAULT 'open',
+    assigned_to     UUID REFERENCES users(id),
+    due_date        DATE,                                 -- срок устранения
+    fixed_at        TIMESTAMPTZ,
+    created_by      UUID NOT NULL REFERENCES users(id),
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ
+);
+
+CREATE INDEX idx_issues_inspection ON issues(inspection_id);
+CREATE INDEX idx_issues_site ON issues(site_id);
+CREATE INDEX idx_issues_status ON issues(status);
+CREATE INDEX idx_issues_criticality ON issues(criticality);
+CREATE INDEX idx_issues_assigned ON issues(assigned_to);
+
+-- FK для photos.issue_id
+ALTER TABLE photos ADD CONSTRAINT fk_photos_issue
+    FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE SET NULL;
+
+-- ============================================================
+-- 10. ИСТОРИЯ СТАТУСОВ ЗАМЕЧАНИЙ
+-- ============================================================
+
+CREATE TABLE issue_status_history (
+    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    issue_id    UUID NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+    old_status  issue_status,
+    new_status  issue_status NOT NULL,
+    changed_by  UUID NOT NULL REFERENCES users(id),
+    comment     TEXT,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_issue_history_issue ON issue_status_history(issue_id);
+
+-- ============================================================
+-- 11. ЗАПОЛНЕНИЕ СПРАВОЧНИКА РАЙОНОВ
+-- ============================================================
+
+INSERT INTO districts (name, code) VALUES
+    ('Аэропорт', 'aeroport'),
+    ('Беговой', 'begovoy'),
+    ('Бескудниковский', 'beskudnikovskiy'),
+    ('Войковский', 'voykovskiy'),
+    ('Восточное Дегунино', 'vostochnoe_degunnino'),
+    ('Головинский', 'golovinskiy'),
+    ('Дмитровский', 'dmitrovskiy'),
+    ('Западное Дегунино', 'zapadnoe_degunnino'),
+    ('Коптево', 'koptevo'),
+    ('Левобережный', 'levoberezhniy'),
+    ('Молжаниновский', 'molzhaninovskiy'),
+    ('Савёловский', 'savelovskiy'),
+    ('Сокол', 'sokol'),
+    ('Тимирязевский', 'timiryazevskiy'),
+    ('Ховрино', 'khovrino'),
+    ('Хорошевский', 'khoroshevskiy'),
+    ('Неизвестный район', 'unknown');   -- для 425 объектов без района
+
+-- ============================================================
+-- 12. СТАНДАРТНЫЙ ЧЕК-ЛИСТ (MVP)
+-- ============================================================
+
+INSERT INTO checklist_templates (id, name, site_type) VALUES
+    ('c0000000-0000-0000-0000-000000000001', 'Осмотр детской площадки', 'Детская площадка'),
+    ('c0000000-0000-0000-0000-000000000002', 'Осмотр спортивной площадки', 'Спортивная площадка');
+
+INSERT INTO checklist_items (template_id, category, question, sort_order, is_critical, requires_photo) VALUES
+    -- Детская площадка
+    ('c0000000-0000-0000-0000-000000000001', 'Покрытие', 'Целостность покрытия (нет ям, выбоин)', 1, TRUE, FALSE),
+    ('c0000000-0000-0000-0000-000000000001', 'Покрытие', 'Отсутствие посторонних предметов и мусора', 2, FALSE, FALSE),
+    ('c0000000-0000-0000-0000-000000000001', 'Оборудование', 'Устойчивость и крепление качелей', 3, TRUE, FALSE),
+    ('c0000000-0000-0000-0000-000000000001', 'Оборудование', 'Целостность горки (ступени, скат, поручни)', 4, TRUE, FALSE),
+    ('c0000000-0000-0000-0000-000000000001', 'Оборудование', 'Состояние песочницы (чистота, ограждение)', 5, FALSE, FALSE),
+    ('c0000000-0000-0000-0000-000000000001', 'Оборудование', 'Целостность карусели', 6, TRUE, FALSE),
+    ('c0000000-0000-0000-0000-000000000001', 'МАФ', 'Состояние скамеек', 7, FALSE, FALSE),
+    ('c0000000-0000-0000-0000-000000000001', 'МАФ', 'Состояние урн', 8, FALSE, FALSE),
+    ('c0000000-0000-0000-0000-000000000001', 'Ограждение', 'Целостность ограждения', 9, TRUE, FALSE),
+    ('c0000000-0000-0000-0000-000000000001', 'Общий вид', 'Фото общего вида площадки', 10, FALSE, TRUE),
+    -- Спортивная площадка
+    ('c0000000-0000-0000-0000-000000000002', 'Покрытие', 'Целостность покрытия (резина, асфальт)', 1, TRUE, FALSE),
+    ('c0000000-0000-0000-0000-000000000002', 'Покрытие', 'Отсутствие посторонних предметов и мусора', 2, FALSE, FALSE),
+    ('c0000000-0000-0000-0000-000000000002', 'Оборудование', 'Состояние ворот / баскетбольных колец', 3, TRUE, FALSE),
+    ('c0000000-0000-0000-0000-000000000002', 'Оборудование', 'Целостность тренажёров', 4, TRUE, FALSE),
+    ('c0000000-0000-0000-0000-000000000002', 'МАФ', 'Состояние скамеек', 5, FALSE, FALSE),
+    ('c0000000-0000-0000-0000-000000000002', 'Ограждение', 'Целостность ограждения', 6, TRUE, FALSE),
+    ('c0000000-0000-0000-0000-000000000002', 'Общий вид', 'Фото общего вида площадки', 7, FALSE, TRUE);

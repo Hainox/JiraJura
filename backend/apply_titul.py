@@ -1,10 +1,15 @@
 # -*- coding: utf-8 -*-
-"""Сверка площадок в БД с актуальным перечнем (лист ТИТУЛ) и отключение лишних.
+"""Сверка площадок в БД с актуальным перечнем (лист ТИТУЛ): строго 1:1.
 
-Матчинг первично по ID из KML (sites.kml_original_id == kml_id из CSV);
-для строк CSV без ID и несматченных по ID — запасной матчинг по
-(тип, адрес двора). Площадки БД, не попавшие в перечень, помечаются
-is_active=FALSE (не удаляются — история обходов сохраняется).
+Каждая строка перечня получает ровно одну площадку БД (сначала по ID из
+KML, затем по точному нормализованному адресу+типу, затем по частичному
+совпадению адреса). Площадки БД, не получившие строки перечня, помечаются
+is_active=FALSE (не удаляются — история обходов сохраняется). Таким
+образом активных площадок становится ровно столько, скольким строкам
+перечня нашлась пара; строки без пары перечисляются в отчёте отдельно.
+
+При выборе, какая из одинаковых по адресу площадок останется активной,
+приоритет у площадок с уже проведёнными обходами.
 
 По умолчанию — только отчёт (dry-run). Применение — с флагом --apply.
 
@@ -15,6 +20,7 @@ is_active=FALSE (не удаляются — история обходов со�
 import argparse
 import csv
 import sys
+from collections import Counter, defaultdict, deque
 
 import psycopg2
 
@@ -60,103 +66,133 @@ def addr_key(s: str) -> tuple:
 
 
 def main():
-    p = argparse.ArgumentParser(description="Сверка площадок с перечнем ТИТУЛ")
+    p = argparse.ArgumentParser(description="Сверка площадок с перечнем ТИТУЛ (1:1)")
     p.add_argument("--db-url", required=True)
     p.add_argument("--csv", required=True, help="CSV с колонками kml_id;district;type;address")
     p.add_argument("--apply", action="store_true",
                    help="применить изменения (без флага — только отчёт)")
     args = p.parse_args()
 
-    want_ids = set()
-    want_addr = set()   # (type, addr_key)
-    csv_rows = 0
+    reg_rows = []
     with open(args.csv, encoding="utf-8") as f:
         for row in csv.DictReader(f, delimiter=";"):
-            csv_rows += 1
-            if row["kml_id"]:
-                want_ids.add(row["kml_id"].strip())
-            want_addr.add((row["type"].strip(), addr_key(row["address"])))
+            reg_rows.append({
+                "kml_id": (row["kml_id"] or "").strip(),
+                "district": (row["district"] or "").strip(),
+                "type": (row["type"] or "").strip(),
+                "address": (row["address"] or "").strip(),
+                "key": addr_key(row["address"]),
+                "site": None,
+            })
 
     conn = psycopg2.connect(args.db_url)
     cur = conn.cursor()
+    # площадки с уже проведёнными обходами разбирают слоты первыми
     cur.execute("""
-        SELECT s.id, s.kml_original_id, s.type, c.name, d.name, s.is_active
+        SELECT s.id, s.kml_original_id, s.type, c.name, d.name,
+               (SELECT count(*) FROM inspections i WHERE i.site_id = s.id) AS insp_cnt
         FROM sites s
         JOIN courtyards c ON c.id = s.courtyard_id
         JOIN districts d ON d.id = c.district_id
+        ORDER BY insp_cnt DESC, s.id
     """)
     sites = cur.fetchall()
 
-    # Для ослабленного прохода: строка перечня может покрывать несколько домов
-    # («47 к.2, 49 к.2, 49 к.3»), а в БД это отдельные дворы — и наоборот.
-    # Считаем совпадением, если токены одного адреса — подмножество другого.
-    from collections import Counter
-    want_by_type = {}
-    for stype, key in want_addr:
-        want_by_type.setdefault(stype, []).append(Counter(key))
+    by_id_idx = defaultdict(deque)
+    exact_idx = defaultdict(deque)
+    for i, r in enumerate(reg_rows):
+        if r["kml_id"]:
+            by_id_idx[r["kml_id"]].append(i)
+        exact_idx[(r["type"], r["key"])].append(i)
 
-    def relaxed_match(stype: str, key: tuple) -> bool:
-        c = Counter(key)
-        for w in want_by_type.get(stype, ()):
-            if not (c - w) or not (w - c):
-                return True
-        return False
+    def pop_free(dq):
+        while dq:
+            i = dq.popleft()
+            if reg_rows[i]["site"] is None:
+                return i
+        return None
 
-    keep, drop = [], []
-    matched_ids = set()
     by_id = by_addr = by_subset = 0
-    for sid, kml_id, stype, court, district, is_active in sites:
-        kml_id = (kml_id or "").strip()
-        key = addr_key(court)
-        if kml_id in want_ids:
-            keep.append(sid)
-            matched_ids.add(kml_id)
+
+    # этап 1: точное совпадение ID из KML
+    unpaired = []
+    for s in sites:
+        sid, kml_id, stype, court, district, insp = s
+        i = pop_free(by_id_idx.get((kml_id or "").strip(), deque()))
+        if i is not None:
+            reg_rows[i]["site"] = s
             by_id += 1
-        elif (stype, key) in want_addr:
-            keep.append(sid)
+        else:
+            unpaired.append(s)
+
+    # этап 2: точный нормализованный адрес + тип
+    still = []
+    for s in unpaired:
+        sid, kml_id, stype, court, district, insp = s
+        i = pop_free(exact_idx.get((stype, addr_key(court)), deque()))
+        if i is not None:
+            reg_rows[i]["site"] = s
             by_addr += 1
-        elif relaxed_match(stype, key):
-            keep.append(sid)
+        else:
+            still.append(s)
+
+    # этап 3: частичное совпадение — строка перечня может покрывать несколько
+    # домов, а в БД это отдельные дворы (и наоборот); совпадение, если токены
+    # одного адреса являются подмножеством другого (в рамках типа)
+    free_by_type = defaultdict(list)
+    for i, r in enumerate(reg_rows):
+        if r["site"] is None:
+            free_by_type[r["type"]].append(i)
+
+    drop = []
+    for s in still:
+        sid, kml_id, stype, court, district, insp = s
+        c = Counter(addr_key(court))
+        found = None
+        for i in free_by_type.get(stype, ()):
+            r = reg_rows[i]
+            if r["site"] is not None:
+                continue
+            w = Counter(r["key"])
+            if not (c - w) or not (w - c):
+                found = i
+                break
+        if found is not None:
+            reg_rows[found]["site"] = s
             by_subset += 1
         else:
-            drop.append((sid, district, stype, court, kml_id))
+            drop.append(s)
 
-    print(f"Строк в перечне: {csv_rows} (с ID: {len(want_ids)})")
-    print(f"Площадок в БД:  {len(sites)}")
-    print(f"Остаются активными: {len(keep)}  (по ID: {by_id}, по адресу+типу: {by_addr}, "
-          f"по частичному совпадению адреса: {by_subset})")
-    print(f"Будут отключены:    {len(drop)}")
-    if by_id == 0:
-        print("Матчинг по ID не сработал (в KML другие идентификаторы) — "
-              "сверка идёт по нормализованному адресу и типу.")
+    matched = [r for r in reg_rows if r["site"] is not None]
+    unmatched = [r for r in reg_rows if r["site"] is None]
+    keep_ids = [str(r["site"][0]) for r in matched]
 
-    # адреса из перечня, не нашедшие НИ одной площадки в БД (в т.ч. частично)
-    db_keys = {(stype, addr_key(court)) for _, _, stype, court, _, _ in sites}
-    db_by_type = {}
-    for _, _, stype, court, _, _ in sites:
-        db_by_type.setdefault(stype, []).append(Counter(addr_key(court)))
+    print(f"Строк в перечне:  {len(reg_rows)}")
+    print(f"Площадок в БД:    {len(sites)}")
+    print(f"Сопоставлено 1:1: {len(matched)}  "
+          f"(по ID: {by_id}, по точному адресу: {by_addr}, по частичному: {by_subset})")
+    print(f"Будут отключены:  {len(drop)} (дубли адресов и отсутствующие в перечне)")
+    print(f"Строк перечня без пары в БД: {len(unmatched)}")
+    print(f"=> после применения активных будет {len(matched)} "
+          f"(= {len(reg_rows)} − {len(unmatched)})")
 
-    def covered_by_db(stype: str, key: tuple) -> bool:
-        c = Counter(key)
-        for w in db_by_type.get(stype, ()):
-            if not (c - w) or not (w - c):
-                return True
-        return False
-
-    absent = [(stype, key) for stype, key in want_addr
-              if (stype, key) not in db_keys and not covered_by_db(stype, key)]
-    print(f"Адресов из перечня, отсутствующих в БД: {len(absent)} "
-          f"(таких площадок не было в KML — завести автоматически нельзя)")
-    for stype, key in absent[:10]:
-        print(f"  {stype}: {' '.join(key)}")
+    if unmatched:
+        print("\nСтроки перечня без пары (этих площадок нет в KML-выгрузке, "
+              "нужны геоданные, чтобы завести):")
+        for r in unmatched:
+            print(f"  [{r['district']}] {r['type']}: {r['address']}")
 
     if drop:
-        from collections import Counter
         print("\nОтключаемые по районам:")
-        for district, cnt in sorted(Counter(d[1] for d in drop).items()):
+        for district, cnt in sorted(Counter(s[4] for s in drop).items()):
             print(f"  {district}: {cnt}")
+        drop_with_hist = [s for s in drop if s[5]]
+        if drop_with_hist:
+            print(f"\n⚠ Отключаемых с уже проведёнными обходами: {len(drop_with_hist)}")
+            for sid, _, stype, court, district, insp in drop_with_hist[:10]:
+                print(f"  [{district}] {stype}: {court} (обходов: {insp})")
         print("\nПримеры отключаемых (первые 15):")
-        for _, district, stype, court, kml_id in drop[:15]:
+        for sid, kml_id, stype, court, district, insp in drop[:15]:
             print(f"  [{district}] {stype}: {court}")
 
     if not args.apply:
@@ -164,7 +200,6 @@ def main():
         return
 
     cur.execute("UPDATE sites SET is_active = FALSE")
-    keep_ids = [str(s) for s in keep]
     cur.execute("UPDATE sites SET is_active = TRUE WHERE id = ANY(%s::uuid[])", (keep_ids,))
     conn.commit()
     cur.execute("SELECT is_active, count(*) FROM sites GROUP BY is_active")

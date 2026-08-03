@@ -6,7 +6,7 @@ import L from 'leaflet'
 import { sitesApi, districtsApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
 import type { SiteOut, DistrictOut } from '@/types'
-import { List, Map as MapIcon, LogOut, ChevronRight } from 'lucide-react'
+import { List, Map as MapIcon, LogOut, ChevronRight, Users } from 'lucide-react'
 import 'leaflet/dist/leaflet.css'
 
 // Иконки по типу площадок
@@ -87,6 +87,15 @@ export default function MapPage() {
           <p className="text-blue-200 text-xs">{user?.full_name}</p>
         </div>
         <div className="flex gap-1">
+          {user?.role === 'admin' && (
+            <button
+              onClick={() => navigate('/admin/users')}
+              className="p-2 rounded-lg hover:bg-primary-700 transition-colors"
+              title="Пользователи"
+            >
+              <Users className="w-5 h-5" />
+            </button>
+          )}
           <button
             onClick={() => setShowFilters((v) => !v)}
             className="p-2 rounded-lg hover:bg-primary-700 transition-colors"

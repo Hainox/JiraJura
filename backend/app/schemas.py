@@ -31,6 +31,48 @@ class UserOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class UserAdminOut(UserOut):
+    """Расширенная карточка пользователя для админки (+ is_active)."""
+    is_active: bool
+
+    model_config = {"from_attributes": True}
+
+
+class UserRoleUpdate(BaseModel):
+    role: Optional[str] = None
+    district_id: Optional[UUID] = None
+    is_active: Optional[bool] = None
+
+
+# ── Приглашения на регистрацию ────────────────────────────────
+
+class UserInviteCreate(BaseModel):
+    login: str = Field(min_length=3, max_length=50)
+    full_name: str = Field(min_length=1, max_length=200)
+    role: str
+    district_id: Optional[UUID] = None
+
+
+class UserInviteCreated(BaseModel):
+    """Ответ на создание инвайта — токен возвращается только один раз."""
+    id: UUID
+    login: str
+    full_name: str
+    role: str
+    token: str
+    expires_at: datetime
+
+
+class UserInvitePreview(BaseModel):
+    """То, что видит приглашённый на странице регистрации по токену."""
+    full_name: str
+    role: str
+
+
+class InviteCompleteRequest(BaseModel):
+    password: str = Field(min_length=8, max_length=200)
+
+
 # ── Районы ─────────────────────────────────────────────────────
 
 class DistrictOut(BaseModel):

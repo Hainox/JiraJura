@@ -20,6 +20,40 @@ export interface LoginResponse {
   user: UserOut
 }
 
+export type Role = 'inspector' | 'reviewer' | 'admin'
+
+// ── Пользователи / приглашения (админка) ──
+export interface UserAdminOut extends UserOut {
+  is_active: boolean
+}
+
+export interface UserInviteCreate {
+  login: string
+  full_name: string
+  role: Role
+  district_id?: string
+}
+
+export interface UserInviteCreated {
+  id: string
+  login: string
+  full_name: string
+  role: Role
+  token: string
+  expires_at: string
+}
+
+export interface UserInvitePreview {
+  full_name: string
+  role: Role
+}
+
+export interface UserRoleUpdate {
+  role?: Role
+  district_id?: string
+  is_active?: boolean
+}
+
 // ── Courier / Courtyard ──
 export interface CourtyardOut {
   id: string

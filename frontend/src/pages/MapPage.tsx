@@ -3,10 +3,11 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { MapContainer, TileLayer, GeoJSON, Marker, Popup, useMap, AttributionControl } from 'react-leaflet'
 import L from 'leaflet'
-import { sitesApi, districtsApi } from '@/lib/api'
+import { sitesApi, districtsApi, reportsApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
 import type { SiteOut, DistrictOut } from '@/types'
-import { List, Map as MapIcon, LogOut, ChevronRight, Users } from 'lucide-react'
+import { List, Map as MapIcon, LogOut, ChevronRight, Users, Download } from 'lucide-react'
+import toast from 'react-hot-toast'
 import 'leaflet/dist/leaflet.css'
 
 // Иконки по типу площадок
@@ -94,6 +95,21 @@ export default function MapPage() {
               title="Пользователи"
             >
               <Users className="w-5 h-5" />
+            </button>
+          )}
+          {user?.role !== 'inspector' && (
+            <button
+              onClick={() =>
+                toast.promise(reportsApi.exportXlsx({ district_id: districtFilter }), {
+                  loading: 'Готовлю файл...',
+                  success: 'Файл скачан',
+                  error: 'Ошибка выгрузки',
+                })
+              }
+              className="p-2 rounded-lg hover:bg-primary-700 transition-colors"
+              title="Выгрузка в Excel"
+            >
+              <Download className="w-5 h-5" />
             </button>
           )}
           <button

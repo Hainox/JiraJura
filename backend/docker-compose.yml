@@ -1,0 +1,28 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_DB: sao_inspection
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+      - ./seed.sql:/docker-entrypoint-initdb.d/02_seed.sql
+
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/sao_inspection
+      SECRET_KEY: dev-secret-change-in-production
+    depends_on:
+      - db
+    volumes:
+      - ./uploads:/app/uploads
+
+volumes:
+  pgdata:

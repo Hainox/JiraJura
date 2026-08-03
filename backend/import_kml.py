@@ -1,18 +1,46 @@
 # -*- coding: utf-8 -*-
-"""Импорт KML в PostgreSQL/PostGIS: districts → courtyards → sites с геометрией."""
+"""Импорт KML в PostgreSQL/PostGIS: districts → courtyards → sites с геометрией.
+
+Примеры:
+  dev:  python import_kml.py \
+          --db-url postgresql://postgres:postgres@localhost:5433/sao_inspection \
+          --kml "KML_WGS84/Детская_площадка.kml=Детская площадка" \
+          --kml "KML_WGS84/Спортивная_площадка.kml=Спортивная площадка" \
+          --wipe
+  prod: см. deploy/README.md, раздел «Импорт площадок из KML».
+"""
 import sys, io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
+import argparse
 import xml.etree.ElementTree as ET
 import re, math, psycopg2, traceback
 
-DB = "dbname=sao_inspection user=postgres password=postgres host=localhost port=5433"
 NS = {'kml': 'http://www.opengis.net/kml/2.2'}
 
-KML_FILES = [
-    (r'C:\Users\root\Downloads\Новая папка\ДТС_Плоскостные_РУЧНАЯ_по_типам\KML_WGS84\Детская_площадка.kml', 'Детская площадка'),
-    (r'C:\Users\root\Downloads\Новая папка\ДТС_Плоскостные_РУЧНАЯ_по_типам\KML_WGS84\Спортивная_площадка.kml', 'Спортивная площадка'),
-]
+
+def parse_args():
+    p = argparse.ArgumentParser(
+        description='Импорт площадок из KML-выгрузок в БД JiraJura '
+                    '(districts → courtyards → sites)')
+    p.add_argument('--db-url', required=True,
+                   help='строка подключения, напр. postgresql://postgres:пароль@db:5432/sao_inspection')
+    p.add_argument('--kml', action='append', required=True, metavar='ФАЙЛ=ТИП',
+                   help='путь к KML и тип площадки через "=", напр. '
+                        '"Детская_площадка.kml=Детская площадка"; '
+                        'параметр можно повторять для нескольких файлов')
+    p.add_argument('--wipe', action='store_true',
+                   help='обязательное подтверждение: перед импортом удаляются ВСЕ '
+                        'площадки/дворы/районы и связанные обходы, замечания и фото')
+    args = p.parse_args()
+
+    args.kml_files = []
+    for spec in args.kml:
+        fname, sep, site_type = spec.partition('=')
+        if not sep or not fname or not site_type:
+            p.error(f'--kml ожидает формат ФАЙЛ=ТИП, получено: {spec!r}')
+        args.kml_files.append((fname, site_type))
+    return args
 
 
 def parse_coords(text):
@@ -52,7 +80,14 @@ def parse_desc(text):
 
 
 def main():
-    conn = psycopg2.connect(DB)
+    args = parse_args()
+    if not args.wipe:
+        print('Импорт полностью замещает данные: будут удалены все площадки, дворы,')
+        print('районы и связанные с ними обходы, замечания и фото. Если это')
+        print('действительно нужно — повторите команду с флагом --wipe.')
+        sys.exit(2)
+
+    conn = psycopg2.connect(args.db_url)
     cur = conn.cursor()
     cur.execute("CREATE EXTENSION IF NOT EXISTS postgis")
     cur.execute('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"')
@@ -63,7 +98,7 @@ def main():
     known = []
     unknown = []
 
-    for fname, site_type in KML_FILES:
+    for fname, site_type in args.kml_files:
         print(f'Парсим: {fname}')
         tree = ET.parse(fname)
         doc = tree.find('.//kml:Document', NS)

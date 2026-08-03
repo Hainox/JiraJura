@@ -19,9 +19,37 @@ import sys
 import psycopg2
 
 
-def norm(s: str) -> str:
-    """Нормализация адреса для запасного матчинга: регистр, ё, пробелы."""
-    return " ".join((s or "").lower().replace("ё", "е").split())
+# Канонизация сокращений: в KML адреса встречаются и в полной форме
+# («улица Расковой дом 16, корпус 1»), и в сокращённой («Расковой ул. 16 к.1»).
+_CANON = {
+    "улица": "ул", "ул": "ул",
+    "проспект": "просп", "просп": "просп", "пр-т": "просп",
+    "проезд": "пр-д", "пр-д": "пр-д",
+    "переулок": "пер", "пер": "пер",
+    "бульвар": "б-р", "бульв": "б-р", "б-р": "б-р",
+    "шоссе": "ш", "ш": "ш",
+    "набережная": "наб", "наб": "наб",
+    "площадь": "пл", "пл": "пл",
+    "корпус": "к", "корп": "к", "к": "к",
+    "строение": "с", "стр": "с", "с": "с",
+    "владение": "вл", "вл": "вл",
+}
+_IGNORE = {"дом", "д", "г", "москва"}
+
+
+def addr_key(s: str) -> tuple:
+    """Ключ адреса, устойчивый к форме записи: регистр, ё, знаки препинания,
+    сокращения типов улиц/корпусов, слово «дом» и порядок слов не влияют."""
+    s = (s or "").lower().replace("ё", "е")
+    for ch in ".,;":
+        s = s.replace(ch, " ")
+    tokens = []
+    for t in s.split():
+        t = _CANON.get(t, t)
+        if t in _IGNORE:
+            continue
+        tokens.append(t)
+    return tuple(sorted(tokens))
 
 
 def main():
@@ -33,14 +61,14 @@ def main():
     args = p.parse_args()
 
     want_ids = set()
-    want_addr = set()   # (type, normalized address)
+    want_addr = set()   # (type, addr_key)
     csv_rows = 0
     with open(args.csv, encoding="utf-8") as f:
         for row in csv.DictReader(f, delimiter=";"):
             csv_rows += 1
             if row["kml_id"]:
                 want_ids.add(row["kml_id"].strip())
-            want_addr.add((row["type"].strip(), norm(row["address"])))
+            want_addr.add((row["type"].strip(), addr_key(row["address"])))
 
     conn = psycopg2.connect(args.db_url)
     cur = conn.cursor()
@@ -61,7 +89,7 @@ def main():
             keep.append(sid)
             matched_ids.add(kml_id)
             by_id += 1
-        elif (stype, norm(court)) in want_addr:
+        elif (stype, addr_key(court)) in want_addr:
             keep.append(sid)
             by_addr += 1
         else:
@@ -71,14 +99,26 @@ def main():
     print(f"Площадок в БД:  {len(sites)}")
     print(f"Остаются активными: {len(keep)}  (по ID: {by_id}, по адресу+типу: {by_addr})")
     print(f"Будут отключены:    {len(drop)}")
-    missing = want_ids - matched_ids
-    print(f"ID из перечня, не найденные в БД: {len(missing)} "
-          f"(таких площадок нет в KML-выгрузке — завести их автоматически нельзя)")
+    if by_id == 0:
+        print("Матчинг по ID не сработал (в KML другие идентификаторы) — "
+              "сверка идёт по нормализованному адресу и типу.")
+
+    # адреса из перечня, не нашедшие НИ одной площадки в БД
+    db_keys = {(stype, addr_key(court)) for _, _, stype, court, _, _ in sites}
+    absent = [a for a in want_addr if a not in db_keys]
+    print(f"Адресов из перечня, отсутствующих в БД: {len(absent)} "
+          f"(таких площадок не было в KML — завести автоматически нельзя)")
+    for stype, key in absent[:10]:
+        print(f"  {stype}: {' '.join(key)}")
 
     if drop:
+        from collections import Counter
+        print("\nОтключаемые по районам:")
+        for district, cnt in sorted(Counter(d[1] for d in drop).items()):
+            print(f"  {district}: {cnt}")
         print("\nПримеры отключаемых (первые 15):")
         for _, district, stype, court, kml_id in drop[:15]:
-            print(f"  [{district}] {stype}: {court} (kml_id={kml_id or '—'})")
+            print(f"  [{district}] {stype}: {court}")
 
     if not args.apply:
         print("\nЭто был dry-run — БД не изменена. Для применения добавьте --apply.")

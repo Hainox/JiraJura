@@ -141,7 +141,12 @@ git pull origin main
 docker compose -f docker-compose.prod.yml build
 docker compose -f docker-compose.prod.yml up -d
 docker compose -f docker-compose.prod.yml run --rm api alembic upgrade head
+docker compose -f docker-compose.prod.yml restart proxy
 ```
+
+Последний шаг обязателен: при пересоздании контейнера api меняется его
+внутренний IP, а nginx в proxy резолвит имя `api` один раз при старте —
+без рестарта прокси сайт отвечает `502 Bad Gateway`.
 
 ## Проверка, что бот не пострадал
 

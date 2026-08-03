@@ -28,6 +28,7 @@ async def list_sites(
         select(Site, centroid_lat, centroid_lon)
         .join(Courtyard, Site.courtyard_id == Courtyard.id)
         .join(District, Courtyard.district_id == District.id)
+        .where(Site.is_active)
         .options(
             selectinload(Site.courtyard).selectinload(Courtyard.district),
             selectinload(Site.courtyard),

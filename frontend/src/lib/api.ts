@@ -111,6 +111,24 @@ export const inspectionsApi = {
   },
 }
 
+// ── Reports ──
+export const reportsApi = {
+  // Скачивание Excel-выгрузки: файл приходит blob'ом (нужен Authorization-
+  // заголовок, поэтому обычная ссылка <a href> не подходит) и отдаётся
+  // пользователю через временный object URL.
+  exportXlsx: async (params?: { district_id?: string; date_from?: string; date_to?: string }) => {
+    const res = await api.get('/reports/export.xlsx', { params, responseType: 'blob' })
+    const url = URL.createObjectURL(res.data as Blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `журнал_обходов_${new Date().toISOString().slice(0, 10)}.xlsx`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  },
+}
+
 // ── Issues ──
 export const issuesApi = {
   create: (data: IssueCreate) =>

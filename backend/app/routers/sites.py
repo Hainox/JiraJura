@@ -18,7 +18,7 @@ async def list_sites(
     type: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=500),
+    page_size: int = Query(50, ge=1, le=5000),
     db: AsyncSession = Depends(get_db),
 ):
     centroid_lat = func.ST_Y(func.ST_Centroid(Site.geometry)).label("centroid_lat")

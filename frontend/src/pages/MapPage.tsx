@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { MapContainer, TileLayer, GeoJSON, Marker, Popup, useMap, AttributionControl } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, useMap, AttributionControl } from 'react-leaflet'
 import L from 'leaflet'
 import { sitesApi, districtsApi, reportsApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
@@ -9,6 +9,10 @@ import type { SiteOut, DistrictOut } from '@/types'
 import { List, Map as MapIcon, LogOut, ChevronRight, Users, Download } from 'lucide-react'
 import toast from 'react-hot-toast'
 import 'leaflet/dist/leaflet.css'
+
+// Значения enum'а site_type из БД — тип приходит человекочитаемой строкой
+const CHILD_TYPE = 'Детская площадка'
+const SPORT_TYPE = 'Спортивная площадка'
 
 // Иконки по типу площадок
 const childIcon = L.divIcon({
@@ -49,6 +53,7 @@ export default function MapPage() {
   const logoutStore = useAuthStore((s) => s.logout)
   const [viewMode, setViewMode] = useState<'map' | 'list'>('map')
   const [districtFilter, setDistrictFilter] = useState<string | undefined>()
+  const [typeFilter, setTypeFilter] = useState<string | undefined>()
   const [showFilters, setShowFilters] = useState(false)
 
   const { data: districts } = useQuery<DistrictOut[]>({
@@ -57,27 +62,15 @@ export default function MapPage() {
   })
 
   const { data: sitesData } = useQuery({
-    queryKey: ['sites', districtFilter],
-    queryFn: () => sitesApi.list({ district_id: districtFilter }),
+    queryKey: ['sites', districtFilter, typeFilter],
+    queryFn: () =>
+      sitesApi.list({ district_id: districtFilter, type: typeFilter, page_size: 5000 }),
   })
 
   const sites = sitesData?.items ?? []
+  const totalCount = sitesData?.total ?? sites.length
 
   const center: L.LatLngExpression = [55.829, 37.532] // САО
-
-  // GeoJSON-представление для карты — используем реальные lat/lon из API
-  const geoPoints = sites
-    .filter((s) => s.lat != null && s.lon != null)
-    .map((s) => ({
-      type: 'Feature' as const,
-      geometry: { type: 'Point' as const, coordinates: [s.lon!, s.lat!] },
-      properties: { id: s.id, name: s.courtyard?.name ?? '', type: s.type },
-    }))
-
-  const geoData: GeoJSON.FeatureCollection = {
-    type: 'FeatureCollection',
-    features: geoPoints,
-  }
 
   return (
     <div className="h-full flex flex-col">
@@ -131,18 +124,27 @@ export default function MapPage() {
         </div>
       </div>
 
-      {/* Фильтр по районам */}
+      {/* Фильтры: район и тип площадки */}
       {showFilters && (
-        <div className="bg-white border-b px-4 py-2 shrink-0">
+        <div className="bg-white border-b px-4 py-2 shrink-0 flex gap-2">
           <select
-            className="input-field text-sm"
+            className="input-field text-sm flex-1"
             value={districtFilter ?? ''}
             onChange={(e) => setDistrictFilter(e.target.value || undefined)}
           >
-            <option value="">Все районы ({sites.length} площадок)</option>
+            <option value="">Все районы ({totalCount} площадок)</option>
             {districts?.map((d) => (
               <option key={d.id} value={d.id}>{d.name}</option>
             ))}
+          </select>
+          <select
+            className="input-field text-sm flex-1"
+            value={typeFilter ?? ''}
+            onChange={(e) => setTypeFilter(e.target.value || undefined)}
+          >
+            <option value="">Все типы</option>
+            <option value={CHILD_TYPE}>Детские</option>
+            <option value={SPORT_TYPE}>Спортивные</option>
           </select>
         </div>
       )}
@@ -180,19 +182,18 @@ export default function MapPage() {
               maxZoom={19}
             />
             <FitBounds data={sites} />
-            <GeoJSON key={districtFilter ?? 'all'} data={geoData} />
             {sites.map((s) => (
               <Marker
                 key={s.id}
                 position={[s.lat ?? 55.829, s.lon ?? 37.532]}
-                icon={s.type === 'children' ? childIcon : sportIcon}
+                icon={s.type === CHILD_TYPE ? childIcon : sportIcon}
               >
                 <Popup>
                   <div className="min-w-[180px]">
                     <div className="font-semibold text-sm">{s.courtyard?.name ?? 'Площадка'}</div>
                     <div className="text-xs text-gray-500 mt-0.5">{s.district?.name}</div>
                     <div className="text-xs text-gray-400 mt-0.5">
-                      {s.type === 'children' ? 'Детская' : 'Спортивная'} • {s.area_m2} м²
+                      {s.type === CHILD_TYPE ? 'Детская' : 'Спортивная'} • {s.area_m2} м²
                     </div>
                     <button
                       onClick={() => navigate(`/sites/${s.id}`)}
@@ -215,16 +216,15 @@ export default function MapPage() {
               >
                 <div className="flex items-start gap-3">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white text-lg shrink-0 ${
-                    s.type === 'children' ? 'bg-blue-600' : 'bg-green-600'
+                    s.type === CHILD_TYPE ? 'bg-blue-600' : 'bg-green-600'
                   }`}>
-                    {s.type === 'children' ? 'Д' : 'С'}
+                    {s.type === CHILD_TYPE ? 'Д' : 'С'}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="font-semibold text-sm truncate">{s.courtyard?.name ?? 'Площадка'}</div>
                     <div className="text-xs text-gray-500 mt-0.5">{s.district?.name}</div>
                     <div className="text-xs text-gray-400 mt-0.5">
-                      {s.type === 'children' ? 'Детская площадка' : 'Спортивная площадка'}
-                      {' • '}{s.area_m2} м²
+                      {s.type}{' • '}{s.area_m2} м²
                     </div>
                   </div>
                   <ChevronRight className="w-4 h-4 text-gray-300 shrink-0 mt-3" />

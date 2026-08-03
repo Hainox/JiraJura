@@ -69,7 +69,7 @@ export default function SiteDetailPage() {
             <div>
               <div className="text-gray-400 text-xs">Тип</div>
               <div className="font-medium mt-0.5">
-                {site.type === 'children' ? 'Детская площадка' : 'Спортивная площадка'}
+                {site.type}
               </div>
             </div>
             <div>

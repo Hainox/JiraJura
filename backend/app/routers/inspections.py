@@ -13,7 +13,7 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.models import (
     Inspection, Site, Courtyard, District, User,
-    ChecklistAnswer, ChecklistItem, ChecklistTemplate, Photo,
+    ChecklistAnswer, ChecklistItem, ChecklistTemplate, Photo, Issue,
 )
 from app.schemas import (
     InspectionCreate, InspectionUpdate, InspectionOut,
@@ -115,7 +115,7 @@ async def get_inspection(inspection_id: str, db: AsyncSession = Depends(get_db))
     return await _inspection_to_out(obj, db)
 
 
-@router.put("/{inspection_id}", response_model=InspectionOut)
+@router.patch("/{inspection_id}", response_model=InspectionOut)
 async def update_inspection(
     inspection_id: str,
     data: InspectionUpdate,
@@ -226,9 +226,7 @@ async def list_inspection_photos(
 
 async def _inspection_to_out(i: Inspection, db: AsyncSession) -> InspectionOut:
     issues_count = (await db.execute(
-        select(func.count()).select_from(
-            select(Inspection).where(Inspection.id == i.id).subquery()
-        )
+        select(func.count()).select_from(Issue).where(Issue.inspection_id == i.id)
     )).scalar_one() or 0
 
     photos_q = select(Photo).where(

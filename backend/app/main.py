@@ -5,7 +5,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from app.config import settings, DEV_SECRET_KEY
 from app.routers import auth, districts, sites, inspections, issues, reports
+
+if settings.APP_ENV == "production" and settings.SECRET_KEY == DEV_SECRET_KEY:
+    raise RuntimeError(
+        "APP_ENV=production, но SECRET_KEY всё ещё равен dev-значению по умолчанию. "
+        "Сгенерируйте реальный ключ (openssl rand -hex 32) и задайте его в SECRET_KEY."
+    )
 
 app = FastAPI(
     title="Журнал обхода площадок САО",
@@ -15,7 +22,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { MapContainer, TileLayer, GeoJSON, Marker, Popup, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, GeoJSON, Marker, Popup, useMap, AttributionControl } from 'react-leaflet'
 import L from 'leaflet'
 import { sitesApi, districtsApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
@@ -154,7 +154,10 @@ export default function MapPage() {
       {/* Content */}
       <div className="flex-1 min-h-0">
         {viewMode === 'map' ? (
-          <MapContainer center={center} zoom={12} className="h-full w-full">
+          <MapContainer center={center} zoom={12} className="h-full w-full" attributionControl={false}>
+            {/* prefix={false} убирает стандартную приписку Leaflet; обязательная
+                подпись OpenStreetMap (условие использования их тайлов) остаётся */}
+            <AttributionControl prefix={false} />
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"

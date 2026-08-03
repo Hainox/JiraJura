@@ -29,7 +29,10 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/api\.sao-moscow\.ru\/api\/.*/i,
+            // Относительный паттерн (без протокола/хоста) — фронтенд и API
+            // всегда на одном origin через reverse proxy (см. docs/ и корневой
+            // README), поэтому кэш работает независимо от домена деплоя.
+            urlPattern: /^\/api\/v1\/.*/,
             handler: 'NetworkFirst',
             options: {
               cacheName: 'api-cache',

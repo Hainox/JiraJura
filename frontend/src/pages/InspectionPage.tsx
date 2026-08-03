@@ -2,10 +2,10 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { inspectionsApi, checklistsApi, issuesApi } from '@/lib/api'
-import type { InspectionOut, ChecklistTemplateOut, ChecklistItemOut, ChecklistAnswerOut, PhotoOut } from '@/types'
+import type { InspectionOut, ChecklistTemplateOut, ChecklistItemOut, PhotoOut } from '@/types'
 import {
   ArrowLeft, Send, X, AlertTriangle,
-  CheckCircle2, HelpCircle, ChevronRight, Plus, Camera, Image
+  CheckCircle2, HelpCircle, ChevronRight, Plus, Camera
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 

@@ -6,17 +6,15 @@ import type {
   SiteOut,
   SiteListOut,
   ChecklistTemplateOut,
-  ChecklistItemOut,
   InspectionOut,
   InspectionListOut,
-  ChecklistAnswerOut,
   IssueOut,
   IssueCreate,
   PhotoOut,
 } from '@/types'
 
 const api = axios.create({
-  baseURL: '/api/v1',
+  baseURL: import.meta.env.VITE_API_URL || '/api/v1',
   headers: { 'Content-Type': 'application/json' },
 })
 

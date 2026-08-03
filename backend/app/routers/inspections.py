@@ -3,13 +3,13 @@ from datetime import datetime
 from typing import Optional
 import uuid as _uuid
 import os
-import shutil
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.config import settings
 from app.database import get_db
 from app.models import (
     Inspection, Site, Courtyard, District, User,
@@ -186,7 +186,8 @@ async def upload_inspection_photo(
     if str(obj.inspector_id) != str(current_user.id) and current_user.role not in ("okrug_admin", "system_admin"):
         raise HTTPException(403, "Нет прав")
 
-    # Сохраняем файл
+    # Сохраняем файл (потоково, с проверкой размера — file.size ненадёжен,
+    # если клиент не прислал Content-Length)
     ext = file.filename.rsplit(".", 1)[-1] if file.filename and "." in file.filename else "jpg"
     safe_ext = ext.lower()[:5]
     filename = f"{_uuid.uuid4()}.{safe_ext}"
@@ -194,8 +195,16 @@ async def upload_inspection_photo(
     abs_path = os.path.join(UPLOAD_DIR, rel_path)
     os.makedirs(os.path.dirname(abs_path), exist_ok=True)
 
+    max_bytes = settings.MAX_PHOTO_SIZE_MB * 1024 * 1024
+    size = 0
     with open(abs_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+        while chunk := await file.read(1024 * 1024):
+            size += len(chunk)
+            if size > max_bytes:
+                f.close()
+                os.remove(abs_path)
+                raise HTTPException(413, f"Файл больше {settings.MAX_PHOTO_SIZE_MB} МБ")
+            f.write(chunk)
 
     photo = Photo(
         target_type="inspection",

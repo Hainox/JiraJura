@@ -80,10 +80,10 @@ CREATE INDEX idx_equipment_site ON equipment(site_id);
 -- ============================================================
 
 CREATE TYPE user_role AS ENUM (
-    'inspector',          -- инспектор (обходит)
-    'district_manager',   -- руководитель района
-    'okrug_admin',        -- администратор округа
-    'system_admin'        -- администратор системы
+    'inspector',    -- инспектор: проводит обходы, создаёт замечания, видит только свои записи
+    'reviewer',     -- проверяющий: видит/меняет статус обходов и замечаний в своей зоне
+                    -- (district_id задан — только этот район; NULL — весь округ)
+    'admin'         -- администратор: без ограничения зоны, управляет пользователями
 );
 
 CREATE TABLE users (
@@ -92,11 +92,29 @@ CREATE TABLE users (
     password_hash  VARCHAR(255) NOT NULL,
     full_name      VARCHAR(200) NOT NULL,
     role           user_role NOT NULL,
-    district_id    UUID REFERENCES districts(id),     -- для inspector и district_manager
+    district_id    UUID REFERENCES districts(id),     -- для inspector и reviewer; NULL у reviewer = весь округ
     phone          VARCHAR(20),
     is_active      BOOLEAN DEFAULT TRUE,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Приглашения на регистрацию: админ заводит инвайт с ролью/районом, сам
+-- пользователь по ссылке с токеном задаёт себе пароль (см. POST /auth/invites,
+-- POST /auth/invites/{token}/complete).
+CREATE TABLE user_invites (
+    id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    login        VARCHAR(50) NOT NULL UNIQUE,
+    full_name    VARCHAR(200) NOT NULL,
+    role         user_role NOT NULL,
+    district_id  UUID REFERENCES districts(id),
+    token_hash   VARCHAR(128) NOT NULL,
+    created_by   UUID NOT NULL REFERENCES users(id),
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at   TIMESTAMPTZ NOT NULL,
+    used_at      TIMESTAMPTZ
+);
+
+CREATE INDEX idx_user_invites_token_hash ON user_invites(token_hash);
 
 -- ============================================================
 -- 5. ЧЕК-ЛИСТЫ

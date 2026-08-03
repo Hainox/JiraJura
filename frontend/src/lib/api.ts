@@ -72,7 +72,9 @@ export const districtsApi = {
 
 // ── Sites ──
 export const sitesApi = {
-  list: (params?: { district_id?: string; site_type?: string }) =>
+  // параметр фильтра по типу в API называется `type` и принимает значение
+  // enum'а site_type как есть: «Детская площадка» / «Спортивная площадка»
+  list: (params?: { district_id?: string; type?: string; page_size?: number }) =>
     api.get<SiteListOut>('/sites/', { params }).then((r) => r.data),
 
   get: (id: string) => api.get<SiteOut>(`/sites/${id}`).then((r) => r.data),

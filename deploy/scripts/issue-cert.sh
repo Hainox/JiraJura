@@ -46,7 +46,8 @@ docker run --rm \
 echo "==> Сертификат получен. Переключаю JiraJura на TLS-конфиг и перезапускаю proxy..."
 cp deploy/nginx/proxy.conf.template deploy/nginx/active.conf.template
 docker compose -f docker-compose.prod.yml up -d proxy
-docker compose -f docker-compose.prod.yml exec proxy nginx -s reload 2>/dev/null || \
-  docker compose -f docker-compose.prod.yml restart proxy
+# именно restart, не `nginx -s reload`: шаблон из /etc/nginx/templates
+# рендерится в конфиг только entrypoint'ом при старте контейнера
+docker compose -f docker-compose.prod.yml restart proxy
 
 echo "==> Готово. Проверьте: curl -Ik https://${DOMAIN}:${HTTPS_PORT:-8443}/"

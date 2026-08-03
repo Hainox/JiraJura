@@ -7,9 +7,10 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import Issue, IssueStatusHistory, User
+from app.models import Issue, IssueStatusHistory, Site, Courtyard, User
 from app.schemas import IssueCreate, IssueUpdate, IssueOut, IssueListOut
 from app.services.auth import get_current_user
+from app.services.permissions import require_role
 
 router = APIRouter()
 
@@ -54,6 +55,7 @@ async def list_issues(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     base = select(Issue).order_by(Issue.created_at.desc())
 
@@ -63,11 +65,18 @@ async def list_issues(
         base = base.where(Issue.status == status)
     if criticality:
         base = base.where(Issue.criticality == criticality)
-    if district_id:
-        from app.models import Site, Courtyard
+
+    effective_district_id = district_id
+    if current_user.role == "reviewer" and current_user.district_id is not None:
+        # у reviewer с закреплённым районом свой район в приоритете над query-параметром
+        effective_district_id = str(current_user.district_id)
+    if current_user.role == "inspector":
+        base = base.where(Issue.created_by == current_user.id)
+
+    if effective_district_id:
         base = base.join(Site, Issue.site_id == Site.id).join(
             Courtyard, Site.courtyard_id == Courtyard.id
-        ).where(Courtyard.district_id == district_id)
+        ).where(Courtyard.district_id == effective_district_id)
 
     count_q = select(func.count()).select_from(base.subquery())
     total = (await db.execute(count_q)).scalar_one()
@@ -94,7 +103,7 @@ async def update_issue(
     issue_id: str,
     data: IssueUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_role("reviewer", "admin")),
 ):
     issue = (await db.execute(select(Issue).where(Issue.id == issue_id))).scalar_one_or_none()
     if not issue:

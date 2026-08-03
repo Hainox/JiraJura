@@ -3,17 +3,18 @@ from datetime import datetime
 from typing import Optional
 import uuid as _uuid
 import os
-import shutil
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.config import settings
 from app.database import get_db
+from app.services.permissions import check_own_or_role
 from app.models import (
     Inspection, Site, Courtyard, District, User,
-    ChecklistAnswer, ChecklistItem, ChecklistTemplate, Photo,
+    ChecklistAnswer, ChecklistItem, ChecklistTemplate, Photo, Issue,
 )
 from app.schemas import (
     InspectionCreate, InspectionUpdate, InspectionOut,
@@ -77,6 +78,7 @@ async def list_inspections(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     base = select(Inspection).options(
         selectinload(Inspection.site).selectinload(Site.courtyard).selectinload(Courtyard.district),
@@ -86,10 +88,19 @@ async def list_inspections(
 
     if site_id:
         base = base.where(Inspection.site_id == site_id)
-    if inspector_id:
-        base = base.where(Inspection.inspector_id == inspector_id)
     if status:
         base = base.where(Inspection.status == status)
+
+    if current_user.role == "inspector":
+        # инспектор видит только свои обходы, даже если передан чужой inspector_id
+        base = base.where(Inspection.inspector_id == current_user.id)
+    elif inspector_id:
+        base = base.where(Inspection.inspector_id == inspector_id)
+
+    if current_user.role == "reviewer" and current_user.district_id is not None:
+        base = base.join(Site, Inspection.site_id == Site.id).join(
+            Courtyard, Site.courtyard_id == Courtyard.id
+        ).where(Courtyard.district_id == current_user.district_id)
 
     count_q = select(func.count()).select_from(base.subquery())
     total = (await db.execute(count_q)).scalar_one()
@@ -115,7 +126,7 @@ async def get_inspection(inspection_id: str, db: AsyncSession = Depends(get_db))
     return await _inspection_to_out(obj, db)
 
 
-@router.put("/{inspection_id}", response_model=InspectionOut)
+@router.patch("/{inspection_id}", response_model=InspectionOut)
 async def update_inspection(
     inspection_id: str,
     data: InspectionUpdate,
@@ -125,8 +136,7 @@ async def update_inspection(
     obj = (await db.execute(select(Inspection).where(Inspection.id == inspection_id))).scalar_one_or_none()
     if not obj:
         raise HTTPException(404, "Обход не найден")
-    if str(obj.inspector_id) != str(current_user.id) and current_user.role not in ("okrug_admin", "system_admin"):
-        raise HTTPException(403, "Нет прав")
+    check_own_or_role(current_user, obj.inspector_id, "reviewer", "admin")
 
     if data.status:
         obj.status = data.status
@@ -159,7 +169,16 @@ async def update_inspection(
                 ))
 
     await db.commit()
-    await db.refresh(obj)
+
+    # Перезагружаем с eager-load для _inspection_to_out (db.refresh не подтягивает
+    # связи, а обращение к ним лениво вне greenlet-контекста async-сессии падает
+    # с MissingGreenlet)
+    q = select(Inspection).where(Inspection.id == obj.id).options(
+        selectinload(Inspection.site).selectinload(Site.courtyard).selectinload(Courtyard.district),
+        selectinload(Inspection.inspector),
+        selectinload(Inspection.answers),
+    )
+    obj = (await db.execute(q)).scalar_one()
     return await _inspection_to_out(obj, db)
 
 
@@ -183,10 +202,10 @@ async def upload_inspection_photo(
         raise HTTPException(404, "Обход не найден")
 
     # Проверяем права
-    if str(obj.inspector_id) != str(current_user.id) and current_user.role not in ("okrug_admin", "system_admin"):
-        raise HTTPException(403, "Нет прав")
+    check_own_or_role(current_user, obj.inspector_id, "reviewer", "admin")
 
-    # Сохраняем файл
+    # Сохраняем файл (потоково, с проверкой размера — file.size ненадёжен,
+    # если клиент не прислал Content-Length)
     ext = file.filename.rsplit(".", 1)[-1] if file.filename and "." in file.filename else "jpg"
     safe_ext = ext.lower()[:5]
     filename = f"{_uuid.uuid4()}.{safe_ext}"
@@ -194,8 +213,16 @@ async def upload_inspection_photo(
     abs_path = os.path.join(UPLOAD_DIR, rel_path)
     os.makedirs(os.path.dirname(abs_path), exist_ok=True)
 
+    max_bytes = settings.MAX_PHOTO_SIZE_MB * 1024 * 1024
+    size = 0
     with open(abs_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+        while chunk := await file.read(1024 * 1024):
+            size += len(chunk)
+            if size > max_bytes:
+                f.close()
+                os.remove(abs_path)
+                raise HTTPException(413, f"Файл больше {settings.MAX_PHOTO_SIZE_MB} МБ")
+            f.write(chunk)
 
     photo = Photo(
         target_type="inspection",
@@ -226,9 +253,7 @@ async def list_inspection_photos(
 
 async def _inspection_to_out(i: Inspection, db: AsyncSession) -> InspectionOut:
     issues_count = (await db.execute(
-        select(func.count()).select_from(
-            select(Inspection).where(Inspection.id == i.id).subquery()
-        )
+        select(func.count()).select_from(Issue).where(Issue.inspection_id == i.id)
     )).scalar_one() or 0
 
     photos_q = select(Photo).where(

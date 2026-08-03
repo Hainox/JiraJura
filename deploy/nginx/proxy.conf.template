@@ -1,0 +1,43 @@
+# Полный TLS-конфиг. Устанавливается вместо http-only.conf.template
+# скриптом deploy/scripts/issue-cert.sh сразу после успешного выпуска
+# сертификата Let's Encrypt — вручную включать не нужно.
+server {
+    listen 80;
+    server_name ${DOMAIN};
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host:${HTTPS_PORT}$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    server_name ${DOMAIN};
+
+    ssl_certificate     /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+
+    # Синхронно с MAX_PHOTO_SIZE_MB (20 МБ по умолчанию) + запас на заголовки.
+    client_max_body_size 25m;
+
+    location /api/v1/ {
+        proxy_pass http://api:8000/api/v1/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /uploads/ {
+        proxy_pass http://api:8000/uploads/;
+    }
+
+    location / {
+        proxy_pass http://frontend:80;
+        proxy_set_header Host $host;
+    }
+}

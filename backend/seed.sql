@@ -8,6 +8,6 @@ VALUES (
     'admin',
     '$2b$12$p9sdkXbiFFkWtQv5e81cP.rv1TkBThZouKjalZzEGwuSBDCx3QPkS',
     'Администратор Системы',
-    'system_admin',
+    'admin',
     TRUE
 );

@@ -6,17 +6,20 @@ import type {
   SiteOut,
   SiteListOut,
   ChecklistTemplateOut,
-  ChecklistItemOut,
   InspectionOut,
   InspectionListOut,
-  ChecklistAnswerOut,
   IssueOut,
   IssueCreate,
   PhotoOut,
+  UserAdminOut,
+  UserInviteCreate,
+  UserInviteCreated,
+  UserInvitePreview,
+  UserRoleUpdate,
 } from '@/types'
 
 const api = axios.create({
-  baseURL: '/api/v1',
+  baseURL: import.meta.env.VITE_API_URL || '/api/v1',
   headers: { 'Content-Type': 'application/json' },
 })
 
@@ -46,6 +49,20 @@ api.interceptors.response.use(
 export const authApi = {
   login: (data: LoginRequest) =>
     api.post<LoginResponse>('/auth/login', data).then((r) => r.data),
+
+  createInvite: (data: UserInviteCreate) =>
+    api.post<UserInviteCreated>('/auth/invites', data).then((r) => r.data),
+
+  previewInvite: (token: string) =>
+    api.get<UserInvitePreview>(`/auth/invites/${token}`).then((r) => r.data),
+
+  completeInvite: (token: string, password: string) =>
+    api.post<LoginResponse>(`/auth/invites/${token}/complete`, { password }).then((r) => r.data),
+
+  listUsers: () => api.get<UserAdminOut[]>('/auth/users').then((r) => r.data),
+
+  updateUser: (id: string, data: UserRoleUpdate) =>
+    api.patch<UserAdminOut>(`/auth/users/${id}`, data).then((r) => r.data),
 }
 
 // ── Districts ──

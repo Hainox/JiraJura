@@ -1,0 +1,29 @@
+# Бутстрап-конфиг: используется ДО выпуска TLS-сертификата (нет файлов
+# сертификата — блок "listen 443 ssl" не может стартовать). Обслуживает
+# ACME-челлендж и, для удобства, само приложение по обычному HTTP на время
+# первого запуска. Автоматически заменяется на полный TLS-конфиг скриптом
+# deploy/scripts/issue-cert.sh после успешного выпуска сертификата — вручную
+# редактировать не нужно.
+server {
+    listen 80;
+    server_name ${DOMAIN};
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location /api/v1/ {
+        proxy_pass http://api:8000/api/v1/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /uploads/ {
+        proxy_pass http://api:8000/uploads/;
+    }
+
+    location / {
+        proxy_pass http://frontend:80;
+        proxy_set_header Host $host;
+    }
+}

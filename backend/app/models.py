@@ -30,7 +30,7 @@ EQUIPMENT_TYPE_ENUM = Enum(
 )
 
 USER_ROLE_ENUM = Enum(
-    'inspector', 'district_manager', 'okrug_admin', 'system_admin',
+    'inspector', 'reviewer', 'admin',
     name='user_role', create_type=False,
 )
 
@@ -140,6 +140,22 @@ class User(Base):
     district_ref = relationship("District", back_populates="users")
     inspections = relationship("Inspection", back_populates="inspector")
     assigned_issues = relationship("Issue", back_populates="assigned_user", foreign_keys="Issue.assigned_to")
+
+
+class UserInvite(Base):
+    """Приглашение на регистрацию: админ создаёт со сгенерированной ролью/районом,
+    сам пользователь по ссылке с токеном задаёт себе пароль."""
+    __tablename__ = "user_invites"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    login = Column(String(50), unique=True, nullable=False)
+    full_name = Column(String(200), nullable=False)
+    role = Column(USER_ROLE_ENUM, nullable=False)
+    district_id = Column(UUID(as_uuid=True), ForeignKey("districts.id"), nullable=True)
+    token_hash = Column(String(128), nullable=False)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    used_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class ChecklistTemplate(Base):

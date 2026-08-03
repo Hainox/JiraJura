@@ -4,7 +4,7 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { inspectionsApi, issuesApi } from '@/lib/api'
 import type { InspectionOut, IssueOut } from '@/types'
 import {
-  ArrowLeft, CheckCircle2, AlertTriangle, HelpCircle,
+  ArrowLeft, AlertTriangle,
   FileText, Send
 } from 'lucide-react'
 import toast from 'react-hot-toast'

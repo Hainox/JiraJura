@@ -90,6 +90,37 @@ print(hash_password('ВАШ_ПАРОЛЬ'))
 (crontab -l 2>/dev/null; echo "0 3 * * * cd /opt/jirajura && ./deploy/scripts/renew-cert.sh >> /var/log/jirajura-renew.log 2>&1") | crontab -
 ```
 
+## 4.5. Импорт площадок из KML
+
+Площадки заводятся импортом KML-выгрузок (`backend/import_kml.py`). Скрипт уже
+входит в образ api, вместе с ним в контейнере есть psycopg2.
+
+1. Скопируйте KML-файлы на сервер (с локальной машины, PowerShell/терминал):
+```powershell
+ssh root@82.23.173.215 "mkdir -p /opt/jirajura/kml"
+scp "C:\путь\к\Детская_площадка.kml" root@82.23.173.215:/opt/jirajura/kml/
+scp "C:\путь\к\Спортивная_площадка.kml" root@82.23.173.215:/opt/jirajura/kml/
+```
+
+2. Запустите импорт (на сервере, из `/opt/jirajura`):
+```bash
+docker compose -f docker-compose.prod.yml run --rm \
+  -v /opt/jirajura/kml:/kml:ro \
+  api python import_kml.py \
+  --db-url "postgresql://postgres:$(grep '^POSTGRES_PASSWORD=' .env | cut -d= -f2)@db:5432/sao_inspection" \
+  --kml "/kml/Детская_площадка.kml=Детская площадка" \
+  --kml "/kml/Спортивная_площадка.kml=Спортивная площадка" \
+  --wipe
+```
+
+⚠️ `--wipe` — осознанное подтверждение: импорт **замещает** все площадки/дворы/районы
+и удаляет связанные обходы/замечания/фото. Пользователи и чек-листы не трогаются.
+Нормально при первичном наполнении; на живой системе с накопленными обходами
+сначала сделайте бэкап (см. ниже).
+
+Проверка: обновите приложение в браузере — на карте и во вкладке «Список» должны
+появиться площадки.
+
 ## 5. Бэкапы
 
 ```bash

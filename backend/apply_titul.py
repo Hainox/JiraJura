@@ -23,8 +23,12 @@ import psycopg2
 # («улица Расковой дом 16, корпус 1»), и в сокращённой («Расковой ул. 16 к.1»).
 _CANON = {
     "улица": "ул", "ул": "ул",
-    "проспект": "просп", "просп": "просп", "пр-т": "просп",
-    "проезд": "пр-д", "пр-д": "пр-д",
+    # «пр.» в перечне используется и для проезда, и встречается для проспекта —
+    # сводим проспект/проезд в один токен: ложное равенство «X проспект»==«X проезд»
+    # требует существования обеих улиц с одним именем (в САО таких нет), а
+    # ложное РАЗЛИЧИЕ из-за «пр.» уже приводило к ошибочному отключению площадок
+    "проспект": "пр", "просп": "пр", "пр-т": "пр",
+    "проезд": "пр", "пр-д": "пр", "пр": "пр",
     "переулок": "пер", "пер": "пер",
     "бульвар": "б-р", "бульв": "б-р", "б-р": "б-р",
     "шоссе": "ш", "ш": "ш",
@@ -80,32 +84,64 @@ def main():
     """)
     sites = cur.fetchall()
 
+    # Для ослабленного прохода: строка перечня может покрывать несколько домов
+    # («47 к.2, 49 к.2, 49 к.3»), а в БД это отдельные дворы — и наоборот.
+    # Считаем совпадением, если токены одного адреса — подмножество другого.
+    from collections import Counter
+    want_by_type = {}
+    for stype, key in want_addr:
+        want_by_type.setdefault(stype, []).append(Counter(key))
+
+    def relaxed_match(stype: str, key: tuple) -> bool:
+        c = Counter(key)
+        for w in want_by_type.get(stype, ()):
+            if not (c - w) or not (w - c):
+                return True
+        return False
+
     keep, drop = [], []
     matched_ids = set()
-    by_id = by_addr = 0
+    by_id = by_addr = by_subset = 0
     for sid, kml_id, stype, court, district, is_active in sites:
         kml_id = (kml_id or "").strip()
+        key = addr_key(court)
         if kml_id in want_ids:
             keep.append(sid)
             matched_ids.add(kml_id)
             by_id += 1
-        elif (stype, addr_key(court)) in want_addr:
+        elif (stype, key) in want_addr:
             keep.append(sid)
             by_addr += 1
+        elif relaxed_match(stype, key):
+            keep.append(sid)
+            by_subset += 1
         else:
             drop.append((sid, district, stype, court, kml_id))
 
     print(f"Строк в перечне: {csv_rows} (с ID: {len(want_ids)})")
     print(f"Площадок в БД:  {len(sites)}")
-    print(f"Остаются активными: {len(keep)}  (по ID: {by_id}, по адресу+типу: {by_addr})")
+    print(f"Остаются активными: {len(keep)}  (по ID: {by_id}, по адресу+типу: {by_addr}, "
+          f"по частичному совпадению адреса: {by_subset})")
     print(f"Будут отключены:    {len(drop)}")
     if by_id == 0:
         print("Матчинг по ID не сработал (в KML другие идентификаторы) — "
               "сверка идёт по нормализованному адресу и типу.")
 
-    # адреса из перечня, не нашедшие НИ одной площадки в БД
+    # адреса из перечня, не нашедшие НИ одной площадки в БД (в т.ч. частично)
     db_keys = {(stype, addr_key(court)) for _, _, stype, court, _, _ in sites}
-    absent = [a for a in want_addr if a not in db_keys]
+    db_by_type = {}
+    for _, _, stype, court, _, _ in sites:
+        db_by_type.setdefault(stype, []).append(Counter(addr_key(court)))
+
+    def covered_by_db(stype: str, key: tuple) -> bool:
+        c = Counter(key)
+        for w in db_by_type.get(stype, ()):
+            if not (c - w) or not (w - c):
+                return True
+        return False
+
+    absent = [(stype, key) for stype, key in want_addr
+              if (stype, key) not in db_keys and not covered_by_db(stype, key)]
     print(f"Адресов из перечня, отсутствующих в БД: {len(absent)} "
           f"(таких площадок не было в KML — завести автоматически нельзя)")
     for stype, key in absent[:10]:

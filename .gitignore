@@ -29,6 +29,14 @@ backend/uploads/*
 !backend/uploads/**/
 !backend/uploads/**/.gitkeep
 
+# === Deploy: generated/secret at runtime, not source ===
+deploy/nginx/active.conf.template
+deploy/certbot/conf/*
+!deploy/certbot/conf/.gitkeep
+deploy/certbot/www/*
+!deploy/certbot/www/.gitkeep
+/backups/
+
 # === Editor / OS ===
 .vscode/*
 !.vscode/extensions.json

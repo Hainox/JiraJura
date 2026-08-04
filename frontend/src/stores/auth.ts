@@ -8,6 +8,7 @@ interface AuthState {
   login: (token: string, user: UserOut) => void
   logout: () => void
   hydrate: () => void
+  setUser: (user: UserOut) => void
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -38,5 +39,10 @@ export const useAuthStore = create<AuthState>((set) => ({
         localStorage.removeItem('user')
       }
     }
+  },
+
+  setUser: (user) => {
+    localStorage.setItem('user', JSON.stringify(user))
+    set({ user })
   },
 }))

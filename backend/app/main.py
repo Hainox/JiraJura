@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings, DEV_SECRET_KEY
-from app.routers import auth, districts, sites, inspections, issues, reports
+from app.routers import auth, districts, sites, inspections, issues, reports, audit, dashboard, pdf_report
 
 if settings.APP_ENV == "production" and settings.SECRET_KEY == DEV_SECRET_KEY:
     raise RuntimeError(
@@ -35,6 +35,9 @@ app.include_router(sites.router, prefix="/api/v1/sites", tags=["sites"])
 app.include_router(inspections.router, prefix="/api/v1/inspections", tags=["inspections"])
 app.include_router(issues.router, prefix="/api/v1/issues", tags=["issues"])
 app.include_router(reports.router, prefix="/api/v1/reports", tags=["reports"])
+app.include_router(audit.router, prefix="/api/v1/audit", tags=["audit"])
+app.include_router(dashboard.router, prefix="/api/v1/dashboard", tags=["dashboard"])
+app.include_router(pdf_report.router, prefix="/api/v1/reports/pdf", tags=["pdf"])
 
 # Статические файлы (фото)
 Path("uploads").mkdir(exist_ok=True)

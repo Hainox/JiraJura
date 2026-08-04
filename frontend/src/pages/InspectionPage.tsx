@@ -7,7 +7,7 @@ import type { InspectionOut, ChecklistTemplateOut, ChecklistItemOut, PhotoOut } 
 import {
   ArrowLeft, Send, X, AlertTriangle, CheckCircle, Eye,
   CheckCircle2, HelpCircle, ChevronRight, Plus, Camera,
-  Flag, RotateCcw
+  Flag, RotateCcw, FileText
 } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
 
@@ -306,6 +306,13 @@ export default function InspectionPage() {
         >
           <Camera className="w-4 h-4 inline mr-1" />
           {photos.length > 0 ? photos.length : ''}
+        </button>
+        <button
+          onClick={() => window.open(`/api/v1/reports/pdf/${inspectionId}`, '_blank')}
+          className="text-xs bg-white/20 px-3 py-1.5 rounded-lg hover:bg-white/30"
+          title="PDF-отчёт"
+        >
+          <FileText className="w-4 h-4 inline mr-1" />
         </button>
         {isReviewer && !isInspector && inspection.status !== 'planned' && (
           <button

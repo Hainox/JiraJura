@@ -17,6 +17,7 @@ from app.services.auth import (
     verify_password, hash_password, create_access_token, get_current_user,
 )
 from app.services.permissions import require_role
+from app.services.audit import log_action
 
 router = APIRouter()
 
@@ -81,6 +82,7 @@ async def create_invite(
         expires_at=expires_at,
     )
     db.add(invite)
+    await log_action(db, str(current_user.id), "invite_create", "user_invite", str(invite.id), {"login": data.login, "role": data.role})
     await db.commit()
     await db.refresh(invite)
 
@@ -176,6 +178,7 @@ async def update_user(
     if data.phone is not None:
         user.phone = data.phone
 
+    await log_action(db, str(current_user.id), "user_update", "user", user_id, data.model_dump(exclude_none=True))
     await db.commit()
     await db.refresh(user)
     return UserAdminOut.model_validate(user)
@@ -193,6 +196,7 @@ async def delete_user(
     user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if not user:
         raise HTTPException(404, "Пользователь не найден")
+    await log_action(db, str(current_user.id), "user_delete", "user", user_id, {"login": user.login})
     await db.delete(user)
     await db.commit()
     return {"ok": True}

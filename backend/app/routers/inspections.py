@@ -22,6 +22,7 @@ from app.schemas import (
     DistrictOut, CourtyardOut, PhotoOut,
 )
 from app.services.auth import get_current_user
+from app.services.audit import log_action
 
 router = APIRouter()
 
@@ -156,6 +157,9 @@ async def update_inspection(
     if current_user.role in ("reviewer", "admin") and data.status:
         obj.reviewed_by = current_user.id
         obj.reviewed_at = datetime.utcnow()
+        await log_action(db, str(current_user.id), "inspection_review", "inspection", inspection_id, {
+            "status": data.status, "reviewer_comment": data.reviewer_comment,
+        })
 
     if data.answers:
         for ans in data.answers:

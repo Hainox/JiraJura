@@ -12,6 +12,7 @@ from app.models import Issue, IssueStatusHistory, Site, Courtyard, District, Use
 from app.schemas import IssueCreate, IssueUpdate, IssueOut, IssueListOut, UserOut
 from app.services.auth import get_current_user
 from app.services.permissions import require_role
+from app.services.audit import log_action
 
 router = APIRouter()
 
@@ -186,6 +187,9 @@ async def update_issue(
         issue.due_date = data.due_date
 
     issue.updated_at = datetime.utcnow()
+    await log_action(db, str(current_user.id), "issue_update", "issue", issue_id, {
+        "status": data.status, "assigned_to": str(data.assigned_to) if data.assigned_to else None,
+    })
     await db.commit()
 
     # перезагружаем

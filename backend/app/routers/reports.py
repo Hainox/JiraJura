@@ -360,34 +360,76 @@ async def export_xlsx(
         )).scalar_one() or 0
         summary_data.append((d.name, total_sites, inspected, created, closed, open_now, overdue))
 
+    # ── Динамика по дням (инспектор × дата) ──
+    from collections import defaultdict
+    day_stats_q = (
+        select(
+            func.date(Inspection.created_at), User.full_name, func.count()
+        )
+        .join(User, Inspection.inspector_id == User.id)
+        .group_by(func.date(Inspection.created_at), User.full_name)
+        .order_by(func.date(Inspection.created_at).desc(), User.full_name)
+    )
+    if district_id:
+        day_stats_q = day_stats_q.join(Site).join(Courtyard).where(Courtyard.district_id == district_id)
+    day_stats_q = period(day_stats_q, Inspection.created_at)
+    day_stats = (await db.execute(day_stats_q)).all()
+
+    # группируем: дата → {инспектор: кол-во}
+    day_data: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    inspectors_set: set[str] = set()
+    for dt, name, cnt in day_stats:
+        day_data[str(dt)][name] = cnt
+        inspectors_set.add(name)
+    sorted_inspectors = sorted(inspectors_set)
+    dynamics_rows = []
+    for dt in sorted(day_data.keys(), reverse=True):
+        row = [dt] + [day_data[dt].get(insp, 0) for insp in sorted_inspectors]
+        dynamics_rows.append(tuple(row))
+
+    # ── Просроченные замечания ──
+    overdue_q = (
+        select(Issue, District.name, Courtyard.name, User.full_name)
+        .join(Site, Issue.site_id == Site.id)
+        .join(Courtyard, Site.courtyard_id == Courtyard.id)
+        .join(District, Courtyard.district_id == District.id)
+        .join(User, Issue.created_by == User.id)
+        .where(Issue.status == "overdue")
+        .order_by(Issue.due_date)
+    )
+    if district_id:
+        overdue_q = overdue_q.where(District.id == district_id)
+    overdue_items = (await db.execute(overdue_q)).all()
+    overdue_rows = [
+        (iss.title, dist_name, court_name, author_name,
+         _fmt_dt(iss.created_at), _fmt_dt(iss.due_date), iss.description or "")
+        for iss, dist_name, court_name, author_name in overdue_items
+    ]
+
     # ── Сборка файла ──
     wb = Workbook()
-    wb.remove(wb.active)  # пустой дефолтный лист
+    wb.remove(wb.active)
 
-    _sheet(
-        wb, "Сводка по районам",
-        ["Район", "Всего площадок", "Обходов за период", "Замечаний создано",
-         "Закрыто", "Открыто сейчас", "Просрочено"],
-        summary_data, [24, 15, 17, 17, 10, 14, 12],
-    )
-    _sheet(
-        wb, "Обходы",
-        ["Дата", "Район", "Двор", "Тип площадки", "Инспектор", "Телефон",
-         "Статус", "Начат", "Завершён", "Пунктов ОК", "Дефектов", "Фото", "Комментарий"],
-        insp_data, [16, 20, 40, 20, 24, 16, 14, 16, 16, 12, 10, 7, 40],
-    )
-    _sheet(
-        wb, "Нарушения по чек-листу",
-        ["Дата обхода", "Район", "Двор", "Тип площадки", "Категория",
-         "Пункт чек-листа", "Комментарий инспектора", "Инспектор"],
-        defect_data, [16, 20, 40, 20, 18, 50, 40, 24],
-    )
-    _sheet(
-        wb, "Замечания",
-        ["Дата", "Район", "Двор", "Заголовок", "Описание", "Критичность",
-         "Статус", "Автор", "Назначено", "Срок", "Устранено"],
-        iss_data, [16, 20, 40, 30, 40, 12, 12, 24, 24, 16, 16],
-    )
+    _sheet(wb, "Сводка по районам",
+        ["Район", "Всего площадок", "Обходов за период", "Замечаний создано", "Закрыто", "Открыто сейчас", "Просрочено"],
+        summary_data, [24, 15, 17, 17, 10, 14, 12])
+    _sheet(wb, "Обходы",
+        ["Дата", "Район", "Двор", "Тип площадки", "Инспектор", "Телефон", "Статус", "Начат", "Завершён", "Пунктов ОК", "Дефектов", "Фото", "Комментарий"],
+        insp_data, [16, 20, 40, 20, 24, 16, 14, 16, 16, 12, 10, 7, 40])
+    _sheet(wb, "Нарушения по чек-листу",
+        ["Дата обхода", "Район", "Двор", "Тип площадки", "Категория", "Пункт чек-листа", "Комментарий инспектора", "Инспектор"],
+        defect_data, [16, 20, 40, 20, 18, 50, 40, 24])
+    _sheet(wb, "Замечания",
+        ["Дата", "Район", "Двор", "Заголовок", "Описание", "Критичность", "Статус", "Автор", "Назначено", "Срок", "Устранено"],
+        iss_data, [16, 20, 40, 30, 40, 12, 12, 24, 24, 16, 16])
+    _sheet(wb, "Просроченные замечания",
+        ["Заголовок", "Район", "Двор", "Автор", "Создано", "Срок", "Описание"],
+        overdue_rows, [30, 20, 40, 24, 16, 16, 40])
+
+    if dynamics_rows:
+        _sheet(wb, "Динамика",
+            ["Дата"] + sorted_inspectors,
+            dynamics_rows, [12] + [12] * len(sorted_inspectors))
 
     buf = io.BytesIO()
     wb.save(buf)

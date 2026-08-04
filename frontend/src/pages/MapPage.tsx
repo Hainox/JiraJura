@@ -7,7 +7,7 @@ import { sitesApi, districtsApi, reportsApi, inspectionsApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
 import { useTheme } from '@/lib/theme'
 import type { SiteOut, DistrictOut, InspectionOut } from '@/types'
-import { List, Map as MapIcon, LogOut, ChevronRight, Users, Download, ClipboardCheck, Clock, CheckCircle2, AlertTriangle, AlertCircle, Sun, Moon, UserCircle } from 'lucide-react'
+import { List, Map as MapIcon, LogOut, ChevronRight, Users, Download, ClipboardCheck, Clock, CheckCircle2, AlertTriangle, AlertCircle, Sun, Moon, UserCircle, BarChart3 } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
 import 'leaflet/dist/leaflet.css'
 
@@ -144,14 +144,24 @@ export default function MapPage() {
         </div>
         <div className="flex gap-1">
           {user?.role !== 'inspector' && (
-            <button onClick={() => navigate('/issues')} className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="Замечания">
-              <AlertCircle className="w-5 h-5" />
-            </button>
+            <>
+              <button onClick={() => navigate('/dashboard')} className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="Дашборд">
+                <BarChart3 className="w-5 h-5" />
+              </button>
+              <button onClick={() => navigate('/issues')} className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="Замечания">
+                <AlertCircle className="w-5 h-5" />
+              </button>
+            </>
           )}
           {user?.role === 'admin' && (
-            <button onClick={() => navigate('/admin/users')} className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="Пользователи">
-              <Users className="w-5 h-5" />
-            </button>
+            <>
+              <button onClick={() => navigate('/admin/audit')} className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="Аудит">
+                <Clock className="w-5 h-5" />
+              </button>
+              <button onClick={() => navigate('/admin/users')} className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="Пользователи">
+                <Users className="w-5 h-5" />
+              </button>
+            </>
           )}
           {user?.role !== 'inspector' && (
             <button onClick={() => toast.promise(reportsApi.exportXlsx({ district_id: districtFilter }), {

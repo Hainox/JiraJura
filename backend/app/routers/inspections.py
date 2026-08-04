@@ -119,6 +119,7 @@ async def get_inspection(inspection_id: str, db: AsyncSession = Depends(get_db))
         selectinload(Inspection.site).selectinload(Site.courtyard).selectinload(Courtyard.district),
         selectinload(Inspection.inspector),
         selectinload(Inspection.answers),
+        selectinload(Inspection.reviewed_by_user),
     )
     obj = (await db.execute(q)).scalar_one_or_none()
     if not obj:
@@ -144,10 +145,17 @@ async def update_inspection(
             obj.completed_at = datetime.utcnow()
     if data.comment is not None:
         obj.comment = data.comment
+    if data.reviewer_comment is not None:
+        obj.reviewer_comment = data.reviewer_comment
     if data.gps_lat is not None:
         obj.gps_lat = data.gps_lat
     if data.gps_lon is not None:
         obj.gps_lon = data.gps_lon
+
+    # Если reviewer/admin меняет статус — фиксируем кто и когда проверил
+    if current_user.role in ("reviewer", "admin") and data.status:
+        obj.reviewed_by = current_user.id
+        obj.reviewed_at = datetime.utcnow()
 
     if data.answers:
         for ans in data.answers:
@@ -177,6 +185,7 @@ async def update_inspection(
         selectinload(Inspection.site).selectinload(Site.courtyard).selectinload(Courtyard.district),
         selectinload(Inspection.inspector),
         selectinload(Inspection.answers),
+        selectinload(Inspection.reviewed_by_user),
     )
     obj = (await db.execute(q)).scalar_one()
     return await _inspection_to_out(obj, db)
@@ -266,6 +275,8 @@ async def _inspection_to_out(i: Inspection, db: AsyncSession) -> InspectionOut:
     ).order_by(Photo.created_at.asc())
     photos = (await db.execute(photos_q)).scalars().all()
 
+    reviewer = UserOut.model_validate(i.reviewed_by_user) if i.reviewed_by_user else None
+
     return InspectionOut(
         id=i.id,
         site_id=i.site_id,
@@ -277,6 +288,9 @@ async def _inspection_to_out(i: Inspection, db: AsyncSession) -> InspectionOut:
         gps_lat=i.gps_lat,
         gps_lon=i.gps_lon,
         comment=i.comment,
+        reviewer_comment=i.reviewer_comment,
+        reviewed_by=reviewer,
+        reviewed_at=i.reviewed_at,
         created_at=i.created_at,
         site=SiteOut(
             id=i.site.id, type=i.site.type, area_m2=i.site.area_m2,

@@ -151,6 +151,9 @@ export interface InspectionOut {
   gps_lat?: number | string
   gps_lon?: number | string
   comment?: string
+  reviewer_comment?: string
+  reviewed_by?: UserOut | null
+  reviewed_at?: string
   created_at: string
   site: SiteOut
   answers: ChecklistAnswerOut[]

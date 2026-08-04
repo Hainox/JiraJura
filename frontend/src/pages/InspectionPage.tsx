@@ -2,20 +2,27 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { inspectionsApi, checklistsApi, issuesApi } from '@/lib/api'
+import { useAuthStore } from '@/stores/auth'
 import type { InspectionOut, ChecklistTemplateOut, ChecklistItemOut, PhotoOut } from '@/types'
 import {
-  ArrowLeft, Send, X, AlertTriangle,
+  ArrowLeft, Send, X, AlertTriangle, CheckCircle, Eye,
   CheckCircle2, HelpCircle, ChevronRight, Plus, Camera
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 type AnswerResult = 'ok' | 'defect' | 'pending'
 
+const STATUS_LABELS: Record<string, string> = {
+  planned: 'Запланирован', in_progress: 'В процессе',
+  completed: 'Завершён', issues_found: 'Есть нарушения', critical: 'Критический',
+}
+
 export default function InspectionPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const inspectionId = id!
+  const user = useAuthStore((s) => s.user)
 
   const [answers, setAnswers] = useState<Record<string, { result: AnswerResult; comment: string }>>({})
   const [activeItemId, setActiveItemId] = useState<string | null>(null)
@@ -29,11 +36,19 @@ export default function InspectionPage() {
   const itemFileInputRef = useRef<HTMLInputElement>(null)
   const [uploadingForItemId, setUploadingForItemId] = useState<string | null>(null)
 
+  // Reviewer state
+  const [reviewerComment, setReviewerComment] = useState('')
+  const [showReviewPanel, setShowReviewPanel] = useState(false)
+
   const { data: inspection, isLoading } = useQuery<InspectionOut>({
     queryKey: ['inspection', inspectionId],
     queryFn: () => inspectionsApi.get(inspectionId),
     enabled: !!inspectionId,
   })
+
+  const isInspector = user?.id === inspection?.inspector?.id
+  const isReviewer = user?.role === 'reviewer' || user?.role === 'admin'
+  const isReadOnly = isReviewer && !isInspector
 
   // Загружаем чек-лист по типу площадки
   const { data: checklists } = useQuery<ChecklistTemplateOut[]>({
@@ -62,7 +77,10 @@ export default function InspectionPage() {
     if (inspection?.photos) {
       setPhotos(inspection.photos)
     }
-  }, [inspection?.answers, inspection?.photos])
+    if (inspection?.reviewer_comment) {
+      setReviewerComment(inspection.reviewer_comment)
+    }
+  }, [inspection?.answers, inspection?.photos, inspection?.reviewer_comment])
 
   // Группируем фото: общие (inspection-level) и по пунктам чек-листа
   const generalPhotos = useMemo(
@@ -73,7 +91,6 @@ export default function InspectionPage() {
     const map: Record<string, PhotoOut[]> = {}
     for (const p of photos) {
       if (p.target_type === 'checklist_answer' && p.checklist_answer_id) {
-        // Связываем фото с checklist_item_id через ответы инспекции
         const answer = inspection?.answers?.find((a) => a.id === p.checklist_answer_id)
         if (answer) {
           const key = answer.checklist_item_id
@@ -101,6 +118,17 @@ export default function InspectionPage() {
       queryClient.invalidateQueries({ queryKey: ['inspection', inspectionId] })
     },
     onError: () => toast.error('Ошибка сохранения'),
+  })
+
+  const reviewMutation = useMutation({
+    mutationFn: (data: { status: string; reviewer_comment?: string }) =>
+      inspectionsApi.update(inspectionId, data),
+    onSuccess: () => {
+      toast.success('Проверено')
+      queryClient.invalidateQueries({ queryKey: ['inspection', inspectionId] })
+      setShowReviewPanel(false)
+    },
+    onError: () => toast.error('Ошибка'),
   })
 
   const createIssueMutation = useMutation({
@@ -132,7 +160,6 @@ export default function InspectionPage() {
 
   const uploadItemPhotoMutation = useMutation({
     mutationFn: ({ file, checklistItemId }: { file: File; checklistItemId: string }) => {
-      // Находим answer_id для этого checklist_item
       const answer = inspection?.answers?.find((a) => a.checklist_item_id === checklistItemId)
       return inspectionsApi.uploadPhoto(inspectionId, file, answer?.id)
     },
@@ -169,7 +196,7 @@ export default function InspectionPage() {
   }
 
   const handleMark = (itemId: string, result: AnswerResult) => {
-    if (result === 'pending') return
+    if (isReadOnly || result === 'pending') return
     setAnswers((prev) => ({
       ...prev,
       [itemId]: { result, comment: prev[itemId]?.comment ?? '' },
@@ -178,6 +205,7 @@ export default function InspectionPage() {
   }
 
   const handleComment = (itemId: string, comment: string) => {
+    if (isReadOnly) return
     setAnswers((prev) => ({
       ...prev,
       [itemId]: { ...(prev[itemId] ?? { result: 'pending' }), comment },
@@ -229,11 +257,14 @@ export default function InspectionPage() {
             <span>✓ {stats.ok}</span>
             <span>✕ {stats.nok}</span>
             <span>? {stats.pending}</span>
+            {isReadOnly && <span className="opacity-70">| {STATUS_LABELS[inspection.status] ?? inspection.status}</span>}
           </div>
         </div>
-        <button onClick={() => saveMutation.mutate()} className="text-xs bg-white/20 px-3 py-1.5 rounded-lg hover:bg-white/30">
-          Сохранить
-        </button>
+        {!isReadOnly && (
+          <button onClick={() => saveMutation.mutate()} className="text-xs bg-white/20 px-3 py-1.5 rounded-lg hover:bg-white/30">
+            Сохранить
+          </button>
+        )}
         <button
           onClick={() => setShowPhotoPanel((v) => !v)}
           className={`text-xs px-3 py-1.5 rounded-lg ${
@@ -243,54 +274,102 @@ export default function InspectionPage() {
           <Camera className="w-4 h-4 inline mr-1" />
           {photos.length > 0 ? photos.length : ''}
         </button>
+        {isReviewer && !isInspector && (
+          <button
+            onClick={() => setShowReviewPanel((v) => !v)}
+            className={`text-xs px-3 py-1.5 rounded-lg font-medium ${
+              showReviewPanel ? 'bg-amber-500 text-white' : 'bg-white/20 hover:bg-white/30'
+            }`}
+          >
+            <Eye className="w-4 h-4 inline mr-1" />
+            Проверить
+          </button>
+        )}
       </div>
+
+      {/* Reviewer info bar */}
+      {inspection.reviewed_by && (
+        <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-xs text-amber-800 flex items-center gap-2">
+          <CheckCircle className="w-3.5 h-3.5" />
+          Проверено: {inspection.reviewed_by.full_name}
+          {inspection.reviewed_at && `, ${new Date(inspection.reviewed_at).toLocaleDateString('ru')}`}
+        </div>
+      )}
+
+      {/* Панель проверяющего */}
+      {showReviewPanel && isReviewer && (
+        <div className="bg-white border-b p-3 shrink-0 space-y-3">
+          <div className="text-sm font-semibold text-gray-800">Проверка обхода</div>
+          <textarea
+            className="input-field text-sm"
+            rows={2}
+            placeholder="Комментарий проверяющего..."
+            value={reviewerComment}
+            onChange={(e) => setReviewerComment(e.target.value)}
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={() => reviewMutation.mutate({ status: 'completed', reviewer_comment: reviewerComment })}
+              disabled={reviewMutation.isPending}
+              className="flex-1 py-2 text-sm bg-green-600 text-white rounded-lg font-medium hover:bg-green-700"
+            >
+              ✓ Принять
+            </button>
+            <button
+              onClick={() => reviewMutation.mutate({ status: 'issues_found', reviewer_comment: reviewerComment })}
+              disabled={reviewMutation.isPending}
+              className="flex-1 py-2 text-sm bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700"
+            >
+              ⚠ Есть нарушения
+            </button>
+            <button
+              onClick={() => reviewMutation.mutate({ status: 'critical', reviewer_comment: reviewerComment })}
+              disabled={reviewMutation.isPending}
+              className="flex-1 py-2 text-sm bg-red-600 text-white rounded-lg font-medium hover:bg-red-700"
+            >
+              ✕ Критический
+            </button>
+          </div>
+          {inspection.reviewer_comment && (
+            <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded">
+              Предыдущий комментарий: {inspection.reviewer_comment}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Панель общих фото */}
       {showPhotoPanel && (
         <div className="bg-white border-b p-3 shrink-0">
-          <div className="text-xs text-gray-500 mb-2 font-medium">Общие фото обхода</div>
+          <div className="text-xs text-gray-500 mb-2 font-medium">
+            {isReadOnly ? 'Фото обхода' : 'Общие фото обхода'}
+          </div>
           <div className="flex flex-wrap gap-2 mb-2">
             {generalPhotos.map((p) => (
               <a key={p.id} href={p.url} target="_blank" rel="noreferrer">
-                <img
-                  src={p.url}
-                  alt=""
-                  className="w-16 h-16 object-cover rounded-lg border"
-                />
+                <img src={p.url} alt="" className="w-16 h-16 object-cover rounded-lg border" />
               </a>
             ))}
             {generalPhotos.length === 0 && (
-              <div className="text-xs text-gray-400 py-2">Нет общих фотографий</div>
+              <div className="text-xs text-gray-400 py-2">Нет фотографий</div>
             )}
           </div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            className="hidden"
-            onChange={handleGeneralPhotoUpload}
-          />
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploadGeneralPhotoMutation.isPending}
-            className="btn-outline py-1.5 px-3 text-sm"
-          >
-            <Camera className="w-4 h-4 inline mr-1" />
-            {uploadGeneralPhotoMutation.isPending ? 'Загрузка...' : 'Добавить общее фото'}
-          </button>
+          {!isReadOnly && (
+            <>
+              <input ref={fileInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleGeneralPhotoUpload} />
+              <button onClick={() => fileInputRef.current?.click()} disabled={uploadGeneralPhotoMutation.isPending} className="btn-outline py-1.5 px-3 text-sm">
+                <Camera className="w-4 h-4 inline mr-1" />
+                {uploadGeneralPhotoMutation.isPending ? 'Загрузка...' : 'Добавить общее фото'}
+              </button>
+            </>
+          )}
         </div>
       )}
 
       {/* Скрытый input для загрузки фото пункта */}
-      <input
-        ref={itemFileInputRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        className="hidden"
-        onChange={handleItemPhotoUpload}
-      />
+      {!isReadOnly && (
+        <input ref={itemFileInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleItemPhotoUpload} />
+      )}
 
       {/* Прогресс-бар */}
       <div className="h-1 bg-gray-200 shrink-0">
@@ -304,18 +383,11 @@ export default function InspectionPage() {
         {allItems.map((item) => {
           const itemPhotos = photosByAnswer[item.id] ?? []
           return (
-          <div
-            key={item.id}
-            className={`card transition-colors ${
-              activeItemId === item.id ? 'border-primary-400 ring-2 ring-primary-100' : ''
-            }`}
-          >
+          <div key={item.id} className={`card transition-colors ${activeItemId === item.id ? 'border-primary-400 ring-2 ring-primary-100' : ''}`}>
             <div className="flex items-start gap-3">
               {getStatusIcon(item.id)}
               <div className="flex-1 min-w-0">
-                <div className="text-xs text-gray-400 uppercase font-semibold">
-                  {item.category ?? 'Общее'}
-                </div>
+                <div className="text-xs text-gray-400 uppercase font-semibold">{item.category ?? 'Общее'}</div>
                 <div className="text-sm text-gray-800 mt-0.5">{item.question}</div>
 
                 {(answers[item.id]?.result && answers[item.id]?.result !== 'pending') && (
@@ -329,123 +401,89 @@ export default function InspectionPage() {
                   </div>
                 )}
 
-                {/* Фото под пунктом с дефектом */}
-                {answers[item.id]?.result === 'defect' && (
-                  <div className="mt-2">
-                    {itemPhotos.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 mb-1.5">
-                        {itemPhotos.map((p) => (
-                          <a key={p.id} href={p.url} target="_blank" rel="noreferrer">
-                            <img
-                              src={p.url}
-                              alt=""
-                              className="w-12 h-12 object-cover rounded border"
-                            />
-                          </a>
-                        ))}
-                      </div>
-                    )}
+                {/* Фото под пунктом */}
+                {itemPhotos.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {itemPhotos.map((p) => (
+                      <a key={p.id} href={p.url} target="_blank" rel="noreferrer">
+                        <img src={p.url} alt="" className="w-12 h-12 object-cover rounded border" />
+                      </a>
+                    ))}
+                  </div>
+                )}
+
+                {/* Кнопка добавления фото (только для инспектора при дефекте) */}
+                {!isReadOnly && answers[item.id]?.result === 'defect' && (
+                  <div className="mt-1.5">
                     <button
                       onClick={() => triggerItemUpload(item.id)}
                       disabled={uploadItemPhotoMutation.isPending && uploadingForItemId === item.id}
                       className="text-xs text-primary-600 hover:text-primary-800 flex items-center gap-1"
                     >
                       <Camera className="w-3 h-3" />
-                      {uploadItemPhotoMutation.isPending && uploadingForItemId === item.id
-                        ? 'Загрузка...'
-                        : itemPhotos.length > 0
-                          ? `+ фото (${itemPhotos.length})`
-                          : 'Добавить фото дефекта'}
+                      {uploadItemPhotoMutation.isPending && uploadingForItemId === item.id ? 'Загрузка...' : 'Добавить фото дефекта'}
                     </button>
                   </div>
                 )}
               </div>
-              <ChevronRight className="w-4 h-4 text-gray-300 shrink-0 mt-1" />
+              {!isReadOnly && <ChevronRight className="w-4 h-4 text-gray-300 shrink-0 mt-1" />}
             </div>
 
-            {/* Кнопки оценки */}
-            <div className="flex gap-2 mt-3">
-              <button
-                onClick={() => handleMark(item.id, 'ok')}
-                className={`flex-1 py-2 text-sm rounded-lg font-medium transition-all ${
-                  answers[item.id]?.result === 'ok'
-                    ? 'bg-green-500 text-white'
-                    : 'bg-green-50 text-green-700 hover:bg-green-100'
-                }`}
-              >
-                ✓ ОК
-              </button>
-              <button
-                onClick={() => handleMark(item.id, 'defect')}
-                className={`flex-1 py-2 text-sm rounded-lg font-medium transition-all ${
-                  answers[item.id]?.result === 'defect'
-                    ? 'bg-red-500 text-white'
-                    : 'bg-red-50 text-red-700 hover:bg-red-100'
-                }`}
-              >
-                ✕ Не ОК
-              </button>
-            </div>
+            {/* Кнопки оценки (только для инспектора) */}
+            {!isReadOnly && (
+              <div className="flex gap-2 mt-3">
+                <button
+                  onClick={() => handleMark(item.id, 'ok')}
+                  className={`flex-1 py-2 text-sm rounded-lg font-medium transition-all ${
+                    answers[item.id]?.result === 'ok' ? 'bg-green-500 text-white' : 'bg-green-50 text-green-700 hover:bg-green-100'
+                  }`}
+                >
+                  ✓ ОК
+                </button>
+                <button
+                  onClick={() => handleMark(item.id, 'defect')}
+                  className={`flex-1 py-2 text-sm rounded-lg font-medium transition-all ${
+                    answers[item.id]?.result === 'defect' ? 'bg-red-500 text-white' : 'bg-red-50 text-red-700 hover:bg-red-100'
+                  }`}
+                >
+                  ✕ Не ОК
+                </button>
+              </div>
+            )}
           </div>
         )})}
       </div>
 
-      {/* Нижняя панель */}
-      {activeItem && (
+      {/* Нижняя панель (только для инспектора) */}
+      {!isReadOnly && activeItem && (
         <div className="bg-white border-t p-4 shrink-0 max-h-[40vh] overflow-y-auto">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold text-sm text-gray-800 truncate flex-1">
-              {activeItem.question}
-            </h3>
+            <h3 className="font-semibold text-sm text-gray-800 truncate flex-1">{activeItem.question}</h3>
             <button onClick={() => setActiveItemId(null)} className="p-1 hover:bg-gray-100 rounded-lg">
               <X className="w-4 h-4 text-gray-400" />
             </button>
           </div>
-
           <textarea
-            className="input-field mb-3 text-sm"
-            rows={2}
-            placeholder="Комментарий..."
+            className="input-field mb-3 text-sm" rows={2} placeholder="Комментарий..."
             value={answers[activeItem.id]?.comment ?? ''}
             onChange={(e) => handleComment(activeItem.id, e.target.value)}
           />
-
           {!showIssueForm ? (
             <button onClick={() => setShowIssueForm(true)} className="btn-outline w-full py-2 text-sm">
-              <Plus className="w-4 h-4 inline mr-1" />
-              Создать замечание
+              <Plus className="w-4 h-4 inline mr-1" />Создать замечание
             </button>
           ) : (
             <div className="space-y-2">
-              <input
-                className="input-field text-sm"
-                placeholder="Заголовок замечания"
-                value={issueTitle}
-                onChange={(e) => setIssueTitle(e.target.value)}
-              />
-              <textarea
-                className="input-field text-sm"
-                rows={2}
-                placeholder="Описание (необязательно)"
-                value={issueDesc}
-                onChange={(e) => setIssueDesc(e.target.value)}
-              />
+              <input className="input-field text-sm" placeholder="Заголовок замечания" value={issueTitle} onChange={(e) => setIssueTitle(e.target.value)} />
+              <textarea className="input-field text-sm" rows={2} placeholder="Описание (необязательно)" value={issueDesc} onChange={(e) => setIssueDesc(e.target.value)} />
               <div className="flex gap-2">
-                <select
-                  className="input-field text-sm flex-1"
-                  value={issueCriticality}
-                  onChange={(e) => setIssueCriticality(e.target.value)}
-                >
+                <select className="input-field text-sm flex-1" value={issueCriticality} onChange={(e) => setIssueCriticality(e.target.value)}>
                   <option value="low">Низкая</option>
                   <option value="medium">Средняя</option>
                   <option value="high">Высокая</option>
                   <option value="critical">Критическая</option>
                 </select>
-                <button
-                  onClick={() => { if (issueTitle.trim()) createIssueMutation.mutate() }}
-                  disabled={!issueTitle.trim()}
-                  className="btn-primary py-2 px-4 text-sm"
-                >
+                <button onClick={() => { if (issueTitle.trim()) createIssueMutation.mutate() }} disabled={!issueTitle.trim()} className="btn-primary py-2 px-4 text-sm">
                   <Send className="w-4 h-4" />
                 </button>
               </div>

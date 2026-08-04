@@ -156,6 +156,7 @@ class ChecklistAnswerIn(BaseModel):
 class InspectionUpdate(BaseModel):
     status: Optional[str] = None
     comment: Optional[str] = None
+    reviewer_comment: Optional[str] = None
     gps_lat: Optional[float] = None
     gps_lon: Optional[float] = None
     answers: Optional[list[ChecklistAnswerIn]] = None
@@ -188,6 +189,9 @@ class InspectionOut(BaseModel):
     gps_lat: Optional[Decimal]
     gps_lon: Optional[Decimal]
     comment: Optional[str]
+    reviewer_comment: Optional[str] = None
+    reviewed_by: Optional[UserOut] = None
+    reviewed_at: Optional[datetime] = None
     created_at: datetime
     site: SiteOut
     answers: list[ChecklistAnswerOut] = []

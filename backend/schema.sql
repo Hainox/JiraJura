@@ -171,7 +171,10 @@ CREATE TABLE inspections (
     completed_at    TIMESTAMPTZ,
     gps_lat         NUMERIC(9,6),                        -- фактическая геометка обходчика
     gps_lon         NUMERIC(9,6),
-    comment         TEXT,                                -- общий комментарий
+    comment         TEXT,                                -- комментарий инспектора
+    reviewer_comment TEXT,                               -- комментарий проверяющего
+    reviewed_by     UUID REFERENCES users(id),           -- кто проверил
+    reviewed_at     TIMESTAMPTZ,                         -- когда проверил
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

@@ -196,10 +196,14 @@ class Inspection(Base):
     gps_lat = Column(Numeric(9, 6))
     gps_lon = Column(Numeric(9, 6))
     comment = Column(Text)
+    reviewer_comment = Column(Text)
+    reviewed_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
     site = relationship("Site", back_populates="inspections")
-    inspector = relationship("User", back_populates="inspections")
+    inspector = relationship("User", back_populates="inspections", foreign_keys=[inspector_id])
+    reviewed_by_user = relationship("User", foreign_keys=[reviewed_by])
     answers = relationship("ChecklistAnswer", back_populates="inspection")
     photos = relationship("Photo", back_populates="inspection",
                           primaryjoin="and_(Inspection.id==Photo.inspection_id, Photo.target_type=='inspection')",

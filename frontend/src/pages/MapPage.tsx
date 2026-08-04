@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { MapContainer, TileLayer, Marker, Popup, useMap, AttributionControl } from 'react-leaflet'
@@ -13,16 +13,24 @@ import 'leaflet/dist/leaflet.css'
 const CHILD_TYPE = 'Детская площадка'
 const SPORT_TYPE = 'Спортивная площадка'
 
-const childIcon = L.divIcon({
-  className: 'custom-icon',
-  html: `<div style="background:#2563eb;color:white;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;box-shadow:0 2px 6px rgba(0,0,0,.3)">Д</div>`,
-  iconSize: [24, 24], iconAnchor: [12, 12],
-})
-const sportIcon = L.divIcon({
-  className: 'custom-icon',
-  html: `<div style="background:#16a34a;color:white;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;box-shadow:0 2px 6px rgba(0,0,0,.3)">С</div>`,
-  iconSize: [24, 24], iconAnchor: [12, 12],
-})
+const childIcon = (status?: string | null) => {
+  const base = status === 'completed' ? '#16a34a' : status === 'in_progress' ? '#ca8a04' : status === 'issues_found' || status === 'critical' ? '#dc2626' : '#2563eb'
+  const letter = status === 'completed' ? '✓' : 'Д'
+  return L.divIcon({
+    className: 'custom-icon',
+    html: `<div style="background:${base};color:white;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;box-shadow:0 2px 6px rgba(0,0,0,.3);border:2px solid white">${letter}</div>`,
+    iconSize: [26, 26], iconAnchor: [13, 13],
+  })
+}
+const sportIcon = (status?: string | null) => {
+  const base = status === 'completed' ? '#16a34a' : status === 'in_progress' ? '#ca8a04' : status === 'issues_found' || status === 'critical' ? '#dc2626' : '#16a34a'
+  const letter = status === 'completed' ? '✓' : 'С'
+  return L.divIcon({
+    className: 'custom-icon',
+    html: `<div style="background:${base};color:white;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;box-shadow:0 2px 6px rgba(0,0,0,.3);border:2px solid white">${letter}</div>`,
+    iconSize: [26, 26], iconAnchor: [13, 13],
+  })
+}
 
 const STATUS_LABELS: Record<string, string> = {
   planned: 'Запланирован', in_progress: 'В процессе', completed: 'Завершён',
@@ -63,6 +71,8 @@ export default function MapPage() {
   const [typeFilter, setTypeFilter] = useState<string | undefined>()
   const [showFilters, setShowFilters] = useState(false)
   const [reviewStatusFilter, setReviewStatusFilter] = useState<string>('all')
+  const [myInspOnly, setMyInspOnly] = useState(false)
+  const [showLegend, setShowLegend] = useState(false)
 
   const isAdmin = user?.role === 'admin'
   const isReviewerLike = user?.role === 'reviewer' || isAdmin
@@ -89,6 +99,25 @@ export default function MapPage() {
   const sites = sitesData?.items ?? []
   const totalCount = sitesData?.total ?? sites.length
   const allInspections = inspectionsData?.items ?? []
+
+  // Для инспектора: загружаем его обходы чтобы раскрасить метки
+  const { data: myInspectionsData } = useQuery<{ total: number; items: InspectionOut[] }>({
+    queryKey: ['my-inspections-map', effectiveDistrictFilter],
+    queryFn: () => inspectionsApi.list({ page_size: 5000 }),
+    enabled: user?.role === 'inspector',
+  })
+  const myInspections = myInspectionsData?.items ?? []
+
+  // Карта: site_id → последний статус обхода
+  const siteStatusMap = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const insp of myInspections) {
+      if (!map[insp.site_id] || insp.created_at > (myInspections.find((i) => i.site_id === insp.site_id && i.id === map[insp.site_id])?.created_at ?? '')) {
+        map[insp.site_id] = insp.status
+      }
+    }
+    return map
+  }, [myInspections])
 
   // Фильтруем обходы по статусу
   const filteredInspections = allInspections.filter((insp) => {
@@ -141,22 +170,53 @@ export default function MapPage() {
 
       {/* Фильтры */}
       {showFilters && (
-        <div className="bg-white border-b px-4 py-2 shrink-0 flex gap-2">
-          {isAdmin ? (
-            <select className="input-field text-sm flex-1" value={districtFilter ?? ''} onChange={(e) => setDistrictFilter(e.target.value || undefined)}>
-              <option value="">Все районы ({totalCount} площадок)</option>
-              {districts?.map((d) => (<option key={d.id} value={d.id}>{d.name}</option>))}
+        <div className="bg-white border-b px-4 py-2 shrink-0 space-y-2">
+          <div className="flex gap-2">
+            {isAdmin ? (
+              <select className="input-field text-sm flex-1" value={districtFilter ?? ''} onChange={(e) => setDistrictFilter(e.target.value || undefined)}>
+                <option value="">Все районы ({totalCount} площадок)</option>
+                {districts?.map((d) => (<option key={d.id} value={d.id}>{d.name}</option>))}
+              </select>
+            ) : (
+              <div className="input-field text-sm flex-1 flex items-center text-gray-700">
+                {districts && districts.length > 0 ? districts[0].name : 'Район не назначен'}
+              </div>
+            )}
+            <select className="input-field text-sm flex-1" value={typeFilter ?? ''} onChange={(e) => setTypeFilter(e.target.value || undefined)}>
+              <option value="">Все типы</option>
+              <option value={CHILD_TYPE}>Детские</option>
+              <option value={SPORT_TYPE}>Спортивные</option>
             </select>
-          ) : (
-            <div className="input-field text-sm flex-1 flex items-center text-gray-700">
-              {districts && districts.length > 0 ? districts[0].name : 'Район не назначен'}
+          </div>
+          {user?.role === 'inspector' && myInspections.length > 0 && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setMyInspOnly((v) => !v)}
+                className={`text-xs px-3 py-1 rounded-full font-medium transition-colors ${
+                  myInspOnly ? 'bg-primary-700 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                Только необойдённые
+              </button>
+              <button
+                onClick={() => setShowLegend((v) => !v)}
+                className="text-xs px-3 py-1 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 font-medium"
+              >
+                Легенда
+              </button>
+              <span className="text-xs text-gray-400">
+                Обойдено: {Object.values(siteStatusMap).filter((s) => s === 'completed' || s === 'issues_found').length}/{totalCount}
+              </span>
             </div>
           )}
-          <select className="input-field text-sm flex-1" value={typeFilter ?? ''} onChange={(e) => setTypeFilter(e.target.value || undefined)}>
-            <option value="">Все типы</option>
-            <option value={CHILD_TYPE}>Детские</option>
-            <option value={SPORT_TYPE}>Спортивные</option>
-          </select>
+          {showLegend && user?.role === 'inspector' && (
+            <div className="flex gap-3 text-xs text-gray-500 flex-wrap">
+              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-blue-600 inline-block" /> Не обойдена</span>
+              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-yellow-500 inline-block" /> В процессе</span>
+              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-green-600 inline-block" /> Завершена</span>
+              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-red-600 inline-block" /> С нарушениями</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -298,8 +358,10 @@ export default function MapPage() {
               maxZoom={19}
             />
             <FitBounds data={sites} />
-            {sites.map((s) => (
-              <Marker key={s.id} position={[s.lat ?? 55.829, s.lon ?? 37.532]} icon={s.type === CHILD_TYPE ? childIcon : sportIcon}>
+            {sites.filter((s) => !myInspOnly || !siteStatusMap[s.id] || siteStatusMap[s.id] !== 'completed').map((s) => {
+              const status = user?.role === 'inspector' ? siteStatusMap[s.id] : null
+              const icon = s.type === CHILD_TYPE ? childIcon(status) : sportIcon(status)
+              return <Marker key={s.id} position={[s.lat ?? 55.829, s.lon ?? 37.532]} icon={icon}>
                 <Popup>
                   <div className="min-w-[180px]">
                     <div className="font-semibold text-sm">{s.courtyard?.name ?? 'Площадка'}</div>
@@ -313,7 +375,7 @@ export default function MapPage() {
                   </div>
                 </Popup>
               </Marker>
-            ))}
+            })}
           </MapContainer>
         ) : (
           <div className="overflow-y-auto h-full p-3 space-y-2">

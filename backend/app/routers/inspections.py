@@ -191,10 +191,11 @@ async def upload_inspection_photo(
     gps_lat: Optional[float] = Query(None),
     gps_lon: Optional[float] = Query(None),
     taken_at: Optional[datetime] = Query(None),
+    checklist_answer_id: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Загрузить фото для обхода."""
+    """Загрузить фото для обхода или конкретного пункта чек-листа."""
     obj = (await db.execute(
         select(Inspection).where(Inspection.id == inspection_id)
     )).scalar_one_or_none()
@@ -203,6 +204,8 @@ async def upload_inspection_photo(
 
     # Проверяем права
     check_own_or_role(current_user, obj.inspector_id, "reviewer", "admin")
+
+    target_type = "checklist_answer" if checklist_answer_id else "inspection"
 
     # Сохраняем файл (потоково, с проверкой размера — file.size ненадёжен,
     # если клиент не прислал Content-Length)
@@ -225,8 +228,9 @@ async def upload_inspection_photo(
             f.write(chunk)
 
     photo = Photo(
-        target_type="inspection",
+        target_type=target_type,
         inspection_id=obj.id,
+        checklist_answer_id=checklist_answer_id if checklist_answer_id else None,
         storage_path=rel_path,
         gps_lat=gps_lat,
         gps_lon=gps_lon,
@@ -245,7 +249,7 @@ async def list_inspection_photos(
 ):
     q = select(Photo).where(
         Photo.inspection_id == inspection_id,
-        Photo.target_type == "inspection",
+        Photo.target_type.in_(["inspection", "checklist_answer"]),
     ).order_by(Photo.created_at.asc())
     rows = (await db.execute(q)).scalars().all()
     return [_photo_to_out(p) for p in rows]
@@ -257,7 +261,8 @@ async def _inspection_to_out(i: Inspection, db: AsyncSession) -> InspectionOut:
     )).scalar_one() or 0
 
     photos_q = select(Photo).where(
-        Photo.inspection_id == i.id, Photo.target_type == "inspection"
+        Photo.inspection_id == i.id,
+        Photo.target_type.in_(["inspection", "checklist_answer"]),
     ).order_by(Photo.created_at.asc())
     photos = (await db.execute(photos_q)).scalars().all()
 
@@ -293,6 +298,7 @@ def _photo_to_out(p: Photo) -> PhotoOut:
         target_type=p.target_type,
         inspection_id=p.inspection_id,
         issue_id=p.issue_id,
+        checklist_answer_id=p.checklist_answer_id,
         url=f"/uploads/{p.storage_path}",
         thumbnail_url=f"/uploads/{p.thumbnail_path}" if p.thumbnail_path else None,
         gps_lat=p.gps_lat,

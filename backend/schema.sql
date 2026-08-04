@@ -202,7 +202,7 @@ CREATE INDEX idx_checklist_answers_inspection ON checklist_answers(inspection_id
 -- 8. ФОТОГРАФИИ
 -- ============================================================
 
-CREATE TYPE photo_target AS ENUM ('inspection', 'issue', 'equipment');
+CREATE TYPE photo_target AS ENUM ('inspection', 'issue', 'equipment', 'checklist_answer');
 
 CREATE TABLE photos (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -210,6 +210,7 @@ CREATE TABLE photos (
     inspection_id   UUID REFERENCES inspections(id) ON DELETE CASCADE,
     issue_id        UUID,                                -- FK added below
     equipment_id    UUID REFERENCES equipment(id),
+    checklist_answer_id UUID REFERENCES checklist_answers(id) ON DELETE SET NULL,
     storage_path    VARCHAR(500) NOT NULL,               -- путь в S3/MinIO
     thumbnail_path  VARCHAR(500),                        -- превью
     gps_lat         NUMERIC(9,6),

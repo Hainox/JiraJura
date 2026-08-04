@@ -102,11 +102,12 @@ export const inspectionsApi = {
   complete: (id: string, data: { status: string; comment?: string; gps_lat?: number; gps_lon?: number }) =>
     api.patch<InspectionOut>(`/inspections/${id}`, data).then((r) => r.data),
 
-  uploadPhoto: (id: string, file: File) => {
+  uploadPhoto: (id: string, file: File, checklistAnswerId?: string) => {
     const form = new FormData()
     form.append('file', file)
+    const params = checklistAnswerId ? `?checklist_answer_id=${checklistAnswerId}` : ''
     return api
-      .post<PhotoOut>(`/inspections/${id}/photos`, form, {
+      .post<PhotoOut>(`/inspections/${id}/photos${params}`, form, {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
       .then((r) => r.data)

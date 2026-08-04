@@ -160,6 +160,7 @@ class PhotoOut(BaseModel):
     target_type: str
     inspection_id: Optional[UUID]
     issue_id: Optional[UUID]
+    checklist_answer_id: Optional[UUID] = None
     url: str
     thumbnail_url: Optional[str]
     gps_lat: Optional[Decimal]

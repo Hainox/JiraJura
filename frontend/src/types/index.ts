@@ -125,6 +125,7 @@ export interface PhotoOut {
   target_type: string
   inspection_id?: string
   issue_id?: string
+  checklist_answer_id?: string
   url: string
   thumbnail_url?: string
   gps_lat?: number | string

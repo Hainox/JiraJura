@@ -214,7 +214,7 @@ async def export_xlsx(
 
     # ── Обходы ──
     insp_q = (
-        select(Inspection, District.name, Courtyard.name, Site.type, User.full_name)
+        select(Inspection, District.name, Courtyard.name, Site.type, User.full_name, User.phone)
         .join(Site, Inspection.site_id == Site.id)
         .join(Courtyard, Site.courtyard_id == Courtyard.id)
         .join(District, Courtyard.district_id == District.id)
@@ -235,14 +235,27 @@ async def export_xlsx(
     )).all()
     answers = {row[0]: (row[1], row[2]) for row in ans_rows}
 
+    # Считаем фото на каждый обход
+    from app.models import Photo
+    photo_counts = {}
+    photo_rows = (await db.execute(
+        select(Photo.inspection_id, func.count())
+        .where(Photo.target_type.in_(["inspection", "checklist_answer"]))
+        .group_by(Photo.inspection_id)
+    )).all()
+    for insp_id, cnt in photo_rows:
+        photo_counts[str(insp_id)] = cnt
+
     insp_data = []
-    for insp, dist_name, court_name, site_type, inspector_name in inspections:
+    for insp, dist_name, court_name, site_type, inspector_name, phone in inspections:
         ok_cnt, defect_cnt = answers.get(insp.id, (0, 0))
         insp_data.append((
             _fmt_dt(insp.created_at), dist_name, court_name, site_type,
-            inspector_name, INSPECTION_STATUS_RU.get(insp.status, insp.status),
+            inspector_name, phone or "",
+            INSPECTION_STATUS_RU.get(insp.status, insp.status),
             _fmt_dt(insp.started_at), _fmt_dt(insp.completed_at),
-            ok_cnt, defect_cnt, insp.comment or "",
+            ok_cnt, defect_cnt, photo_counts.get(str(insp.id), 0),
+            insp.comment or "",
         ))
 
     # ── Замечания ──
@@ -269,6 +282,37 @@ async def export_xlsx(
             assignee_name or "", _fmt_dt(iss.due_date), _fmt_dt(iss.fixed_at),
         )
         for iss, dist_name, court_name, author_name, assignee_name in issues
+    ]
+
+    # ── Нарушения по чек-листу (детально) ──
+    from app.models import ChecklistItem
+    defect_q = (
+        select(
+            ChecklistAnswer, ChecklistItem.question, ChecklistItem.category,
+            Inspection.created_at, District.name, Courtyard.name,
+            Site.type, User.full_name,
+        )
+        .join(Inspection, ChecklistAnswer.inspection_id == Inspection.id)
+        .join(ChecklistItem, ChecklistAnswer.checklist_item_id == ChecklistItem.id)
+        .join(Site, Inspection.site_id == Site.id)
+        .join(Courtyard, Site.courtyard_id == Courtyard.id)
+        .join(District, Courtyard.district_id == District.id)
+        .join(User, Inspection.inspector_id == User.id)
+        .where(ChecklistAnswer.result == "defect")
+        .order_by(District.name, Inspection.created_at.desc())
+    )
+    if district_id:
+        defect_q = defect_q.where(District.id == district_id)
+    defect_q = period(defect_q, Inspection.created_at)
+    defects = (await db.execute(defect_q)).all()
+
+    defect_data = [
+        (
+            _fmt_dt(insp_dt), dist_name, court_name, site_type,
+            category or "", question, answer.comment or "",
+            inspector_name,
+        )
+        for answer, question, category, insp_dt, dist_name, court_name, site_type, inspector_name in defects
     ]
 
     # ── Сводка по районам ──
@@ -328,9 +372,15 @@ async def export_xlsx(
     )
     _sheet(
         wb, "Обходы",
-        ["Дата", "Район", "Двор", "Тип площадки", "Инспектор", "Статус",
-         "Начат", "Завершён", "Пунктов в порядке", "Дефектов", "Комментарий"],
-        insp_data, [16, 20, 40, 20, 24, 16, 16, 16, 16, 10, 40],
+        ["Дата", "Район", "Двор", "Тип площадки", "Инспектор", "Телефон",
+         "Статус", "Начат", "Завершён", "Пунктов ОК", "Дефектов", "Фото", "Комментарий"],
+        insp_data, [16, 20, 40, 20, 24, 16, 14, 16, 16, 12, 10, 7, 40],
+    )
+    _sheet(
+        wb, "Нарушения по чек-листу",
+        ["Дата обхода", "Район", "Двор", "Тип площадки", "Категория",
+         "Пункт чек-листа", "Комментарий инспектора", "Инспектор"],
+        defect_data, [16, 20, 40, 20, 18, 50, 40, 24],
     )
     _sheet(
         wb, "Замечания",

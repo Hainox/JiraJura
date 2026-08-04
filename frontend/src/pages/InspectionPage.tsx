@@ -26,6 +26,8 @@ export default function InspectionPage() {
   const [photos, setPhotos] = useState<PhotoOut[]>([])
   const [showPhotoPanel, setShowPhotoPanel] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const itemFileInputRef = useRef<HTMLInputElement>(null)
+  const [uploadingForItemId, setUploadingForItemId] = useState<string | null>(null)
 
   const { data: inspection, isLoading } = useQuery<InspectionOut>({
     queryKey: ['inspection', inspectionId],
@@ -61,6 +63,27 @@ export default function InspectionPage() {
       setPhotos(inspection.photos)
     }
   }, [inspection?.answers, inspection?.photos])
+
+  // Группируем фото: общие (inspection-level) и по пунктам чек-листа
+  const generalPhotos = useMemo(
+    () => photos.filter((p) => p.target_type === 'inspection'),
+    [photos]
+  )
+  const photosByAnswer = useMemo(() => {
+    const map: Record<string, PhotoOut[]> = {}
+    for (const p of photos) {
+      if (p.target_type === 'checklist_answer' && p.checklist_answer_id) {
+        // Связываем фото с checklist_item_id через ответы инспекции
+        const answer = inspection?.answers?.find((a) => a.id === p.checklist_answer_id)
+        if (answer) {
+          const key = answer.checklist_item_id
+          if (!map[key]) map[key] = []
+          map[key].push(p)
+        }
+      }
+    }
+    return map
+  }, [photos, inspection?.answers])
 
   const saveMutation = useMutation({
     mutationFn: () => {
@@ -98,7 +121,7 @@ export default function InspectionPage() {
     onError: () => toast.error('Ошибка создания замечания'),
   })
 
-  const uploadPhotoMutation = useMutation({
+  const uploadGeneralPhotoMutation = useMutation({
     mutationFn: (file: File) => inspectionsApi.uploadPhoto(inspectionId, file),
     onSuccess: (photo) => {
       setPhotos((prev) => [...prev, photo])
@@ -107,12 +130,42 @@ export default function InspectionPage() {
     onError: () => toast.error('Ошибка загрузки фото'),
   })
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const uploadItemPhotoMutation = useMutation({
+    mutationFn: ({ file, checklistItemId }: { file: File; checklistItemId: string }) => {
+      // Находим answer_id для этого checklist_item
+      const answer = inspection?.answers?.find((a) => a.checklist_item_id === checklistItemId)
+      return inspectionsApi.uploadPhoto(inspectionId, file, answer?.id)
+    },
+    onSuccess: (photo) => {
+      setPhotos((prev) => [...prev, photo])
+      setUploadingForItemId(null)
+      toast.success('Фото для пункта загружено')
+    },
+    onError: () => {
+      setUploadingForItemId(null)
+      toast.error('Ошибка загрузки фото')
+    },
+  })
+
+  const handleGeneralPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
-      uploadPhotoMutation.mutate(file)
-      e.target.value = '' // сброс для повторной загрузки того же файла
+      uploadGeneralPhotoMutation.mutate(file)
+      e.target.value = ''
     }
+  }
+
+  const handleItemPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file && uploadingForItemId) {
+      uploadItemPhotoMutation.mutate({ file, checklistItemId: uploadingForItemId })
+      e.target.value = ''
+    }
+  }
+
+  const triggerItemUpload = (itemId: string) => {
+    setUploadingForItemId(itemId)
+    setTimeout(() => itemFileInputRef.current?.click(), 50)
   }
 
   const handleMark = (itemId: string, result: AnswerResult) => {
@@ -192,11 +245,12 @@ export default function InspectionPage() {
         </button>
       </div>
 
-      {/* Панель фото */}
+      {/* Панель общих фото */}
       {showPhotoPanel && (
         <div className="bg-white border-b p-3 shrink-0">
+          <div className="text-xs text-gray-500 mb-2 font-medium">Общие фото обхода</div>
           <div className="flex flex-wrap gap-2 mb-2">
-            {photos.map((p) => (
+            {generalPhotos.map((p) => (
               <a key={p.id} href={p.url} target="_blank" rel="noreferrer">
                 <img
                   src={p.url}
@@ -205,8 +259,8 @@ export default function InspectionPage() {
                 />
               </a>
             ))}
-            {photos.length === 0 && (
-              <div className="text-xs text-gray-400 py-2">Нет фотографий. Нажмите «Добавить».</div>
+            {generalPhotos.length === 0 && (
+              <div className="text-xs text-gray-400 py-2">Нет общих фотографий</div>
             )}
           </div>
           <input
@@ -215,18 +269,28 @@ export default function InspectionPage() {
             accept="image/*"
             capture="environment"
             className="hidden"
-            onChange={handlePhotoUpload}
+            onChange={handleGeneralPhotoUpload}
           />
           <button
             onClick={() => fileInputRef.current?.click()}
-            disabled={uploadPhotoMutation.isPending}
+            disabled={uploadGeneralPhotoMutation.isPending}
             className="btn-outline py-1.5 px-3 text-sm"
           >
             <Camera className="w-4 h-4 inline mr-1" />
-            {uploadPhotoMutation.isPending ? 'Загрузка...' : 'Добавить фото'}
+            {uploadGeneralPhotoMutation.isPending ? 'Загрузка...' : 'Добавить общее фото'}
           </button>
         </div>
       )}
+
+      {/* Скрытый input для загрузки фото пункта */}
+      <input
+        ref={itemFileInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={handleItemPhotoUpload}
+      />
 
       {/* Прогресс-бар */}
       <div className="h-1 bg-gray-200 shrink-0">
@@ -237,7 +301,9 @@ export default function InspectionPage() {
       </div>
 
       <div className="overflow-y-auto flex-1 p-4 space-y-3">
-        {allItems.map((item) => (
+        {allItems.map((item) => {
+          const itemPhotos = photosByAnswer[item.id] ?? []
+          return (
           <div
             key={item.id}
             className={`card transition-colors ${
@@ -253,13 +319,44 @@ export default function InspectionPage() {
                 <div className="text-sm text-gray-800 mt-0.5">{item.question}</div>
 
                 {(answers[item.id]?.result && answers[item.id]?.result !== 'pending') && (
-                  <div className="mt-2 flex items-center gap-2">
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
                     <span className={`badge ${answers[item.id]?.result === 'ok' ? 'badge-ok' : 'badge-nok'}`}>
                       {answers[item.id]?.result === 'ok' ? 'В порядке' : 'Нарушение'}
                     </span>
                     {answers[item.id]?.comment && (
                       <span className="text-xs text-gray-500 truncate">{answers[item.id]?.comment}</span>
                     )}
+                  </div>
+                )}
+
+                {/* Фото под пунктом с дефектом */}
+                {answers[item.id]?.result === 'defect' && (
+                  <div className="mt-2">
+                    {itemPhotos.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mb-1.5">
+                        {itemPhotos.map((p) => (
+                          <a key={p.id} href={p.url} target="_blank" rel="noreferrer">
+                            <img
+                              src={p.url}
+                              alt=""
+                              className="w-12 h-12 object-cover rounded border"
+                            />
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                    <button
+                      onClick={() => triggerItemUpload(item.id)}
+                      disabled={uploadItemPhotoMutation.isPending && uploadingForItemId === item.id}
+                      className="text-xs text-primary-600 hover:text-primary-800 flex items-center gap-1"
+                    >
+                      <Camera className="w-3 h-3" />
+                      {uploadItemPhotoMutation.isPending && uploadingForItemId === item.id
+                        ? 'Загрузка...'
+                        : itemPhotos.length > 0
+                          ? `+ фото (${itemPhotos.length})`
+                          : 'Добавить фото дефекта'}
+                    </button>
                   </div>
                 )}
               </div>
@@ -290,7 +387,7 @@ export default function InspectionPage() {
               </button>
             </div>
           </div>
-        ))}
+        )})}
       </div>
 
       {/* Нижняя панель */}

@@ -50,7 +50,7 @@ CHECKLIST_RESULT_ENUM = Enum(
 )
 
 PHOTO_TARGET_ENUM = Enum(
-    'inspection', 'issue', 'equipment',
+    'inspection', 'issue', 'equipment', 'checklist_answer',
     name='photo_target', create_type=False,
 )
 
@@ -230,6 +230,7 @@ class Photo(Base):
     inspection_id = Column(UUID(as_uuid=True), ForeignKey("inspections.id", ondelete="CASCADE"), nullable=True)
     issue_id = Column(UUID(as_uuid=True), ForeignKey("issues.id", ondelete="SET NULL"), nullable=True)
     equipment_id = Column(UUID(as_uuid=True), ForeignKey("equipment.id"), nullable=True)
+    checklist_answer_id = Column(UUID(as_uuid=True), ForeignKey("checklist_answers.id", ondelete="SET NULL"), nullable=True)
     storage_path = Column(String(500), nullable=False)
     thumbnail_path = Column(String(500))
     gps_lat = Column(Numeric(9, 6))

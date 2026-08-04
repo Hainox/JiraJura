@@ -1,6 +1,7 @@
 """Сервис аутентификации — JWT."""
 from datetime import datetime, timedelta
 
+import bcrypt
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy import select
@@ -21,7 +22,16 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    """Проверка пароля — поддерживает хэши от passlib ($2b$) и pgcrypto ($2a$)."""
+    try:
+        return pwd_context.verify(plain, hashed)
+    except ValueError:
+        pass
+    # Fallback: прямой bcrypt для хэшей из pgcrypto (crypt/gen_salt)
+    try:
+        return bcrypt.checkpw(plain.encode(), hashed.encode())
+    except Exception:
+        return False
 
 
 def create_access_token(user_id: str, role: str) -> str:

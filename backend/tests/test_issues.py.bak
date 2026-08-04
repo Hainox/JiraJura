@@ -1,0 +1,60 @@
+"""Тесты для issues router."""
+import pytest
+from datetime import datetime
+
+
+class TestListIssues:
+    async def test_list_unauthorized(self, client):
+        """Без токена — 403."""
+        resp = await client.get("/api/v1/issues/")
+        assert resp.status_code == 403
+
+    async def test_list_as_reviewer(self, client, reviewer_user):
+        """Проверяющий видит замечания своего района."""
+        from tests.conftest import mock_session, make_scalar_result, make_count_result
+        from app.services.auth import create_access_token
+
+        token = create_access_token(str(reviewer_user.id), reviewer_user.role)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        mock_session.execute.side_effect = [
+            make_scalar_result(reviewer_user),  # get_current_user
+            make_count_result(0),  # count
+            make_scalar_result([]),  # rows
+        ]
+
+        resp = await client.get("/api/v1/issues/", headers=headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 0
+
+
+class TestUpdateIssue:
+    async def test_update_forbidden_inspector(self, client, inspector_user):
+        """Инспектор не может менять замечания."""
+        from tests.conftest import mock_session, make_scalar_result
+        from app.services.auth import create_access_token
+
+        token = create_access_token(str(inspector_user.id), inspector_user.role)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        mock_session.execute.return_value = make_scalar_result(inspector_user)
+
+        resp = await client.put("/api/v1/issues/some-id", json={"status": "closed"}, headers=headers)
+        assert resp.status_code == 403
+
+    async def test_update_not_found(self, client, reviewer_user):
+        """Обновление несуществующего — 404."""
+        from tests.conftest import mock_session, make_scalar_result
+        from app.services.auth import create_access_token
+
+        token = create_access_token(str(reviewer_user.id), reviewer_user.role)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        mock_session.execute.side_effect = [
+            make_scalar_result(reviewer_user),  # require_role
+            make_scalar_result(None),  # ищем issue
+        ]
+
+        resp = await client.put("/api/v1/issues/nonexistent", json={"status": "closed"}, headers=headers)
+        assert resp.status_code == 404

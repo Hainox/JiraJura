@@ -1,0 +1,87 @@
+"""Тесты для dashboard router."""
+import pytest
+
+
+class TestDashboard:
+    async def test_dashboard_unauthorized(self, client):
+        """Без токена — 403."""
+        resp = await client.get("/api/v1/dashboard/")
+        assert resp.status_code == 403
+
+    async def test_dashboard_as_admin(self, client, admin_user, auth_headers):
+        """Админ видит дашборд."""
+        from tests.conftest import mock_session, make_scalar_result, make_count_result
+        from app.services.auth import create_access_token
+
+        # Дашборд делает много count-запросов
+        mock_session.execute.side_effect = [
+            make_scalar_result(admin_user),  # get_current_user
+            make_count_result(10),  # total_sites
+            make_count_result(5),  # week
+            make_count_result(20),  # month
+            make_count_result(3),  # in_progress
+            make_count_result(15),  # reviewed
+            make_count_result(2),  # pending
+            make_count_result(7),  # open issues
+            make_count_result(1),  # overdue
+            make_count_result(8),  # inspectors
+            make_count_result(2),  # reviewers
+        ]
+
+        resp = await client.get("/api/v1/dashboard/", headers=auth_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_sites"] == 10
+        assert data["total_inspections_week"] == 5
+        assert data["total_inspections_month"] == 20
+        assert data["inspections_in_progress"] == 3
+
+    async def test_district_stats(self, client, auth_headers):
+        """Статистика по районам."""
+        from tests.conftest import mock_session, make_scalar_result, make_count_result
+        from app.models import District
+
+        d1 = District(id="d1", name="Район 1")
+        d2 = District(id="d2", name="Район 2")
+
+        mock_session.execute.side_effect = [
+            make_scalar_result([d1, d2]),  # список районов
+            make_count_result(5),  # total d1
+            make_count_result(3),  # inspected d1
+            make_count_result(8),  # total d2
+            make_count_result(5),  # inspected d2
+        ]
+
+        resp = await client.get("/api/v1/dashboard/districts", headers=auth_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 2
+        assert data[0]["district_name"] in ("Район 1", "Район 2")
+
+
+class TestPermissions:
+    async def test_inspector_blocked_from_admin(self, client, inspector_user):
+        """Инспектор не может вызывать admin-only эндпоинты."""
+        from tests.conftest import mock_session, make_scalar_result
+        from app.services.auth import create_access_token
+
+        token = create_access_token(str(inspector_user.id), inspector_user.role)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        mock_session.execute.return_value = make_scalar_result(inspector_user)
+
+        resp = await client.get("/api/v1/auth/users", headers=headers)
+        assert resp.status_code == 403
+
+    async def test_audit_admin_only(self, client, inspector_user):
+        """Аудит только для админа."""
+        from tests.conftest import mock_session, make_scalar_result
+        from app.services.auth import create_access_token
+
+        token = create_access_token(str(inspector_user.id), inspector_user.role)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        mock_session.execute.return_value = make_scalar_result(inspector_user)
+
+        resp = await client.get("/api/v1/audit/", headers=headers)
+        assert resp.status_code == 403

@@ -1,0 +1,43 @@
+"""Тесты для inspections router."""
+import pytest
+from datetime import datetime
+
+
+class TestListInspections:
+    async def test_list_unauthorized(self, client):
+        """Без токена — 403."""
+        resp = await client.get("/api/v1/inspections/")
+        assert resp.status_code == 403
+
+    async def test_list_as_inspector(self, client, inspector_user):
+        """Инспектор видит свои обходы."""
+        from tests.conftest import mock_session, make_scalar_result, make_count_result
+        from app.services.auth import create_access_token
+
+        token = create_access_token(str(inspector_user.id), inspector_user.role)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # Мок: get_current_user
+        mock_session.execute.return_value = make_scalar_result(inspector_user)
+        # Но list_inspections делает несколько запросов: count + rows
+        # Используем side_effect
+        mock_session.execute.side_effect = [
+            make_count_result(0),  # count
+            make_scalar_result([]),  # rows
+        ]
+
+        resp = await client.get("/api/v1/inspections/", headers=headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 0
+        assert data["items"] == []
+
+
+class TestGetInspection:
+    async def test_not_found(self, client):
+        """Несуществующий обход — 404."""
+        from tests.conftest import mock_session, make_scalar_result
+        mock_session.execute.return_value = make_scalar_result(None)
+
+        resp = await client.get("/api/v1/inspections/nonexistent")
+        assert resp.status_code == 404

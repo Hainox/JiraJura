@@ -3,31 +3,38 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { MapContainer, TileLayer, Marker, Popup, useMap, AttributionControl } from 'react-leaflet'
 import L from 'leaflet'
-import { sitesApi, districtsApi, reportsApi } from '@/lib/api'
+import { sitesApi, districtsApi, reportsApi, inspectionsApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
-import type { SiteOut, DistrictOut } from '@/types'
-import { List, Map as MapIcon, LogOut, ChevronRight, Users, Download } from 'lucide-react'
+import type { SiteOut, DistrictOut, InspectionOut } from '@/types'
+import { List, Map as MapIcon, LogOut, ChevronRight, Users, Download, ClipboardCheck, Clock, CheckCircle2, AlertTriangle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import 'leaflet/dist/leaflet.css'
 
-// Значения enum'а site_type из БД — тип приходит человекочитаемой строкой
 const CHILD_TYPE = 'Детская площадка'
 const SPORT_TYPE = 'Спортивная площадка'
 
-// Иконки по типу площадок
 const childIcon = L.divIcon({
   className: 'custom-icon',
   html: `<div style="background:#2563eb;color:white;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;box-shadow:0 2px 6px rgba(0,0,0,.3)">Д</div>`,
-  iconSize: [24, 24],
-  iconAnchor: [12, 12],
+  iconSize: [24, 24], iconAnchor: [12, 12],
 })
-
 const sportIcon = L.divIcon({
   className: 'custom-icon',
   html: `<div style="background:#16a34a;color:white;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;box-shadow:0 2px 6px rgba(0,0,0,.3)">С</div>`,
-  iconSize: [24, 24],
-  iconAnchor: [12, 12],
+  iconSize: [24, 24], iconAnchor: [12, 12],
 })
+
+const STATUS_LABELS: Record<string, string> = {
+  planned: 'Запланирован', in_progress: 'В процессе', completed: 'Завершён',
+  issues_found: 'Есть нарушения', critical: 'Критический',
+}
+const STATUS_COLORS: Record<string, string> = {
+  in_progress: 'bg-blue-100 text-blue-800',
+  completed: 'bg-green-100 text-green-800',
+  issues_found: 'bg-orange-100 text-orange-800',
+  critical: 'bg-red-100 text-red-800',
+  planned: 'bg-gray-100 text-gray-600',
+}
 
 function FitBounds({ data }: { data: SiteOut[] | undefined }) {
   const map = useMap()
@@ -51,31 +58,46 @@ export default function MapPage() {
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
   const logoutStore = useAuthStore((s) => s.logout)
-  const [viewMode, setViewMode] = useState<'map' | 'list'>('map')
+  const [viewMode, setViewMode] = useState<'map' | 'list' | 'review'>('map')
   const [districtFilter, setDistrictFilter] = useState<string | undefined>()
   const [typeFilter, setTypeFilter] = useState<string | undefined>()
   const [showFilters, setShowFilters] = useState(false)
+  const [reviewStatusFilter, setReviewStatusFilter] = useState<string>('all')
 
   const isAdmin = user?.role === 'admin'
+  const isReviewerLike = user?.role === 'reviewer' || isAdmin
 
   const { data: districts } = useQuery<DistrictOut[]>({
     queryKey: ['districts'],
     queryFn: districtsApi.list,
   })
 
-  // Для не-админов авто-подставляем свой район как фильтр
   const effectiveDistrictFilter = isAdmin ? districtFilter : (user?.district_id ?? districtFilter)
 
   const { data: sitesData } = useQuery({
     queryKey: ['sites', effectiveDistrictFilter, typeFilter],
-    queryFn: () =>
-      sitesApi.list({ district_id: effectiveDistrictFilter, type: typeFilter, page_size: 5000 }),
+    queryFn: () => sitesApi.list({ district_id: effectiveDistrictFilter, type: typeFilter, page_size: 5000 }),
+  })
+
+  // Загрузка обходов для режима проверки
+  const { data: inspectionsData } = useQuery<{ total: number; items: InspectionOut[] }>({
+    queryKey: ['inspections-review', effectiveDistrictFilter],
+    queryFn: () => inspectionsApi.list({ page_size: 200 }),
+    enabled: viewMode === 'review' && isReviewerLike,
   })
 
   const sites = sitesData?.items ?? []
   const totalCount = sitesData?.total ?? sites.length
+  const allInspections = inspectionsData?.items ?? []
 
-  const center: L.LatLngExpression = [55.829, 37.532] // САО
+  // Фильтруем обходы по статусу
+  const filteredInspections = allInspections.filter((insp) => {
+    if (reviewStatusFilter === 'all') return true
+    if (reviewStatusFilter === 'pending') return insp.status !== 'completed'
+    return insp.status === reviewStatusFilter
+  })
+
+  const center: L.LatLngExpression = [55.829, 37.532]
 
   return (
     <div className="h-full flex flex-col">
@@ -83,76 +105,49 @@ export default function MapPage() {
       <div className="bg-primary-800 text-white px-4 py-3 flex items-center justify-between shrink-0">
         <div>
           <h1 className="text-lg font-bold">Обход площадок</h1>
-          <p className="text-blue-200 text-xs">{user?.full_name}</p>
+          <p className="text-blue-200 text-xs">
+            {user?.full_name}
+            {user?.role === 'reviewer' && <span className="ml-1 text-amber-300">(проверяющий)</span>}
+          </p>
         </div>
         <div className="flex gap-1">
           {user?.role === 'admin' && (
-            <button
-              onClick={() => navigate('/admin/users')}
-              className="p-2 rounded-lg hover:bg-primary-700 transition-colors"
-              title="Пользователи"
-            >
+            <button onClick={() => navigate('/admin/users')} className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="Пользователи">
               <Users className="w-5 h-5" />
             </button>
           )}
           {user?.role !== 'inspector' && (
-            <button
-              onClick={() =>
-                toast.promise(reportsApi.exportXlsx({ district_id: districtFilter }), {
-                  loading: 'Готовлю файл...',
-                  success: 'Файл скачан',
-                  error: 'Ошибка выгрузки',
-                })
-              }
-              className="p-2 rounded-lg hover:bg-primary-700 transition-colors"
-              title="Выгрузка в Excel"
-            >
+            <button onClick={() => toast.promise(reportsApi.exportXlsx({ district_id: districtFilter }), {
+              loading: 'Готовлю файл...', success: 'Файл скачан', error: 'Ошибка выгрузки',
+            })} className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="Выгрузка в Excel">
               <Download className="w-5 h-5" />
             </button>
           )}
-          <button
-            onClick={() => setShowFilters((v) => !v)}
-            className="p-2 rounded-lg hover:bg-primary-700 transition-colors"
-            title="Фильтры"
-          >
+          <button onClick={() => setShowFilters((v) => !v)} className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="Фильтры">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
             </svg>
           </button>
-          <button
-            onClick={() => { logoutStore(); navigate('/login') }}
-            className="p-2 rounded-lg hover:bg-primary-700 transition-colors"
-            title="Выйти"
-          >
+          <button onClick={() => { logoutStore(); navigate('/login') }} className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="Выйти">
             <LogOut className="w-5 h-5" />
           </button>
         </div>
       </div>
 
-      {/* Фильтры: район и тип площадки */}
+      {/* Фильтры */}
       {showFilters && (
         <div className="bg-white border-b px-4 py-2 shrink-0 flex gap-2">
           {isAdmin ? (
-            <select
-              className="input-field text-sm flex-1"
-              value={districtFilter ?? ''}
-              onChange={(e) => setDistrictFilter(e.target.value || undefined)}
-            >
+            <select className="input-field text-sm flex-1" value={districtFilter ?? ''} onChange={(e) => setDistrictFilter(e.target.value || undefined)}>
               <option value="">Все районы ({totalCount} площадок)</option>
-              {districts?.map((d) => (
-                <option key={d.id} value={d.id}>{d.name}</option>
-              ))}
+              {districts?.map((d) => (<option key={d.id} value={d.id}>{d.name}</option>))}
             </select>
           ) : (
             <div className="input-field text-sm flex-1 flex items-center text-gray-700">
               {districts && districts.length > 0 ? districts[0].name : 'Район не назначен'}
             </div>
           )}
-          <select
-            className="input-field text-sm flex-1"
-            value={typeFilter ?? ''}
-            onChange={(e) => setTypeFilter(e.target.value || undefined)}
-          >
+          <select className="input-field text-sm flex-1" value={typeFilter ?? ''} onChange={(e) => setTypeFilter(e.target.value || undefined)}>
             <option value="">Все типы</option>
             <option value={CHILD_TYPE}>Детские</option>
             <option value={SPORT_TYPE}>Спортивные</option>
@@ -178,14 +173,119 @@ export default function MapPage() {
         >
           <List className="w-4 h-4" /> Список
         </button>
+        {isReviewerLike && (
+          <button
+            onClick={() => setViewMode('review')}
+            className={`flex-1 py-1.5 text-sm font-medium rounded-lg flex items-center justify-center gap-1.5 transition-colors ${
+              viewMode === 'review' ? 'bg-amber-600 text-white' : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+            }`}
+          >
+            <ClipboardCheck className="w-4 h-4" /> Проверка
+            {allInspections.length > 0 && (
+              <span className="text-xs ml-0.5">({allInspections.length})</span>
+            )}
+          </button>
+        )}
       </div>
+
+      {/* Фильтр статусов для режима проверки */}
+      {viewMode === 'review' && isReviewerLike && (
+        <div className="bg-white border-b px-4 py-2 shrink-0 flex gap-2 overflow-x-auto">
+          {[
+            { key: 'all', label: `Все (${allInspections.length})` },
+            { key: 'pending', label: 'На проверку' },
+            { key: 'completed', label: 'Принятые' },
+            { key: 'issues_found', label: 'С нарушениями' },
+            { key: 'critical', label: 'Критические' },
+          ].map((f) => (
+            <button
+              key={f.key}
+              onClick={() => setReviewStatusFilter(f.key)}
+              className={`shrink-0 px-3 py-1 text-xs rounded-full font-medium transition-colors ${
+                reviewStatusFilter === f.key
+                  ? 'bg-primary-700 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Content */}
       <div className="flex-1 min-h-0">
-        {viewMode === 'map' ? (
+        {viewMode === 'review' && isReviewerLike ? (
+          <div className="overflow-y-auto h-full p-3 space-y-2">
+            {filteredInspections.map((insp) => {
+              const okCount = insp.answers?.filter((a) => a.result === 'ok').length ?? 0
+              const defectCount = insp.answers?.filter((a) => a.result === 'defect').length ?? 0
+              const total = insp.answers?.length ?? 0
+              const isReviewed = !!insp.reviewed_by
+
+              return (
+                <button
+                  key={insp.id}
+                  onClick={() => navigate(`/inspections/${insp.id}`)}
+                  className="card w-full text-left hover:border-primary-300 transition-colors"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className={`shrink-0 mt-0.5 ${
+                      insp.status === 'critical' ? 'text-red-500' :
+                      insp.status === 'issues_found' ? 'text-orange-500' :
+                      insp.status === 'completed' ? 'text-green-500' : 'text-gray-400'
+                    }`}>
+                      {insp.status === 'completed' ? <CheckCircle2 className="w-5 h-5" /> :
+                       insp.status === 'critical' ? <AlertTriangle className="w-5 h-5" /> :
+                       <Clock className="w-5 h-5" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-sm truncate">
+                          {insp.site?.courtyard?.name ?? 'Площадка'}
+                        </span>
+                        <span className={`badge text-xs ${STATUS_COLORS[insp.status] ?? 'bg-gray-100'}`}>
+                          {STATUS_LABELS[insp.status] ?? insp.status}
+                        </span>
+                        {isReviewed && (
+                          <span className="badge badge-ok text-xs">✓ Проверен</span>
+                        )}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-0.5">
+                        {insp.site?.district?.name} • {insp.inspector?.full_name}
+                      </div>
+                      <div className="text-xs text-gray-400 mt-0.5">
+                        {new Date(insp.created_at).toLocaleDateString('ru')} — {new Date(insp.created_at).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                      {total > 0 && (
+                        <div className="flex gap-3 mt-1.5 text-xs">
+                          <span className="text-green-600">✓ {okCount} ОК</span>
+                          {defectCount > 0 && <span className="text-red-600">✕ {defectCount} наруш.</span>}
+                          <span className="text-gray-400">{total - okCount - defectCount} не пров.</span>
+                          {insp.photos_count > 0 && <span className="text-gray-400">📷 {insp.photos_count}</span>}
+                          {insp.issues_count > 0 && <span className="text-orange-600">⚠ {insp.issues_count} замечаний</span>}
+                        </div>
+                      )}
+                      {insp.reviewed_by && (
+                        <div className="text-xs text-amber-600 mt-1">
+                          Проверил: {insp.reviewed_by.full_name}
+                          {insp.reviewed_at && `, ${new Date(insp.reviewed_at).toLocaleDateString('ru')}`}
+                        </div>
+                      )}
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-gray-300 shrink-0 mt-3" />
+                  </div>
+                </button>
+              )
+            })}
+            {filteredInspections.length === 0 && (
+              <div className="text-center text-gray-400 py-12">
+                {reviewStatusFilter !== 'all' ? 'Нет обходов с этим статусом' : 'Нет обходов для проверки'}
+              </div>
+            )}
+          </div>
+        ) : viewMode === 'map' ? (
           <MapContainer center={center} zoom={12} className="h-full w-full" attributionControl={false}>
-            {/* prefix={false} убирает стандартную приписку Leaflet; обязательная
-                подпись OpenStreetMap (условие использования их тайлов) остаётся */}
             <AttributionControl prefix={false} />
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
@@ -194,11 +294,7 @@ export default function MapPage() {
             />
             <FitBounds data={sites} />
             {sites.map((s) => (
-              <Marker
-                key={s.id}
-                position={[s.lat ?? 55.829, s.lon ?? 37.532]}
-                icon={s.type === CHILD_TYPE ? childIcon : sportIcon}
-              >
+              <Marker key={s.id} position={[s.lat ?? 55.829, s.lon ?? 37.532]} icon={s.type === CHILD_TYPE ? childIcon : sportIcon}>
                 <Popup>
                   <div className="min-w-[180px]">
                     <div className="font-semibold text-sm">{s.courtyard?.name ?? 'Площадка'}</div>
@@ -206,10 +302,7 @@ export default function MapPage() {
                     <div className="text-xs text-gray-400 mt-0.5">
                       {s.type === CHILD_TYPE ? 'Детская' : 'Спортивная'} • {s.area_m2} м²
                     </div>
-                    <button
-                      onClick={() => navigate(`/sites/${s.id}`)}
-                      className="mt-2 text-xs btn-primary py-1 px-3 w-full flex items-center justify-center gap-1"
-                    >
+                    <button onClick={() => navigate(`/sites/${s.id}`)} className="mt-2 text-xs btn-primary py-1 px-3 w-full flex items-center justify-center gap-1">
                       Открыть <ChevronRight className="w-3 h-3" />
                     </button>
                   </div>
@@ -220,31 +313,21 @@ export default function MapPage() {
         ) : (
           <div className="overflow-y-auto h-full p-3 space-y-2">
             {sites.map((s) => (
-              <button
-                key={s.id}
-                onClick={() => navigate(`/sites/${s.id}`)}
-                className="card w-full text-left hover:border-primary-300 transition-colors"
-              >
+              <button key={s.id} onClick={() => navigate(`/sites/${s.id}`)} className="card w-full text-left hover:border-primary-300 transition-colors">
                 <div className="flex items-start gap-3">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white text-lg shrink-0 ${
-                    s.type === CHILD_TYPE ? 'bg-blue-600' : 'bg-green-600'
-                  }`}>
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white text-lg shrink-0 ${s.type === CHILD_TYPE ? 'bg-blue-600' : 'bg-green-600'}`}>
                     {s.type === CHILD_TYPE ? 'Д' : 'С'}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="font-semibold text-sm truncate">{s.courtyard?.name ?? 'Площадка'}</div>
                     <div className="text-xs text-gray-500 mt-0.5">{s.district?.name}</div>
-                    <div className="text-xs text-gray-400 mt-0.5">
-                      {s.type}{' • '}{s.area_m2} м²
-                    </div>
+                    <div className="text-xs text-gray-400 mt-0.5">{s.type}{' • '}{s.area_m2} м²</div>
                   </div>
                   <ChevronRight className="w-4 h-4 text-gray-300 shrink-0 mt-3" />
                 </div>
               </button>
             ))}
-            {sites.length === 0 && (
-              <div className="text-center text-gray-400 py-12">Нет площадок</div>
-            )}
+            {sites.length === 0 && (<div className="text-center text-gray-400 py-12">Нет площадок</div>)}
           </div>
         )}
       </div>

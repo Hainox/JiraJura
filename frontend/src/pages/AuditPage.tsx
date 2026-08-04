@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, RefreshCw, Search, Filter } from 'lucide-react'
+import { ArrowLeft, RefreshCw } from 'lucide-react'
 
 const ACTION_LABELS: Record<string, string> = {
   invite_create: 'Создано приглашение',

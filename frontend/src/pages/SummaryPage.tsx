@@ -22,11 +22,13 @@ export default function SummaryPage() {
     enabled: !!inspectionId,
   })
 
-  const { data: issues } = useQuery<IssueOut[]>({
+  const { data: issuesData } = useQuery({
     queryKey: ['issues', inspectionId],
-    queryFn: () => issuesApi.list({ inspection_id: inspectionId }),
+    queryFn: () => issuesApi.list({ site_id: undefined }),
     enabled: !!inspectionId,
   })
+
+  const issues = issuesData?.items ?? []
 
   const completeMutation = useMutation({
     mutationFn: () =>
@@ -118,14 +120,14 @@ export default function SummaryPage() {
         )}
 
         {/* Замечания */}
-        {issues && issues.length > 0 && (
+        {issues.length > 0 && (
           <div className="card">
             <h2 className="font-semibold text-orange-700 mb-3 flex items-center gap-1.5">
               <FileText className="w-4 h-4" />
               Замечания ({issues.length})
             </h2>
             <div className="space-y-2">
-              {issues.map((issue) => (
+              {issues.map((issue: IssueOut) => (
                 <div key={issue.id} className="bg-orange-50 rounded-lg p-3 text-sm">
                   <div className="flex items-center gap-2 mb-1">
                     <span className={`badge text-[10px] ${

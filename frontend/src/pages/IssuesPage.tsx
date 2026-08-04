@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { issuesApi, districtsApi, authApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
 import type { IssueOut, DistrictOut, UserAdminOut } from '@/types'
-import { ArrowLeft, Search, Filter, RefreshCw, UserPlus, Calendar, Clock, AlertTriangle, CheckCircle2, XCircle, Wrench, ChevronRight, ExternalLink } from 'lucide-react'
+import { ArrowLeft, Search, Filter, RefreshCw, UserPlus, Calendar, Clock, AlertTriangle, CheckCircle2, XCircle, Wrench, ExternalLink } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
 
 const STATUS_LABELS: Record<string, string> = {
@@ -37,16 +37,6 @@ const CRIT_COLORS: Record<string, string> = {
   medium: 'bg-blue-100 text-blue-700',
   high: 'bg-orange-100 text-orange-800',
   critical: 'bg-red-100 text-red-900 font-bold',
-}
-
-const NEXT_STATUSES: Record<string, string[]> = {
-  open: ['assigned', 'in_work'],
-  assigned: ['in_work', 'closed'],
-  in_work: ['fixed', 'control'],
-  fixed: ['control', 'closed'],
-  control: ['closed'],
-  closed: ['open'],
-  overdue: ['in_work', 'closed'],
 }
 
 export default function IssuesPage() {

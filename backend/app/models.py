@@ -138,7 +138,7 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
     district_ref = relationship("District", back_populates="users")
-    inspections = relationship("Inspection", back_populates="inspector")
+    inspections = relationship("Inspection", back_populates="inspector", foreign_keys="Inspection.inspector_id")
     assigned_issues = relationship("Issue", back_populates="assigned_user", foreign_keys="Issue.assigned_to")
 
 

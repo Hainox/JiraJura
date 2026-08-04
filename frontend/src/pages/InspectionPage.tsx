@@ -6,7 +6,8 @@ import { useAuthStore } from '@/stores/auth'
 import type { InspectionOut, ChecklistTemplateOut, ChecklistItemOut, PhotoOut } from '@/types'
 import {
   ArrowLeft, Send, X, AlertTriangle, CheckCircle, Eye,
-  CheckCircle2, HelpCircle, ChevronRight, Plus, Camera
+  CheckCircle2, HelpCircle, ChevronRight, Plus, Camera,
+  Flag, RotateCcw
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -39,6 +40,7 @@ export default function InspectionPage() {
   // Reviewer state
   const [reviewerComment, setReviewerComment] = useState('')
   const [showReviewPanel, setShowReviewPanel] = useState(false)
+  const [showCompleteConfirm, setShowCompleteConfirm] = useState(false)
 
   const { data: inspection, isLoading } = useQuery<InspectionOut>({
     queryKey: ['inspection', inspectionId],
@@ -50,7 +52,9 @@ export default function InspectionPage() {
   const isReviewer = user?.role === 'reviewer' || user?.role === 'admin'
   const isReadOnly = isReviewer && !isInspector
 
-  // Загружаем чек-лист по типу площадки
+  // Is this inspection returned for revision?
+  const isRevision = inspection?.status === 'in_progress' && !!inspection?.reviewer_comment && isInspector
+
   const { data: checklists } = useQuery<ChecklistTemplateOut[]>({
     queryKey: ['checklist-template', inspection?.site?.type],
     queryFn: () => checklistsApi.template({ site_type: inspection!.site.type }),
@@ -62,7 +66,6 @@ export default function InspectionPage() {
     [checklists]
   )
 
-  // Инициализируем ответы из существующих
   useEffect(() => {
     if (inspection?.answers) {
       const existing: Record<string, { result: AnswerResult; comment: string }> = {}
@@ -82,7 +85,6 @@ export default function InspectionPage() {
     }
   }, [inspection?.answers, inspection?.photos, inspection?.reviewer_comment])
 
-  // Группируем фото: общие (inspection-level) и по пунктам чек-листа
   const generalPhotos = useMemo(
     () => photos.filter((p) => p.target_type === 'inspection'),
     [photos]
@@ -125,6 +127,28 @@ export default function InspectionPage() {
       inspectionsApi.update(inspectionId, data),
     onSuccess: () => {
       toast.success('Проверено')
+      queryClient.invalidateQueries({ queryKey: ['inspection', inspectionId] })
+      setShowReviewPanel(false)
+    },
+    onError: () => toast.error('Ошибка'),
+  })
+
+  const completeMutation = useMutation({
+    mutationFn: (result: 'completed' | 'issues_found') =>
+      inspectionsApi.complete(inspectionId, { status: result }),
+    onSuccess: () => {
+      toast.success('Обход завершён')
+      queryClient.invalidateQueries({ queryKey: ['inspection', inspectionId] })
+      navigate(`/sites/${inspection!.site_id}`)
+    },
+    onError: () => toast.error('Ошибка завершения'),
+  })
+
+  const returnMutation = useMutation({
+    mutationFn: (data: { status: string; reviewer_comment: string }) =>
+      inspectionsApi.update(inspectionId, data),
+    onSuccess: () => {
+      toast.success('Возвращено на доработку')
       queryClient.invalidateQueries({ queryKey: ['inspection', inspectionId] })
       setShowReviewPanel(false)
     },
@@ -260,10 +284,19 @@ export default function InspectionPage() {
             {isReadOnly && <span className="opacity-70">| {STATUS_LABELS[inspection.status] ?? inspection.status}</span>}
           </div>
         </div>
-        {!isReadOnly && (
-          <button onClick={() => saveMutation.mutate()} className="text-xs bg-white/20 px-3 py-1.5 rounded-lg hover:bg-white/30">
-            Сохранить
-          </button>
+        {isInspector && inspection.status === 'in_progress' && (
+          <>
+            <button onClick={() => saveMutation.mutate()} className="text-xs bg-white/20 px-3 py-1.5 rounded-lg hover:bg-white/30">
+              Сохранить
+            </button>
+            <button
+              onClick={() => setShowCompleteConfirm(true)}
+              className="text-xs bg-green-600 px-3 py-1.5 rounded-lg hover:bg-green-700 font-medium"
+            >
+              <Flag className="w-3.5 h-3.5 inline mr-1" />
+              Завершить
+            </button>
+          </>
         )}
         <button
           onClick={() => setShowPhotoPanel((v) => !v)}
@@ -274,7 +307,7 @@ export default function InspectionPage() {
           <Camera className="w-4 h-4 inline mr-1" />
           {photos.length > 0 ? photos.length : ''}
         </button>
-        {isReviewer && !isInspector && (
+        {isReviewer && !isInspector && inspection.status !== 'planned' && (
           <button
             onClick={() => setShowReviewPanel((v) => !v)}
             className={`text-xs px-3 py-1.5 rounded-lg font-medium ${
@@ -287,12 +320,60 @@ export default function InspectionPage() {
         )}
       </div>
 
+      {/* Revision banner */}
+      {isRevision && (
+        <div className="bg-orange-50 border-b border-orange-200 px-4 py-2 text-xs text-orange-800">
+          <div className="flex items-center gap-2 font-medium mb-0.5">
+            <RotateCcw className="w-3.5 h-3.5" />
+            Возвращено на доработку
+          </div>
+          {inspection.reviewer_comment && (
+            <div className="text-orange-700">{inspection.reviewer_comment}</div>
+          )}
+        </div>
+      )}
+
       {/* Reviewer info bar */}
-      {inspection.reviewed_by && (
+      {inspection.reviewed_by && !isRevision && (
         <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-xs text-amber-800 flex items-center gap-2">
           <CheckCircle className="w-3.5 h-3.5" />
           Проверено: {inspection.reviewed_by.full_name}
           {inspection.reviewed_at && `, ${new Date(inspection.reviewed_at).toLocaleDateString('ru')}`}
+        </div>
+      )}
+
+      {/* Complete confirmation */}
+      {showCompleteConfirm && isInspector && (
+        <div className="bg-white border-b p-3 shrink-0 space-y-3">
+          <div className="text-sm font-semibold text-gray-800">Завершить обход</div>
+          <p className="text-xs text-gray-500">
+            Проверено ✓{stats.ok} пунктов, выявлено ✕{stats.nok} нарушений.
+            {stats.pending > 0 && ` Осталось ${stats.pending} непроверенных.`}
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => { setShowCompleteConfirm(false) }}
+              className="flex-1 py-2 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
+            >
+              Отмена
+            </button>
+            <button
+              onClick={() => completeMutation.mutate('completed')}
+              disabled={completeMutation.isPending}
+              className="flex-1 py-2 text-sm bg-green-600 text-white rounded-lg font-medium hover:bg-green-700"
+            >
+              ✓ Всё в порядке
+            </button>
+            {stats.nok > 0 && (
+              <button
+                onClick={() => completeMutation.mutate('issues_found')}
+                disabled={completeMutation.isPending}
+                className="flex-1 py-2 text-sm bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700"
+              >
+                ⚠ Завершить с нарушениями
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -307,30 +388,39 @@ export default function InspectionPage() {
             value={reviewerComment}
             onChange={(e) => setReviewerComment(e.target.value)}
           />
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <button
               onClick={() => reviewMutation.mutate({ status: 'completed', reviewer_comment: reviewerComment })}
               disabled={reviewMutation.isPending}
-              className="flex-1 py-2 text-sm bg-green-600 text-white rounded-lg font-medium hover:bg-green-700"
+              className="flex-1 py-2 text-sm bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 min-w-[100px]"
             >
               ✓ Принять
             </button>
             <button
               onClick={() => reviewMutation.mutate({ status: 'issues_found', reviewer_comment: reviewerComment })}
               disabled={reviewMutation.isPending}
-              className="flex-1 py-2 text-sm bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700"
+              className="flex-1 py-2 text-sm bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700 min-w-[100px]"
             >
               ⚠ Есть нарушения
             </button>
             <button
               onClick={() => reviewMutation.mutate({ status: 'critical', reviewer_comment: reviewerComment })}
               disabled={reviewMutation.isPending}
-              className="flex-1 py-2 text-sm bg-red-600 text-white rounded-lg font-medium hover:bg-red-700"
+              className="flex-1 py-2 text-sm bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 min-w-[100px]"
             >
               ✕ Критический
             </button>
           </div>
-          {inspection.reviewer_comment && (
+          <button
+            onClick={() => returnMutation.mutate({ status: 'in_progress', reviewer_comment: reviewerComment })}
+            disabled={returnMutation.isPending || !reviewerComment.trim()}
+            className="w-full py-2 text-sm bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700 disabled:opacity-50"
+            title="Укажите комментарий для возврата"
+          >
+            <RotateCcw className="w-4 h-4 inline mr-1" />
+            Вернуть на доработку
+          </button>
+          {inspection.reviewer_comment && !isRevision && (
             <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded">
               Предыдущий комментарий: {inspection.reviewer_comment}
             </div>
@@ -401,7 +491,6 @@ export default function InspectionPage() {
                   </div>
                 )}
 
-                {/* Фото под пунктом */}
                 {itemPhotos.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {itemPhotos.map((p) => (
@@ -412,7 +501,6 @@ export default function InspectionPage() {
                   </div>
                 )}
 
-                {/* Кнопка добавления фото (только для инспектора при дефекте) */}
                 {!isReadOnly && answers[item.id]?.result === 'defect' && (
                   <div className="mt-1.5">
                     <button
@@ -429,7 +517,6 @@ export default function InspectionPage() {
               {!isReadOnly && <ChevronRight className="w-4 h-4 text-gray-300 shrink-0 mt-1" />}
             </div>
 
-            {/* Кнопки оценки (только для инспектора) */}
             {!isReadOnly && (
               <div className="flex gap-2 mt-3">
                 <button

@@ -21,7 +21,26 @@ createRoot(document.getElementById('root')!).render(
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <App />
-        <Toaster position="top-center" toastOptions={{ duration: 3000 }} />
+        <Toaster
+          position="top-center"
+          toastOptions={{
+            duration: 3000,
+            style: {
+              borderRadius: '10px',
+              background: '#333',
+              color: '#fff',
+              fontSize: '14px',
+              maxWidth: '360px',
+            },
+            success: {
+              iconTheme: { primary: '#16a34a', secondary: '#fff' },
+            },
+            error: {
+              iconTheme: { primary: '#dc2626', secondary: '#fff' },
+            },
+          }}
+          gutter={8}
+        />
       </BrowserRouter>
     </QueryClientProvider>
   </StrictMode>

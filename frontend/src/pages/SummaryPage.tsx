@@ -7,7 +7,7 @@ import {
   ArrowLeft, AlertTriangle,
   FileText, Send
 } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { notify as toast } from '@/lib/toast'
 
 export default function SummaryPage() {
   const { id } = useParams<{ id: string }>()

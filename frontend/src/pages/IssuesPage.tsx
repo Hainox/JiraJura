@@ -5,7 +5,7 @@ import { issuesApi, districtsApi, authApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
 import type { IssueOut, DistrictOut, UserAdminOut } from '@/types'
 import { ArrowLeft, Search, Filter, RefreshCw, UserPlus, Calendar, Clock, AlertTriangle, CheckCircle2, XCircle, Wrench, ChevronRight, ExternalLink } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { notify as toast } from '@/lib/toast'
 
 const STATUS_LABELS: Record<string, string> = {
   open: 'Открыто', assigned: 'Назначено', in_work: 'В работе',

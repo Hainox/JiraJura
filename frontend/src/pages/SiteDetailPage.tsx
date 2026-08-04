@@ -4,7 +4,7 @@ import { sitesApi, inspectionsApi, checklistsApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
 import type { SiteOut, ChecklistTemplateOut, InspectionOut } from '@/types'
 import { ArrowLeft, Play, Eye, Clock } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { notify as toast } from '@/lib/toast'
 
 const STATUS_LABELS: Record<string, string> = {
   planned: 'Запланирован', in_progress: 'В процессе',

@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { authApi, districtsApi } from '@/lib/api'
 import { ROLES, ROLE_LABELS } from '@/lib/roles'
 import type { Role, UserAdminOut, UserInviteCreated } from '@/types'
-import toast from 'react-hot-toast'
+import { notify as toast } from '@/lib/toast'
 import {
   ArrowLeft, UserPlus, Copy, Check, Trash2, Key, Edit3, X, Search
 } from 'lucide-react'

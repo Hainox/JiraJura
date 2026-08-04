@@ -5,7 +5,7 @@ import { authApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
 import { ROLE_LABELS } from '@/lib/roles'
 import type { Role } from '@/types'
-import toast from 'react-hot-toast'
+import { notify as toast } from '@/lib/toast'
 import { Shield } from 'lucide-react'
 
 export default function RegisterPage() {

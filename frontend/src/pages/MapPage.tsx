@@ -7,7 +7,7 @@ import { sitesApi, districtsApi, reportsApi, inspectionsApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
 import type { SiteOut, DistrictOut, InspectionOut } from '@/types'
 import { List, Map as MapIcon, LogOut, ChevronRight, Users, Download, ClipboardCheck, Clock, CheckCircle2, AlertTriangle, AlertCircle } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { notify as toast } from '@/lib/toast'
 import 'leaflet/dist/leaflet.css'
 
 const CHILD_TYPE = 'Детская площадка'

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/auth'
 import { authApi } from '@/lib/api'
-import toast from 'react-hot-toast'
+import { notify as toast } from '@/lib/toast'
 import { Shield } from 'lucide-react'
 
 export default function LoginPage() {

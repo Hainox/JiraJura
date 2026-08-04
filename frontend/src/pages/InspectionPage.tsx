@@ -9,7 +9,7 @@ import {
   CheckCircle2, HelpCircle, ChevronRight, Plus, Camera,
   Flag, RotateCcw
 } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { notify as toast } from '@/lib/toast'
 
 type AnswerResult = 'ok' | 'defect' | 'pending'
 

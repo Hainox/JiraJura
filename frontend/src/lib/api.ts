@@ -16,6 +16,7 @@ import type {
   UserInviteCreated,
   UserInvitePreview,
   UserRoleUpdate,
+  PasswordResetOut,
 } from '@/types'
 
 const api = axios.create({
@@ -63,6 +64,12 @@ export const authApi = {
 
   updateUser: (id: string, data: UserRoleUpdate) =>
     api.patch<UserAdminOut>(`/auth/users/${id}`, data).then((r) => r.data),
+
+  deleteUser: (id: string) =>
+    api.delete(`/auth/users/${id}`).then((r) => r.data),
+
+  resetPassword: (id: string) =>
+    api.post<PasswordResetOut>(`/auth/users/${id}/reset-password`).then((r) => r.data),
 }
 
 // ── Districts ──

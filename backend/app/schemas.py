@@ -42,6 +42,12 @@ class UserRoleUpdate(BaseModel):
     role: Optional[str] = None
     district_id: Optional[UUID] = None
     is_active: Optional[bool] = None
+    full_name: Optional[str] = None
+    phone: Optional[str] = None
+
+
+class PasswordResetOut(BaseModel):
+    new_password: str
 
 
 # ── Приглашения на регистрацию ────────────────────────────────

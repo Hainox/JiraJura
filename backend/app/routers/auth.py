@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models import User, UserInvite
 from app.schemas import (
-    LoginRequest, TokenResponse, UserOut, UserAdminOut, UserRoleUpdate,
+    LoginRequest, TokenResponse, UserOut, UserAdminOut, UserRoleUpdate, PasswordResetOut,
     UserInviteCreate, UserInviteCreated, UserInvitePreview, InviteCompleteRequest,
 )
 from app.services.auth import (
@@ -171,7 +171,45 @@ async def update_user(
         user.district_id = data.district_id
     if data.is_active is not None:
         user.is_active = data.is_active
+    if data.full_name is not None:
+        user.full_name = data.full_name
+    if data.phone is not None:
+        user.phone = data.phone
 
     await db.commit()
     await db.refresh(user)
     return UserAdminOut.model_validate(user)
+
+
+@router.delete("/users/{user_id}")
+async def delete_user(
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    """Удалить пользователя. Нельзя удалить самого себя."""
+    if str(current_user.id) == user_id:
+        raise HTTPException(400, "Нельзя удалить самого себя")
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(404, "Пользователь не найден")
+    await db.delete(user)
+    await db.commit()
+    return {"ok": True}
+
+
+@router.post("/users/{user_id}/reset-password", response_model=PasswordResetOut)
+async def reset_user_password(
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    """Сбросить пароль пользователя — генерирует новый случайный пароль."""
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(404, "Пользователь не найден")
+
+    new_password = secrets.token_urlsafe(10)
+    user.password_hash = hash_password(new_password)
+    await db.commit()
+    return PasswordResetOut(new_password=new_password)

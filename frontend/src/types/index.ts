@@ -52,6 +52,12 @@ export interface UserRoleUpdate {
   role?: Role
   district_id?: string
   is_active?: boolean
+  full_name?: string
+  phone?: string
+}
+
+export interface PasswordResetOut {
+  new_password: string
 }
 
 // ── Courier / Courtyard ──

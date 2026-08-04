@@ -6,7 +6,7 @@ import L from 'leaflet'
 import { sitesApi, districtsApi, reportsApi, inspectionsApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
 import type { SiteOut, DistrictOut, InspectionOut } from '@/types'
-import { List, Map as MapIcon, LogOut, ChevronRight, Users, Download, ClipboardCheck, Clock, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { List, Map as MapIcon, LogOut, ChevronRight, Users, Download, ClipboardCheck, Clock, CheckCircle2, AlertTriangle, AlertCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import 'leaflet/dist/leaflet.css'
 
@@ -111,6 +111,11 @@ export default function MapPage() {
           </p>
         </div>
         <div className="flex gap-1">
+          {user?.role !== 'inspector' && (
+            <button onClick={() => navigate('/issues')} className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="Замечания">
+              <AlertCircle className="w-5 h-5" />
+            </button>
+          )}
           {user?.role === 'admin' && (
             <button onClick={() => navigate('/admin/users')} className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="Пользователи">
               <Users className="w-5 h-5" />

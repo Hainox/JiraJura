@@ -264,6 +264,7 @@ class Issue(Base):
     inspection_ref = relationship("Inspection", back_populates="issues")
     site_ref = relationship("Site", back_populates="issues")
     assigned_user = relationship("User", back_populates="assigned_issues", foreign_keys=[assigned_to])
+    creator_ref = relationship("User", foreign_keys=[created_by])
     status_history = relationship("IssueStatusHistory", back_populates="issue")
     photos = relationship("Photo",
                           primaryjoin="and_(Issue.id==Photo.issue_id, Photo.target_type=='issue')",

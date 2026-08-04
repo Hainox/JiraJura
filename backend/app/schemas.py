@@ -240,9 +240,15 @@ class IssueOut(BaseModel):
     status: str
     site_id: UUID
     inspection_id: UUID
-    assigned_to: Optional[UUID]
-    due_date: Optional[datetime]
+    assigned_to: Optional[UUID] = None
+    assigned_user: Optional[UserOut] = None
+    due_date: Optional[datetime] = None
+    created_by: UUID
+    creator: Optional[UserOut] = None
+    site_name: Optional[str] = None
+    district_name: Optional[str] = None
     created_at: datetime
+    updated_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 

@@ -5,14 +5,44 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.models import Issue, IssueStatusHistory, Site, Courtyard, User
-from app.schemas import IssueCreate, IssueUpdate, IssueOut, IssueListOut
+from app.models import Issue, IssueStatusHistory, Site, Courtyard, District, User
+from app.schemas import IssueCreate, IssueUpdate, IssueOut, IssueListOut, UserOut
 from app.services.auth import get_current_user
 from app.services.permissions import require_role
 
 router = APIRouter()
+
+
+def _issue_to_out(i: Issue) -> IssueOut:
+    """Преобразовать модель Issue в схему IssueOut с обогащёнными данными."""
+    site_name = None
+    district_name = None
+    if i.site_ref:
+        site_name = i.site_ref.courtyard.name if i.site_ref.courtyard else None
+        if i.site_ref.courtyard and i.site_ref.courtyard.district:
+            district_name = i.site_ref.courtyard.district.name
+
+    return IssueOut(
+        id=i.id,
+        title=i.title,
+        description=i.description,
+        criticality=i.criticality,
+        status=i.status,
+        site_id=i.site_id,
+        inspection_id=i.inspection_id,
+        assigned_to=i.assigned_to,
+        assigned_user=UserOut.model_validate(i.assigned_user) if i.assigned_user else None,
+        due_date=i.due_date,
+        created_by=i.created_by,
+        creator=UserOut.model_validate(i.creator_ref) if hasattr(i, 'creator_ref') and i.creator_ref else None,
+        site_name=site_name,
+        district_name=district_name,
+        created_at=i.created_at,
+        updated_at=i.updated_at,
+    )
 
 
 @router.post("/", response_model=IssueOut)
@@ -43,7 +73,15 @@ async def create_issue(
     db.add(issue)
     await db.commit()
     await db.refresh(issue)
-    return IssueOut.model_validate(issue)
+
+    # перезагружаем с eager-load
+    q = select(Issue).where(Issue.id == issue.id).options(
+        selectinload(Issue.site_ref).selectinload(Site.courtyard).selectinload(Courtyard.district),
+        selectinload(Issue.assigned_user),
+        selectinload(Issue.creator_ref),
+    )
+    issue = (await db.execute(q)).scalar_one()
+    return _issue_to_out(issue)
 
 
 @router.get("/", response_model=IssueListOut)
@@ -52,12 +90,17 @@ async def list_issues(
     status: Optional[str] = Query(None),
     criticality: Optional[str] = Query(None),
     district_id: Optional[str] = Query(None),
+    assigned_to: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    base = select(Issue).order_by(Issue.created_at.desc())
+    base = select(Issue).options(
+        selectinload(Issue.site_ref).selectinload(Site.courtyard).selectinload(Courtyard.district),
+        selectinload(Issue.assigned_user),
+        selectinload(Issue.creator_ref),
+    ).order_by(Issue.created_at.desc())
 
     if site_id:
         base = base.where(Issue.site_id == site_id)
@@ -65,10 +108,11 @@ async def list_issues(
         base = base.where(Issue.status == status)
     if criticality:
         base = base.where(Issue.criticality == criticality)
+    if assigned_to:
+        base = base.where(Issue.assigned_to == assigned_to)
 
     effective_district_id = district_id
     if current_user.role == "reviewer" and current_user.district_id is not None:
-        # у reviewer с закреплённым районом свой район в приоритете над query-параметром
         effective_district_id = str(current_user.district_id)
     if current_user.role == "inspector":
         base = base.where(Issue.created_by == current_user.id)
@@ -86,16 +130,21 @@ async def list_issues(
 
     return IssueListOut(
         total=total,
-        items=[IssueOut.model_validate(r) for r in rows],
+        items=[_issue_to_out(r) for r in rows],
     )
 
 
 @router.get("/{issue_id}", response_model=IssueOut)
 async def get_issue(issue_id: str, db: AsyncSession = Depends(get_db)):
-    issue = (await db.execute(select(Issue).where(Issue.id == issue_id))).scalar_one_or_none()
+    q = select(Issue).where(Issue.id == issue_id).options(
+        selectinload(Issue.site_ref).selectinload(Site.courtyard).selectinload(Courtyard.district),
+        selectinload(Issue.assigned_user),
+        selectinload(Issue.creator_ref),
+    )
+    issue = (await db.execute(q)).scalar_one_or_none()
     if not issue:
         raise HTTPException(404, "Замечание не найдено")
-    return IssueOut.model_validate(issue)
+    return _issue_to_out(issue)
 
 
 @router.put("/{issue_id}", response_model=IssueOut)
@@ -105,7 +154,13 @@ async def update_issue(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role("reviewer", "admin")),
 ):
-    issue = (await db.execute(select(Issue).where(Issue.id == issue_id))).scalar_one_or_none()
+    issue = (await db.execute(
+        select(Issue).where(Issue.id == issue_id).options(
+            selectinload(Issue.site_ref).selectinload(Site.courtyard).selectinload(Courtyard.district),
+            selectinload(Issue.assigned_user),
+            selectinload(Issue.creator_ref),
+        )
+    )).scalar_one_or_none()
     if not issue:
         raise HTTPException(404, "Замечание не найдено")
 
@@ -132,5 +187,12 @@ async def update_issue(
 
     issue.updated_at = datetime.utcnow()
     await db.commit()
-    await db.refresh(issue)
-    return IssueOut.model_validate(issue)
+
+    # перезагружаем
+    q = select(Issue).where(Issue.id == issue_id).options(
+        selectinload(Issue.site_ref).selectinload(Site.courtyard).selectinload(Courtyard.district),
+        selectinload(Issue.assigned_user),
+        selectinload(Issue.creator_ref),
+    )
+    issue = (await db.execute(q)).scalar_one()
+    return _issue_to_out(issue)

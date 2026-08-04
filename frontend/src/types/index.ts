@@ -184,8 +184,14 @@ export interface IssueOut {
   site_id: string
   inspection_id: string
   assigned_to?: string
+  assigned_user?: UserOut | null
   due_date?: string
+  created_by: string
+  creator?: UserOut | null
+  site_name?: string
+  district_name?: string
   created_at: string
+  updated_at?: string
 }
 
 export interface IssueListOut {

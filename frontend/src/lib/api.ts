@@ -10,6 +10,7 @@ import type {
   InspectionListOut,
   IssueOut,
   IssueCreate,
+  IssueListOut,
   PhotoOut,
   UserAdminOut,
   UserInviteCreate,
@@ -146,6 +147,14 @@ export const issuesApi = {
 
   get: (id: string) => api.get<IssueOut>(`/issues/${id}`).then((r) => r.data),
 
-  list: (params?: { inspection_id?: string }) =>
-    api.get<IssueOut[]>('/issues/', { params }).then((r) => r.data),
+  list: (params?: {
+    site_id?: string; status?: string; criticality?: string;
+    district_id?: string; assigned_to?: string; page?: number; page_size?: number
+  }) =>
+    api.get<IssueListOut>('/issues/', { params }).then((r) => r.data),
+
+  update: (id: string, data: {
+    status?: string; assigned_to?: string; due_date?: string; comment?: string
+  }) =>
+    api.put<IssueOut>(`/issues/${id}`, data).then((r) => r.data),
 }

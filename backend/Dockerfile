@@ -9,6 +9,7 @@ COPY alembic.ini .
 COPY schema.sql .
 COPY import_kml.py .
 COPY apply_titul.py .
+COPY reset_passwords.py .
 COPY titul_2026-08.csv .
 COPY alembic/ ./alembic/
 RUN mkdir -p /app/uploads

@@ -34,11 +34,17 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-// Обработка 401 — разлогин
+// Обработка 401 — разлогин (но не на страницах входа/смены пароля)
 api.interceptors.response.use(
   (r) => r,
   (error) => {
     if (error.response?.status === 401) {
+      const path = window.location.pathname
+      // На страницах логина и смены пароля 401 — ожидаемое поведение,
+      // даём странице самой показать ошибку.
+      if (path === '/login' || path === '/change-password') {
+        return Promise.reject(error)
+      }
       localStorage.removeItem('access_token')
       localStorage.removeItem('user')
       window.location.href = '/login'

@@ -19,7 +19,10 @@ function ProtectedRoute({ children, roles }: { children: React.ReactNode; roles?
   const isAuth = useAuthStore((s) => s.isAuthenticated)
   const userRole = useAuthStore((s) => s.user?.role)
   if (!isAuth) return <Navigate to="/login" replace />
-  if (localStorage.getItem('force_pw_change') === '1') return <Navigate to="/change-password" replace />
+  // Не редиректим force_pw_change когда уже на странице смены пароля
+  if (localStorage.getItem('force_pw_change') === '1' && window.location.pathname !== '/change-password') {
+    return <Navigate to="/change-password" replace />
+  }
   if (roles && !roles.includes(userRole as Role)) return <Navigate to="/" replace />
   return <>{children}</>
 }

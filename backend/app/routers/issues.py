@@ -8,8 +8,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.models import Issue, IssueStatusHistory, Site, Courtyard, District, User
-from app.schemas import IssueCreate, IssueUpdate, IssueOut, IssueListOut, UserOut
+import os
+import uuid as _uuid
+
+from fastapi import UploadFile, File
+
+from app.config import settings
+from app.models import Issue, IssueStatusHistory, Site, Courtyard, District, User, Photo
+from app.schemas import IssueCreate, IssueUpdate, IssueOut, IssueListOut, UserOut, PhotoOut
 from app.services.auth import get_current_user
 from app.services.permissions import require_role
 from app.services.audit import log_action
@@ -26,6 +32,20 @@ def _issue_to_out(i: Issue) -> IssueOut:
         if i.site_ref.courtyard and i.site_ref.courtyard.district:
             district_name = i.site_ref.courtyard.district.name
 
+    # фото исправлений
+    fix_photos = []
+    if hasattr(i, 'photos'):
+        for p in i.photos:
+            if hasattr(p, 'target_type') and p.target_type == 'issue_fix':
+                fix_photos.append(PhotoOut(
+                    id=p.id, target_type=p.target_type,
+                    inspection_id=p.inspection_id, issue_id=p.issue_id,
+                    url=f"/uploads/{p.storage_path}",
+                    thumbnail_url=f"/uploads/{p.thumbnail_path}" if p.thumbnail_path else None,
+                    gps_lat=p.gps_lat, gps_lon=p.gps_lon,
+                    taken_at=p.taken_at, created_at=p.created_at,
+                ))
+
     return IssueOut(
         id=i.id,
         title=i.title,
@@ -41,6 +61,8 @@ def _issue_to_out(i: Issue) -> IssueOut:
         creator=UserOut.model_validate(i.creator_ref) if hasattr(i, 'creator_ref') and i.creator_ref else None,
         site_name=site_name,
         district_name=district_name,
+        fix_comment=i.fix_comment if hasattr(i, 'fix_comment') else None,
+        fix_photos=fix_photos,
         created_at=i.created_at,
         updated_at=i.updated_at,
     )
@@ -185,6 +207,8 @@ async def update_issue(
         issue.assigned_to = data.assigned_to
     if data.due_date is not None:
         issue.due_date = data.due_date
+    if data.fix_comment is not None:
+        issue.fix_comment = data.fix_comment
 
     issue.updated_at = datetime.utcnow()
     await log_action(db, str(current_user.id), "issue_update", "issue", issue_id, {
@@ -200,3 +224,54 @@ async def update_issue(
     )
     issue = (await db.execute(q)).scalar_one()
     return _issue_to_out(issue)
+
+
+UPLOAD_DIR = os.environ.get("UPLOAD_DIR", "uploads")
+
+
+@router.post("/{issue_id}/fix-photos", response_model=PhotoOut)
+async def upload_fix_photo(
+    issue_id: str,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("reviewer", "admin")),
+):
+    """Загрузить фото исправления для замечания."""
+    issue = (await db.execute(select(Issue).where(Issue.id == issue_id))).scalar_one_or_none()
+    if not issue:
+        raise HTTPException(404, "Замечание не найдено")
+
+    ext = file.filename.rsplit(".", 1)[-1] if file.filename and "." in file.filename else "jpg"
+    safe_ext = ext.lower()[:5]
+    filename = f"{_uuid.uuid4()}.{safe_ext}"
+    rel_path = os.path.join("issues", filename)
+    abs_path = os.path.join(UPLOAD_DIR, rel_path)
+    os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+
+    max_bytes = settings.MAX_PHOTO_SIZE_MB * 1024 * 1024
+    size = 0
+    with open(abs_path, "wb") as f:
+        while chunk := await file.read(1024 * 1024):
+            size += len(chunk)
+            if size > max_bytes:
+                f.close()
+                os.remove(abs_path)
+                raise HTTPException(413, f"Файл больше {settings.MAX_PHOTO_SIZE_MB} МБ")
+            f.write(chunk)
+
+    photo = Photo(
+        target_type="issue_fix",
+        issue_id=issue.id,
+        storage_path=rel_path,
+    )
+    db.add(photo)
+    await db.commit()
+    await db.refresh(photo)
+
+    return PhotoOut(
+        id=photo.id, target_type=photo.target_type,
+        inspection_id=photo.inspection_id, issue_id=photo.issue_id,
+        url=f"/uploads/{photo.storage_path}",
+        thumbnail_url=None, gps_lat=None, gps_lon=None,
+        taken_at=None, created_at=photo.created_at,
+    )

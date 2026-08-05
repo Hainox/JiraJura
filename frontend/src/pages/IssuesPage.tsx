@@ -243,13 +243,22 @@ export default function IssuesPage() {
                         <ExternalLink className="w-4 h-4" />
                       </button>
                       {(user?.role === 'reviewer' || isAdmin) && (
-                        <button
-                          onClick={() => handleStatusChange(issue)}
-                          className="btn-primary text-xs py-1 px-2 flex items-center gap-1"
-                        >
-                          <Filter className="w-3 h-3" />
-                          Изменить
-                        </button>
+                        <>
+                          <button
+                            onClick={() => navigate(`/issues/${issue.id}`)}
+                            className="p-1.5 rounded-lg hover:bg-green-100 transition-colors text-green-600 hover:text-green-700"
+                            title="Зафиксировать исправление"
+                          >
+                            <Wrench className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleStatusChange(issue)}
+                            className="btn-primary text-xs py-1 px-2 flex items-center gap-1"
+                          >
+                            <Filter className="w-3 h-3" />
+                            Изменить
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>

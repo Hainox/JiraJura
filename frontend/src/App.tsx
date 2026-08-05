@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/auth'
 import type { Role } from '@/types'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 import LoginPage from '@/pages/LoginPage'
 import RegisterPage from '@/pages/RegisterPage'
 import ChangePasswordPage from '@/pages/ChangePasswordPage'
@@ -11,6 +12,7 @@ import InspectionPage from '@/pages/InspectionPage'
 import SummaryPage from '@/pages/SummaryPage'
 import AdminUsersPage from '@/pages/AdminUsersPage'
 import IssuesPage from '@/pages/IssuesPage'
+import IssueFixPage from '@/pages/IssueFixPage'
 import ProfilePage from '@/pages/ProfilePage'
 import AuditPage from '@/pages/AuditPage'
 import DashboardPage from '@/pages/DashboardPage'
@@ -35,8 +37,9 @@ export default function App() {
   }, [hydrate])
 
   return (
-    <div className="h-full flex flex-col bg-gray-50">
-      <Routes>
+    <ErrorBoundary>
+      <div className="h-full flex flex-col bg-gray-50">
+        <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register/:token" element={<RegisterPage />} />
         <Route
@@ -119,8 +122,17 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/issues/:id"
+          element={
+            <ProtectedRoute roles={['reviewer', 'admin']}>
+              <IssueFixPage />
+            </ProtectedRoute>
+          }
+        />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </div>
+    </ErrorBoundary>
   )
 }

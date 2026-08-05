@@ -263,6 +263,7 @@ class Issue(Base):
     status = Column(ISSUE_STATUS_ENUM, nullable=False, default="open")
     assigned_to = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     due_date = Column(DateTime)
+    fix_comment = Column(Text)
     fixed_at = Column(DateTime(timezone=True))
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)

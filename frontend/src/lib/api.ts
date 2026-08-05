@@ -163,7 +163,17 @@ export const issuesApi = {
     api.get<IssueListOut>('/issues/', { params }).then((r) => r.data),
 
   update: (id: string, data: {
-    status?: string; assigned_to?: string; due_date?: string; comment?: string
+    status?: string; assigned_to?: string; due_date?: string; comment?: string; fix_comment?: string
   }) =>
     api.put<IssueOut>(`/issues/${id}`, data).then((r) => r.data),
+
+  uploadFixPhoto: (issueId: string, file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api
+      .post<PhotoOut>(`/issues/${issueId}/fix-photos`, form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      .then((r) => r.data)
+  },
 }

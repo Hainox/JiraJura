@@ -235,6 +235,7 @@ class IssueUpdate(BaseModel):
     assigned_to: Optional[UUID] = None
     due_date: Optional[datetime] = None
     comment: Optional[str] = None  # для истории статуса
+    fix_comment: Optional[str] = None  # описание исправления
 
 
 class IssueOut(BaseModel):
@@ -252,6 +253,8 @@ class IssueOut(BaseModel):
     creator: Optional[UserOut] = None
     site_name: Optional[str] = None
     district_name: Optional[str] = None
+    fix_comment: Optional[str] = None
+    fix_photos: list[PhotoOut] = []
     created_at: datetime
     updated_at: Optional[datetime] = None
 

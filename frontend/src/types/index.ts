@@ -191,6 +191,8 @@ export interface IssueOut {
   creator?: UserOut | null
   site_name?: string
   district_name?: string
+  fix_comment?: string
+  fix_photos?: PhotoOut[]
   created_at: string
   updated_at?: string
 }

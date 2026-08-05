@@ -6,7 +6,7 @@ import { notify as toast } from '@/lib/toast'
 import { Shield } from 'lucide-react'
 
 export default function LoginPage() {
-  const [loginValue, setLoginValue] = useState('')
+  const [loginValue, setLoginValue] = useState(() => sessionStorage.getItem('last_login') ?? '')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const loginStore = useAuthStore((s) => s.login)
@@ -15,9 +15,11 @@ export default function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
+    sessionStorage.setItem('last_login', loginValue)
     try {
       const res = await authApi.login({ login: loginValue, password })
       loginStore(res.access_token, res.user)
+      sessionStorage.removeItem('last_login')
       if (res.must_change_password) {
         localStorage.setItem('force_pw_change', '1')
         navigate('/change-password')

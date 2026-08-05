@@ -1,9 +1,9 @@
-\"\"\"add must_change_password to users
+"""add must_change_password to users
 
 Revision ID: d4e5f6a7b8c9
 Revises: c3d4e5f6a7b8
 Create Date: 2026-08-04
-\"\"\"
+"""
 from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa

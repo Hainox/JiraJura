@@ -18,6 +18,7 @@ export interface UserOut {
 export interface LoginResponse {
   access_token: string
   user: UserOut
+  must_change_password?: boolean
 }
 
 export type Role = 'inspector' | 'reviewer' | 'admin'

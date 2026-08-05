@@ -18,6 +18,7 @@ class LoginRequest(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     user: UserOut
+    must_change_password: bool = False
 
 
 class UserOut(BaseModel):
@@ -48,6 +49,10 @@ class UserRoleUpdate(BaseModel):
 
 class PasswordResetOut(BaseModel):
     new_password: str
+
+
+class ChangePasswordRequest(BaseModel):
+    new_password: str = Field(min_length=8, max_length=200)
 
 
 # ── Приглашения на регистрацию ────────────────────────────────

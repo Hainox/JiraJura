@@ -71,6 +71,9 @@ export const authApi = {
 
   resetPassword: (id: string) =>
     api.post<PasswordResetOut>(`/auth/users/${id}/reset-password`).then((r) => r.data),
+
+  changePassword: (newPassword: string) =>
+    api.post<LoginResponse>('/auth/change-password', { new_password: newPassword }).then((r) => r.data),
 }
 
 // ── Districts ──

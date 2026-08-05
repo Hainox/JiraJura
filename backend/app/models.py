@@ -135,6 +135,7 @@ class User(Base):
     district_id = Column(UUID(as_uuid=True), ForeignKey("districts.id"), nullable=True)
     phone = Column(String(20))
     is_active = Column(Boolean, default=True)
+    must_change_password = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
     district_ref = relationship("District", back_populates="users")

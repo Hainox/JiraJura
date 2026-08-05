@@ -11,6 +11,7 @@ from app.database import get_db
 from app.models import User, UserInvite
 from app.schemas import (
     LoginRequest, TokenResponse, UserOut, UserAdminOut, UserRoleUpdate, PasswordResetOut,
+    ChangePasswordRequest,
     UserInviteCreate, UserInviteCreated, UserInvitePreview, InviteCompleteRequest,
 )
 from app.services.auth import (
@@ -42,6 +43,7 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
     return TokenResponse(
         access_token=token,
         user=UserOut.model_validate(user),
+        must_change_password=bool(user.must_change_password),
     )
 
 
@@ -227,3 +229,23 @@ async def reset_user_password(
     user.password_hash = hash_password(new_password)
     await db.commit()
     return PasswordResetOut(new_password=new_password)
+
+
+@router.post("/change-password", response_model=TokenResponse)
+async def change_password(
+    data: ChangePasswordRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Смена пароля (принудительная при первом входе)."""
+    current_user.password_hash = hash_password(data.new_password)
+    current_user.must_change_password = False
+    await db.commit()
+    await db.refresh(current_user)
+
+    token = create_access_token(str(current_user.id), current_user.role)
+    return TokenResponse(
+        access_token=token,
+        user=UserOut.model_validate(current_user),
+        must_change_password=False,
+    )

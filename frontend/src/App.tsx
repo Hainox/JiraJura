@@ -4,6 +4,7 @@ import { useAuthStore } from '@/stores/auth'
 import type { Role } from '@/types'
 import LoginPage from '@/pages/LoginPage'
 import RegisterPage from '@/pages/RegisterPage'
+import ChangePasswordPage from '@/pages/ChangePasswordPage'
 import MapPage from '@/pages/MapPage'
 import SiteDetailPage from '@/pages/SiteDetailPage'
 import InspectionPage from '@/pages/InspectionPage'
@@ -18,6 +19,7 @@ function ProtectedRoute({ children, roles }: { children: React.ReactNode; roles?
   const isAuth = useAuthStore((s) => s.isAuthenticated)
   const userRole = useAuthStore((s) => s.user?.role)
   if (!isAuth) return <Navigate to="/login" replace />
+  if (localStorage.getItem('force_pw_change') === '1') return <Navigate to="/change-password" replace />
   if (roles && !roles.includes(userRole as Role)) return <Navigate to="/" replace />
   return <>{children}</>
 }
@@ -34,6 +36,14 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register/:token" element={<RegisterPage />} />
+        <Route
+          path="/change-password"
+          element={
+            <ProtectedRoute>
+              <ChangePasswordPage />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/admin/users"
           element={

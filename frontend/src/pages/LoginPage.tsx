@@ -18,8 +18,13 @@ export default function LoginPage() {
     try {
       const res = await authApi.login({ login: loginValue, password })
       loginStore(res.access_token, res.user)
-      toast.success(`Добро пожаловать, ${res.user.full_name}!`)
-      navigate('/')
+      if (res.must_change_password) {
+        localStorage.setItem('force_pw_change', '1')
+        navigate('/change-password')
+      } else {
+        toast.success(`Добро пожаловать, ${res.user.full_name}!`)
+        navigate('/')
+      }
     } catch {
       toast.error('Неверный логин или пароль')
     } finally {

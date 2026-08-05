@@ -6,10 +6,12 @@ import { usePhotoUpload } from '@/lib/usePhotoUpload'
 import { useAuthStore } from '@/stores/auth'
 import type { IssueOut } from '@/types'
 import {
-  Camera, ImagePlus, CheckCircle2, AlertTriangle, XCircle,
-  Calendar, User, MapPin, Clock, RotateCcw,
+  Camera, CheckCircle2, AlertTriangle, XCircle,
+  Calendar, User, MapPin, Clock, RotateCcw, GitCompare,
+  ChevronLeft, ChevronRight,
 } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
+import BeforeAfterSlider from '@/components/BeforeAfterSlider'
 
 const STATUS_LABELS: Record<string, string> = {
   open: 'Открыто', assigned: 'Назначено', in_work: 'В работе',
@@ -17,23 +19,15 @@ const STATUS_LABELS: Record<string, string> = {
   overdue: 'Просрочено', revision_needed: 'На доработке',
 }
 const STATUS_COLORS: Record<string, string> = {
-  open: 'bg-red-100 text-red-800',
-  assigned: 'bg-blue-100 text-blue-800',
-  in_work: 'bg-yellow-100 text-yellow-800',
-  fixed: 'bg-green-100 text-green-800',
-  control: 'bg-purple-100 text-purple-800',
-  closed: 'bg-gray-100 text-gray-600',
-  overdue: 'bg-red-200 text-red-900',
+  open: 'bg-red-100 text-red-800', assigned: 'bg-blue-100 text-blue-800', in_work: 'bg-yellow-100 text-yellow-800',
+  fixed: 'bg-green-100 text-green-800', control: 'bg-purple-100 text-purple-800',
+  closed: 'bg-gray-100 text-gray-600', overdue: 'bg-red-200 text-red-900',
   revision_needed: 'bg-orange-100 text-orange-800',
 }
-const CRIT_LABELS: Record<string, string> = {
-  low: 'Низкая', medium: 'Средняя', high: 'Высокая', critical: 'Критическая',
-}
+const CRIT_LABELS: Record<string, string> = { low: 'Низкая', medium: 'Средняя', high: 'Высокая', critical: 'Критическая' }
 const CRIT_COLORS: Record<string, string> = {
-  low: 'bg-gray-100 text-gray-600',
-  medium: 'bg-blue-100 text-blue-700',
-  high: 'bg-orange-100 text-orange-800',
-  critical: 'bg-red-100 text-red-900 font-bold',
+  low: 'bg-gray-100 text-gray-600', medium: 'bg-blue-100 text-blue-700',
+  high: 'bg-orange-100 text-orange-800', critical: 'bg-red-100 text-red-900 font-bold',
 }
 
 export default function IssueFixPage() {
@@ -51,28 +45,19 @@ export default function IssueFixPage() {
   const isReviewerLike = user?.role === 'reviewer' || isAdmin
 
   const { data: issue, isLoading } = useQuery<IssueOut>({
-    queryKey: ['issue', issueId],
-    queryFn: () => issuesApi.get(issueId),
-    enabled: !!issueId,
+    queryKey: ['issue', issueId], queryFn: () => issuesApi.get(issueId), enabled: !!issueId,
   })
 
   const fixPhotoUpload = useMutation({
     mutationFn: (file: File) => issuesApi.uploadFixPhoto(issueId, file),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['issue', issueId] })
-      toast.success('Фото исправления загружено')
-    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['issue', issueId] }); toast.success('Фото исправления загружено') },
     onError: () => toast.error('Ошибка загрузки фото'),
   })
 
   const { isUploading, handleFileInput } = usePhotoUpload((file) => fixPhotoUpload.mutateAsync(file))
 
   const markFixedMutation = useMutation({
-    mutationFn: () =>
-      issuesApi.update(issueId, {
-        status: 'fixed',
-        fix_comment: fixComment || undefined,
-      }),
+    mutationFn: () => issuesApi.update(issueId, { status: 'fixed', fix_comment: fixComment || undefined }),
     onSuccess: () => {
       toast.success('Исправление зафиксировано!')
       queryClient.invalidateQueries({ queryKey: ['issue', issueId] })
@@ -82,13 +67,8 @@ export default function IssueFixPage() {
     onError: () => toast.error('Ошибка сохранения'),
   })
 
-  // Принять исправление (fixed → closed)
   const acceptMutation = useMutation({
-    mutationFn: () =>
-      issuesApi.update(issueId, {
-        status: 'closed',
-        reviewer_comment: reviewerComment || undefined,
-      }),
+    mutationFn: () => issuesApi.update(issueId, { status: 'closed', reviewer_comment: reviewerComment || undefined }),
     onSuccess: () => {
       toast.success('Исправление принято!')
       queryClient.invalidateQueries({ queryKey: ['issue', issueId] })
@@ -100,13 +80,8 @@ export default function IssueFixPage() {
     },
   })
 
-  // Вернуть на доработку (fixed → revision_needed)
   const rejectMutation = useMutation({
-    mutationFn: () =>
-      issuesApi.update(issueId, {
-        status: 'revision_needed',
-        reviewer_comment: reviewerComment || '(без комментария)',
-      }),
+    mutationFn: () => issuesApi.update(issueId, { status: 'revision_needed', reviewer_comment: reviewerComment || '(без комментария)' }),
     onSuccess: () => {
       toast.success('Отправлено на доработку')
       queryClient.invalidateQueries({ queryKey: ['issue', issueId] })
@@ -118,29 +93,13 @@ export default function IssueFixPage() {
     },
   })
 
-  const handleMarkFixed = () => markFixedMutation.mutate()
-
-  if (isLoading) {
-    return (
-      <div className="h-full flex items-center justify-center bg-gray-50">
-        <div className="text-gray-400">Загрузка...</div>
-      </div>
-    )
-  }
-
-  if (!issue) {
-    return (
-      <div className="h-full flex items-center justify-center bg-gray-50">
-        <div className="text-gray-400">Замечание не найдено</div>
-      </div>
-    )
-  }
+  if (isLoading) return <div className="h-full flex items-center justify-center bg-gray-50"><div className="text-gray-400">Загрузка...</div></div>
+  if (!issue) return <div className="h-full flex items-center justify-center bg-gray-50"><div className="text-gray-400">Замечание не найдено</div></div>
 
   const fixPhotos = issue.fix_photos ?? []
 
   return (
     <div className="h-full flex flex-col bg-gray-50">
-      {/* Header */}
       <div className="bg-primary-800 text-white px-4 py-3 shrink-0">
         <div className="flex items-center gap-3">
           <button onClick={() => navigate('/issues')} className="p-1.5 rounded-lg hover:bg-primary-700 transition-colors shrink-0">
@@ -159,244 +118,78 @@ export default function IssueFixPage() {
         {/* Основная информация */}
         <div className="card space-y-3">
           <h2 className="font-semibold text-gray-800">{issue.title}</h2>
-
-          {issue.description && (
-            <p className="text-sm text-gray-600">{issue.description}</p>
-          )}
-
+          {issue.description && <p className="text-sm text-gray-600">{issue.description}</p>}
           <div className="flex flex-wrap gap-2">
-            <span className={`badge text-xs ${CRIT_COLORS[issue.criticality] ?? 'bg-gray-100'}`}>
-              {CRIT_LABELS[issue.criticality] ?? issue.criticality}
-            </span>
-            <span className={`badge text-xs ${STATUS_COLORS[issue.status] ?? 'bg-gray-100'}`}>
-              {STATUS_LABELS[issue.status] ?? issue.status}
-            </span>
+            <span className={`badge text-xs ${CRIT_COLORS[issue.criticality] ?? 'bg-gray-100'}`}>{CRIT_LABELS[issue.criticality] ?? issue.criticality}</span>
+            <span className={`badge text-xs ${STATUS_COLORS[issue.status] ?? 'bg-gray-100'}`}>{STATUS_LABELS[issue.status] ?? issue.status}</span>
           </div>
-
           <div className="grid grid-cols-2 gap-2 text-xs text-gray-500">
-            {issue.site_name && (
-              <div className="flex items-center gap-1">
-                <MapPin className="w-3 h-3" />
-                {issue.site_name}
-              </div>
-            )}
-            {issue.district_name && (
-              <div className="flex items-center gap-1">
-                <MapPin className="w-3 h-3" />
-                {issue.district_name}
-              </div>
-            )}
-            {issue.creator && (
-              <div className="flex items-center gap-1">
-                <User className="w-3 h-3" />
-                Создал: {issue.creator.full_name}
-              </div>
-            )}
-            {issue.assigned_user && (
-              <div className="flex items-center gap-1">
-                <User className="w-3 h-3" />
-                {issue.assigned_user.full_name}
-              </div>
-            )}
-            {issue.due_date && (
-              <div className="flex items-center gap-1">
-                <Calendar className="w-3 h-3" />
-                До {new Date(issue.due_date).toLocaleDateString('ru')}
-              </div>
-            )}
-            <div className="flex items-center gap-1">
-              <Clock className="w-3 h-3" />
-              {new Date(issue.created_at).toLocaleDateString('ru')}
-            </div>
+            {issue.site_name && <div className="flex items-center gap-1"><MapPin className="w-3 h-3" />{issue.site_name}</div>}
+            {issue.district_name && <div className="flex items-center gap-1"><MapPin className="w-3 h-3" />{issue.district_name}</div>}
+            {issue.creator && <div className="flex items-center gap-1"><User className="w-3 h-3" />Создал: {issue.creator.full_name}</div>}
+            {issue.assigned_user && <div className="flex items-center gap-1"><User className="w-3 h-3" />{issue.assigned_user.full_name}</div>}
+            {issue.due_date && <div className="flex items-center gap-1"><Calendar className="w-3 h-3" />До {new Date(issue.due_date).toLocaleDateString('ru')}</div>}
+            <div className="flex items-center gap-1"><Clock className="w-3 h-3" />{new Date(issue.created_at).toLocaleDateString('ru')}</div>
           </div>
-
-          <button
-            onClick={() => navigate(`/inspections/${issue.inspection_id}`)}
-            className="text-xs text-primary-600 hover:text-primary-800 underline"
-          >
-            Открыть обход
-          </button>
+          <button onClick={() => navigate(`/inspections/${issue.inspection_id}`)} className="text-xs text-primary-600 hover:text-primary-800 underline">Открыть обход</button>
         </div>
 
-        {/* Комментарий проверяющего (если вернули на доработку) */}
+        {/* До Do youрусский комментарий (если вернули на доработку) */}
         {issue.reviewer_comment && issue.status === 'revision_needed' && (
           <div className="card bg-orange-50 border-orange-200">
-            <h3 className="font-semibold text-orange-800 mb-2 flex items-center gap-1.5">
-              <RotateCcw className="w-4 h-4" />
-              Возвращено на доработку
-            </h3>
+            <h3 className="font-semibold text-orange-800 mb-2 flex items-center gap-1.5"><RotateCcw className="w-4 h-4" />Возвращено на доработку</h3>
             <p className="text-sm text-orange-700 whitespace-pre-wrap">{issue.reviewer_comment}</p>
           </div>
         )}
 
-        {/* Фото ДО — из обхода */}
-        <IssueBeforePhotos inspectionId={issue.inspection_id} />
+        {/* Слайдер ДО/ПОСЛЕ + загрузка фото */}
+        <IssuePhotoComparison inspectionId={issue.inspection_id} fixPhotos={fixPhotos} />
 
-        {/* Фото ПОСЛЕ — исправления */}
-        <div className="card">
-          <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-1.5">
-            <CheckCircle2 className="w-4 h-4 text-green-600" />
-            Фото исправления ({fixPhotos.length})
-          </h3>
-
-          {fixPhotos.length > 0 ? (
-            <div className="flex flex-wrap gap-2 mb-3">
-              {fixPhotos.map((p) => (
-                <a key={p.id} href={p.url} target="_blank" rel="noreferrer">
-                  <img
-                    src={p.url}
-                    alt="Фото исправления"
-                    className="w-24 h-24 object-cover rounded-lg border-2 border-green-200 hover:border-green-400 transition-colors"
-                  />
-                </a>
-              ))}
-            </div>
-          ) : (
-            <div className="text-sm text-gray-400 italic bg-gray-50 rounded-lg p-3 mb-3">
-              <AlertTriangle className="w-4 h-4 inline mr-1 text-amber-400" />
-              Фото исправлений ещё не загружены
-            </div>
-          )}
-
-          {/* Загрузка новых фото — только если не closed и не revision_needed */}
-          {issue.status !== 'closed' && issue.status !== 'revision_needed' && (
+        {issue.status !== 'closed' && issue.status !== 'revision_needed' && (
+          <div className="card space-y-2">
+            <h3 className="text-sm font-medium text-gray-600 flex items-center gap-1"><Camera className="w-4 h-4" />Загрузить фото исправления</h3>
             <div className="flex gap-2">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="hidden"
-                onChange={handleFileInput}
-              />
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isUploading}
-                className="btn-outline flex items-center gap-1.5 py-2 px-4 text-sm"
-              >
+              <input ref={fileInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFileInput} />
+              <button onClick={() => fileInputRef.current?.click()} disabled={isUploading} className="btn-outline flex items-center gap-1.5 py-2 px-4 text-sm">
                 {isUploading ? (
-                  <>
-                    <span className="w-4 h-4 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
-                    Загрузка...
-                  </>
+                  <><span className="w-4 h-4 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />Загрузка...</>
                 ) : (
-                  <>
-                    <Camera className="w-4 h-4" />
-                    Загрузить фото исправления
-                  </>
+                  <><Camera className="w-4 h-4" />Загрузить фото</>
                 )}
               </button>
             </div>
-          )}
-        </div>
-
-        {/* Блок «Зафиксировать исправление» — для reviewer, когда статус не fixed/closed/revision_needed */}
-        {isReviewerLike && issue.status !== 'fixed' && issue.status !== 'closed' && issue.status !== 'revision_needed' && (
-          <div className="card space-y-3">
-            <h3 className="font-semibold text-gray-800">Зафиксировать исправление</h3>
-
-            <textarea
-              className="input-field text-sm"
-              rows={3}
-              placeholder="Опишите, что было сделано для устранения нарушения..."
-              value={fixComment}
-              onChange={(e) => setFixComment(e.target.value)}
-            />
-
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800 flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-              <div>
-                <div className="font-medium mb-0.5">Перед фиксацией проверьте:</div>
-                <ul className="list-disc list-inside space-y-0.5">
-                  <li>Фото исправления загружены и отображаются</li>
-                  <li>Нарушение действительно устранено</li>
-                  <li>Описание исправления заполнено</li>
-                </ul>
-              </div>
-            </div>
-
-            <button
-              onClick={handleMarkFixed}
-              disabled={markFixedMutation.isPending || fixPhotos.length === 0}
-              className="btn-primary w-full py-3 flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-              {markFixedMutation.isPending ? (
-                <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <CheckCircle2 className="w-5 h-5" />
-              )}
-              Зафиксировать исправление
-            </button>
-
-            {fixPhotos.length === 0 && (
-              <p className="text-xs text-gray-400 text-center">
-                Загрузите хотя бы одно фото исправления
-              </p>
-            )}
           </div>
         )}
 
-        {/* Приёмка админом: когда статус fixed → принять / на доработку */}
+        {/* Блок «You фиксировать исправление» */}
+        {isReviewerLike && issue.status !== 'fixed' && issue.status !== 'closed' && issue.status !== 'revision_needed' && (
+          <div className="card space-y-3">
+            <h3 className="font-semibold text-gray-800">Зафиксировать исправление</h3>
+            <textarea className="input-field text-sm" rows={3} placeholder="Опишите, что было сделано для устранения нарушения..." value={fixComment} onChange={(e) => setFixComment(e.target.value)} />
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <div><div className="font-medium mb-0.5">Перед фиксацией проверьте:</div><ul className="list-disc list-inside space-y-0.5"><li>Фото исправления загружены</li><li>Нарушение действительно устранено</li><li>Описание исправления заполнено</li></ul></div>
+            </div>
+            <button onClick={() => markFixedMutation.mutate()} disabled={markFixedMutation.isPending || fixPhotos.length === 0} className="btn-primary w-full py-3 flex items-center justify-center gap-2 disabled:opacity-50">
+              {markFixedMutation.isPending ? <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
+              Зафиксировать исправление
+            </button>
+            {fixPhotos.length === 0 && <p className="text-xs text-gray-400 text-center">Загрузите хотя бы одно фото исправления</p>}
+          </div>
+        )}
+
+        {/* Приёмка админом */}
         {isAdmin && issue.status === 'fixed' && (
           <div className="card space-y-3 bg-white border-2 border-primary-200">
-            <h3 className="font-semibold text-gray-800 flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-primary-600" />
-              Приёмка исправления
-            </h3>
-
-            {issue.fix_comment && (
-              <div className="bg-green-50 rounded-lg p-3 text-sm text-green-800">
-                <div className="font-medium text-xs text-green-600 mb-0.5">Описание от проверяющего:</div>
-                {issue.fix_comment}
-              </div>
-            )}
-
-            {/* Фото ДО vs ПОСЛЕ */}
-            {fixPhotos.length > 0 && (
-              <div>
-                <div className="text-xs text-gray-500 mb-1 font-medium">Фото исправления:</div>
-                <div className="flex flex-wrap gap-2">
-                  {fixPhotos.map((p) => (
-                    <a key={p.id} href={p.url} target="_blank" rel="noreferrer">
-                      <img src={p.url} alt="" className="w-20 h-20 object-cover rounded-lg border-2 border-green-200" />
-                    </a>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <textarea
-              className="input-field text-sm"
-              rows={2}
-              placeholder="Комментарий (необязательно при приёмке, обязательно при возврате)..."
-              value={reviewerComment}
-              onChange={(e) => setReviewerComment(e.target.value)}
-            />
-
+            <h3 className="font-semibold text-gray-800 flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4 text-primary-600" />Приёмка исправления</h3>
+            {issue.fix_comment && <div className="bg-green-50 rounded-lg p-3 text-sm text-green-800"><div className="font-medium text-xs text-green-600 mb-0.5">Описание от проверяющего:</div>{issue.fix_comment}</div>}
+            <textarea className="input-field text-sm" rows={2} placeholder="Комментарий (необязательно при приёмке, обязательно при возврате)..." value={reviewerComment} onChange={(e) => setReviewerComment(e.target.value)} />
             <div className="flex gap-2">
-              <button
-                onClick={() => acceptMutation.mutate()}
-                disabled={acceptMutation.isPending}
-                className="btn-primary flex-1 py-3 flex items-center justify-center gap-2"
-              >
-                {acceptMutation.isPending ? (
-                  <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  <CheckCircle2 className="w-5 h-5" />
-                )}
-                Принять
+              <button onClick={() => acceptMutation.mutate()} disabled={acceptMutation.isPending} className="btn-primary flex-1 py-3 flex items-center justify-center gap-2">
+                {acceptMutation.isPending ? <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}Принять
               </button>
-              <button
-                onClick={() => rejectMutation.mutate()}
-                disabled={rejectMutation.isPending}
-                className="btn-danger flex-1 py-3 flex items-center justify-center gap-2"
-              >
-                {rejectMutation.isPending ? (
-                  <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  <XCircle className="w-5 h-5" />
-                )}
-                На доработку
+              <button onClick={() => rejectMutation.mutate()} disabled={rejectMutation.isPending} className="btn-danger flex-1 py-3 flex items-center justify-center gap-2">
+                {rejectMutation.isPending ? <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <XCircle className="w-5 h-5" />}На доработку
               </button>
             </div>
           </div>
@@ -405,23 +198,8 @@ export default function IssueFixPage() {
         {/* Уже исправлено — для не-админов */}
         {!isAdmin && issue.fix_comment && (issue.status === 'fixed' || issue.status === 'closed') && (
           <div className="card bg-green-50 border-green-200">
-            <h3 className="font-semibold text-green-800 mb-2 flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4" />
-              {issue.status === 'closed' ? 'Принято' : 'Исправление зафиксировано'}
-            </h3>
+            <h3 className="font-semibold text-green-800 mb-2 flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4" />{issue.status === 'closed' ? 'Принято' : 'Исправление зафиксировано'}</h3>
             <p className="text-sm text-green-700">{issue.fix_comment}</p>
-            {fixPhotos.length > 0 && (
-              <div className="mt-3">
-                <div className="text-xs text-green-600 mb-1 font-medium">Фото исправления:</div>
-                <div className="flex flex-wrap gap-2">
-                  {fixPhotos.map((p) => (
-                    <a key={p.id} href={p.url} target="_blank" rel="noreferrer">
-                      <img src={p.url} alt="" className="w-20 h-20 object-cover rounded-lg border-2 border-green-200" />
-                    </a>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         )}
       </div>
@@ -429,41 +207,42 @@ export default function IssueFixPage() {
   )
 }
 
-/** Просмотр фото обхода (ДО) */
-function IssueBeforePhotos({ inspectionId }: { inspectionId: string }) {
-  const { data: inspection } = useQuery({
-    queryKey: ['inspection', inspectionId],
-    queryFn: () => inspectionsApi.get(inspectionId),
-    enabled: !!inspectionId,
-  })
-
-  const photos = inspection?.photos?.filter((p) => p.target_type === 'inspection') ?? []
-
+/** Сравнение фото ДО/ПОСЛЕ через слайдер */
+function IssuePhotoComparison({ inspectionId, fixPhotos }: { inspectionId: string; fixPhotos: { id: string; url: string }[] }) {
+  const [pairIndex, setPairIndex] = useState(0)
+  const { data: inspection } = useQuery({ queryKey: ['inspection', inspectionId], queryFn: () => inspectionsApi.get(inspectionId), enabled: !!inspectionId })
+  const beforePhotos = inspection?.photos?.filter((p) => p.target_type === 'inspection') ?? []
+  const totalPairs = Math.max(beforePhotos.length, fixPhotos.length, 1)
+  const safeIndex = Math.min(pairIndex, totalPairs - 1)
+  const beforeUrl = beforePhotos[safeIndex]?.url
+  const afterUrl = fixPhotos[safeIndex]?.url
   if (!inspection) return null
 
   return (
-    <div className="card">
-      <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-1.5">
-        <ImagePlus className="w-4 h-4 text-blue-600" />
-        Фото обхода — ДО исправления ({photos.length})
-      </h3>
-
-      {photos.length > 0 ? (
-        <div className="flex flex-wrap gap-2">
-          {photos.map((p) => (
-            <a key={p.id} href={p.url} target="_blank" rel="noreferrer">
-              <img
-                src={p.url}
-                alt="Фото до исправления"
-                className="w-24 h-24 object-cover rounded-lg border hover:border-blue-400 transition-colors"
-              />
-            </a>
-          ))}
+    <div className="card space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold text-gray-800 flex items-center gap-1.5"><GitCompare className="w-4 h-4 text-primary-600" />Сравнение ДО / ПОСЛЕ</h3>
+        <div className="flex items-center gap-1 text-xs text-gray-500">
+          <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-medium">ДО: {beforePhotos.length}</span>
+          <span className="bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">ПОСЛЕ: {fixPhotos.length}</span>
         </div>
-      ) : (
-        <p className="text-sm text-gray-400 italic bg-gray-50 rounded-lg p-3">
-          Нет общих фото обхода
-        </p>
+      </div>
+      <BeforeAfterSlider beforeUrl={beforeUrl} afterUrl={afterUrl} />
+      {totalPairs > 1 && (
+        <>
+          <div className="flex items-center justify-center gap-2">
+            <button onClick={() => setPairIndex((v) => Math.max(0, v - 1))} disabled={safeIndex === 0} className="p-1 rounded hover:bg-gray-200 disabled:opacity-30"><ChevronLeft className="w-4 h-4" /></button>
+            <span className="text-xs text-gray-500 font-medium tabular-nums">{safeIndex + 1} / {totalPairs}</span>
+            <button onClick={() => setPairIndex((v) => Math.min(totalPairs - 1, v + 1))} disabled={safeIndex >= totalPairs - 1} className="p-1 rounded hover:bg-gray-200 disabled:opacity-30"><ChevronRight className="w-4 h-4" /></button>
+          </div>
+          <div className="flex gap-1.5 justify-center flex-wrap">
+            {Array.from({ length: totalPairs }).map((_, i) => (
+              <button key={i} onClick={() => setPairIndex(i)} className={`w-8 h-8 rounded-lg border-2 overflow-hidden transition-all ${i === safeIndex ? 'border-primary-500 scale-110 shadow-md' : 'border-gray-200 opacity-60 hover:opacity-100'}`}>
+                {(beforePhotos[i]?.url || fixPhotos[i]?.url) ? <img src={beforePhotos[i]?.url || fixPhotos[i]?.url} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full bg-gray-200 flex items-center justify-center text-gray-400 text-[8px]">{i + 1}</div>}
+              </button>
+            ))}
+          </div>
+        </>
       )}
     </div>
   )

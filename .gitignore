@@ -24,6 +24,12 @@ lerna-debug.log*
 logs/
 *.log
 
+# === Персональные данные сотрудников (списки для bulk_invite.py) ===
+/rosters/
+backend/rosters/
+*roster*.xlsx
+*result*.csv
+
 # === Runtime uploads (user-generated content, not source) ===
 backend/uploads/*
 !backend/uploads/**/

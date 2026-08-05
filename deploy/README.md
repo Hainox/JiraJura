@@ -121,6 +121,48 @@ docker compose -f docker-compose.prod.yml run --rm \
 Проверка: обновите приложение в браузере — на карте и во вкладке «Список» должны
 появиться площадки.
 
+## 4.6. Массовое приглашение сотрудников
+
+Списки по районам (xlsx, формат: `<Район> — N чел.`, колонки ФИО/Логин/Роль/Телефон)
+скачиваются в отдельную папку `rosters/` — она в `.gitignore`, в репозиторий не
+попадает, потому что это персональные данные сотрудников (ФИО, телефон).
+
+1. Скопировать xlsx-файлы на сервер:
+```powershell
+ssh root@82.23.173.215 "mkdir -p /opt/jirajura/rosters"
+scp "C:\путь\к\Бескудниковский.xlsx" root@82.23.173.215:/opt/jirajura/rosters/
+# ...и так для каждого района
+```
+
+2. Сверка без создания приглашений (dry-run — проверяет районы, дубли логинов,
+   неизвестные роли, ничего не меняет):
+```bash
+cd /opt/jirajura
+docker compose -f docker-compose.prod.yml run --rm \
+  -v /opt/jirajura/rosters:/rosters api python bulk_invite.py \
+  --admin-login admin --admin-password 'ПАРОЛЬ_АДМИНА' \
+  --xlsx-dir /rosters --out /rosters/result.csv
+```
+
+3. Рассылка (создаёт приглашения через тот же API, что и вручную в интерфейсе;
+   повторный запуск безопасен — уже приглашённые/зарегистрированные логины
+   пропускаются, просроченные приглашения перевыпускаются автоматически):
+```bash
+docker compose -f docker-compose.prod.yml run --rm \
+  -v /opt/jirajura/rosters:/rosters api python bulk_invite.py \
+  --admin-login admin --admin-password 'ПАРОЛЬ_АДМИНА' \
+  --xlsx-dir /rosters --out /rosters/result.csv --apply
+```
+
+4. `rosters/result.csv` — район/ФИО/логин/роль/телефон/статус/**ссылка**;
+   ссылки нужно разослать сотрудникам лично (Telegram-бот сознательно не
+   интегрирован — см. план деплоя, часть B).
+
+5. После рассылки удалить исходники с сервера (ПДн там больше не нужны):
+```bash
+rm -rf /opt/jirajura/rosters
+```
+
 ## 5. Бэкапы
 
 ```bash

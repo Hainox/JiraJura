@@ -33,18 +33,17 @@ def _issue_to_out(i: Issue) -> IssueOut:
             district_name = i.site_ref.courtyard.district.name
 
     # фото исправлений
-    fix_photos = []
-    if hasattr(i, 'photos'):
-        for p in i.photos:
-            if hasattr(p, 'target_type') and p.target_type == 'issue_fix':
-                fix_photos.append(PhotoOut(
-                    id=p.id, target_type=p.target_type,
-                    inspection_id=p.inspection_id, issue_id=p.issue_id,
-                    url=f"/uploads/{p.storage_path}",
-                    thumbnail_url=f"/uploads/{p.thumbnail_path}" if p.thumbnail_path else None,
-                    gps_lat=p.gps_lat, gps_lon=p.gps_lon,
-                    taken_at=p.taken_at, created_at=p.created_at,
-                ))
+    fix_photos = [
+        PhotoOut(
+            id=p.id, target_type=p.target_type,
+            inspection_id=p.inspection_id, issue_id=p.issue_id,
+            url=f"/uploads/{p.storage_path}",
+            thumbnail_url=f"/uploads/{p.thumbnail_path}" if p.thumbnail_path else None,
+            gps_lat=p.gps_lat, gps_lon=p.gps_lon,
+            taken_at=p.taken_at, created_at=p.created_at,
+        )
+        for p in i.fix_photos
+    ]
 
     return IssueOut(
         id=i.id,
@@ -103,6 +102,7 @@ async def create_issue(
         selectinload(Issue.site_ref).selectinload(Site.courtyard).selectinload(Courtyard.district),
         selectinload(Issue.assigned_user),
         selectinload(Issue.creator_ref),
+        selectinload(Issue.fix_photos),
     )
     issue = (await db.execute(q)).scalar_one()
     return _issue_to_out(issue)
@@ -124,6 +124,7 @@ async def list_issues(
         selectinload(Issue.site_ref).selectinload(Site.courtyard).selectinload(Courtyard.district),
         selectinload(Issue.assigned_user),
         selectinload(Issue.creator_ref),
+        selectinload(Issue.fix_photos),
     ).order_by(Issue.created_at.desc())
 
     if site_id:
@@ -164,6 +165,7 @@ async def get_issue(issue_id: str, db: AsyncSession = Depends(get_db)):
         selectinload(Issue.site_ref).selectinload(Site.courtyard).selectinload(Courtyard.district),
         selectinload(Issue.assigned_user),
         selectinload(Issue.creator_ref),
+        selectinload(Issue.fix_photos),
     )
     issue = (await db.execute(q)).scalar_one_or_none()
     if not issue:
@@ -237,6 +239,7 @@ async def update_issue(
         selectinload(Issue.site_ref).selectinload(Site.courtyard).selectinload(Courtyard.district),
         selectinload(Issue.assigned_user),
         selectinload(Issue.creator_ref),
+        selectinload(Issue.fix_photos),
     )
     issue = (await db.execute(q)).scalar_one()
     return _issue_to_out(issue)

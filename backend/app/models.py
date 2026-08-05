@@ -5,7 +5,7 @@ from datetime import datetime
 from geoalchemy2 import Geometry
 from sqlalchemy import (
     Column, ForeignKey, String, Integer, Numeric, Text, Boolean,
-    DateTime, Enum, UniqueConstraint, CheckConstraint, text, foreign,
+    DateTime, Enum, UniqueConstraint, CheckConstraint, text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, relationship

@@ -116,8 +116,10 @@ export default function MapPage() {
   // Карта: site_id → последний статус обхода
   const siteStatusMap = useMemo(() => {
     const map: Record<string, string> = {}
+    const latestCreatedAt: Record<string, string> = {}
     for (const insp of myInspections) {
-      if (!map[insp.site_id] || insp.created_at > (myInspections.find((i) => i.site_id === insp.site_id && i.id === map[insp.site_id])?.created_at ?? '')) {
+      if (!latestCreatedAt[insp.site_id] || insp.created_at > latestCreatedAt[insp.site_id]) {
+        latestCreatedAt[insp.site_id] = insp.created_at
         map[insp.site_id] = insp.status
       }
     }

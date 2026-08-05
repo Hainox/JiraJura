@@ -4,7 +4,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -32,8 +32,11 @@ def _hash_token(token: str) -> str:
 
 @router.post("/login", response_model=TokenResponse)
 async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
+    # логин без учёта регистра: логины вида "AbdulloevRM" легко превращаются
+    # в "abdulloevrm" из-за автокапитализации/автозамены на телефоне —
+    # это не должно приводить к "неверный логин или пароль"
     result = await db.execute(
-        select(User).where(User.login == data.login, User.is_active)
+        select(User).where(func.lower(User.login) == data.login.strip().lower(), User.is_active)
     )
     user = result.scalar_one_or_none()
     if not user or not verify_password(data.password, user.password_hash):
@@ -65,11 +68,32 @@ async def create_invite(
     if data.role not in ROLES:
         raise HTTPException(400, f"Роль должна быть одной из {ROLES}")
 
+    login_norm = data.login.strip().lower()
     existing_login = (await db.execute(
-        select(User).where(User.login == data.login)
+        select(User.id).where(func.lower(User.login) == login_norm)
     )).scalar_one_or_none()
     if existing_login:
         raise HTTPException(409, "Логин уже занят")
+
+    # login уникален и в user_invites (UNIQUE-constraint в модели) — без этой
+    # проверки повторное приглашение уже приглашённого логина падало с 500
+    # (IntegrityError) вместо понятного 409. Если прежнее приглашение
+    # просрочено и не использовано — перевыпускаем его молча (иначе логин
+    # оставался бы заблокирован навсегда после истечения 72 часов). Сравнение
+    # без учёта регистра — по той же причине, что и в /login.
+    existing_invite = (await db.execute(
+        select(UserInvite).where(func.lower(UserInvite.login) == login_norm)
+    )).scalar_one_or_none()
+    if existing_invite:
+        if existing_invite.used_at is not None:
+            raise HTTPException(409, "Логин уже занят")
+        exp = existing_invite.expires_at
+        if exp.tzinfo is None:
+            exp = exp.replace(tzinfo=timezone.utc)
+        if exp >= datetime.now(timezone.utc):
+            raise HTTPException(409, "Логин уже занят: приглашение уже отправлено и ещё активно")
+        await db.delete(existing_invite)
+        await db.flush()
 
     token = secrets.token_urlsafe(32)
     expires_at = datetime.now(timezone.utc) + INVITE_EXPIRY

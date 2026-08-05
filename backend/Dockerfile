@@ -10,6 +10,7 @@ COPY schema.sql .
 COPY import_kml.py .
 COPY apply_titul.py .
 COPY fix_passwords.py .
+COPY bulk_invite.py .
 COPY titul_2026-08.csv .
 COPY alembic/ ./alembic/
 RUN mkdir -p /app/uploads

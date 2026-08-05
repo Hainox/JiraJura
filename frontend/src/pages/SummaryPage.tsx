@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { inspectionsApi } from '@/lib/api'
+import { inspectionsApi, checklistsApi } from '@/lib/api'
 import type { InspectionOut } from '@/types'
 import { ArrowLeft, AlertTriangle, FileText } from 'lucide-react'
 
@@ -19,6 +19,13 @@ export default function SummaryPage() {
     queryFn: () => inspectionsApi.get(inspectionId),
     enabled: !!inspectionId,
   })
+
+  const { data: template } = useQuery({
+    queryKey: ['checklist-template', inspection?.site?.type],
+    queryFn: () => checklistsApi.template({ site_type: inspection!.site.type }),
+    enabled: !!inspection?.site?.type,
+  })
+  const questionByItemId = new Map((template ?? []).flatMap((t) => t.items).map((item) => [item.id, item.question]))
 
   if (isLoading) {
     return (
@@ -87,7 +94,7 @@ export default function SummaryPage() {
                 .filter((a) => a.result === 'defect')
                 .map((a) => (
                   <div key={a.id} className="bg-red-50 rounded-lg p-3 text-sm">
-                    <div className="text-red-800">{a.checklist_item_id}</div>
+                    <div className="text-red-800">{questionByItemId.get(a.checklist_item_id) ?? a.checklist_item_id}</div>
                     {a.comment && (
                       <div className="text-red-600 text-xs mt-1 italic">{a.comment}</div>
                     )}

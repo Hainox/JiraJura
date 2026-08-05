@@ -27,8 +27,20 @@ export default function LoginPage() {
         toast.success(`Добро пожаловать, ${res.user.full_name}!`)
         navigate('/')
       }
-    } catch {
-      toast.error('Неверный логин или пароль')
+    } catch (err: unknown) {
+      if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'ECONNABORTED') {
+        toast.error('Сервер не отвечает. Проверьте подключение к интернету и попробуйте снова.')
+      } else if (err && typeof err === 'object' && 'response' in err) {
+        const axiosErr = err as { response?: { status: number } }
+        if (axiosErr.response?.status === 401) {
+          toast.error('Неверный логин или пароль')
+        } else {
+          toast.error('Ошибка сервера. Попробуйте позже.')
+        }
+      } else {
+        toast.error('Нет связи с сервером. Проверьте интернет.')
+      }
+      console.error('Login error:', err)
     } finally {
       setLoading(false)
     }

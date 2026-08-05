@@ -113,15 +113,17 @@ async def get_district_stats(
             select(func.count()).select_from(Site).join(Courtyard).where(Courtyard.district_id == d.id, Site.is_active)
         )).scalar_one() or 0
 
+        # Считаем уникальные площадки, по которым есть завершённые обходы
         inspected = (await db.execute(
-            select(func.count()).select_from(Inspection).join(Site).join(Courtyard)
+            select(func.count(func.distinct(Inspection.site_id))).select_from(Inspection).join(Site).join(Courtyard)
             .where(Courtyard.district_id == d.id, Inspection.status.in_(["completed", "issues_found", "critical"]))
         )).scalar_one() or 0
 
+        percent = round(inspected / total * 100, 1) if total > 0 else 0
         result.append(DistrictStatOut(
             district_name=d.name,
             total_sites=total,
             inspected=inspected,
-            percent=round(inspected / total * 100, 1) if total > 0 else 0,
+            percent=min(percent, 100.0),  # каждая площадка считается один раз
         ))
     return sorted(result, key=lambda r: r.percent, reverse=True)

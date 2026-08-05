@@ -190,14 +190,24 @@ async def delete_user(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role("admin")),
 ):
-    """Удалить пользователя. Нельзя удалить самого себя."""
+    """Деактивировать пользователя (софт-делит).
+
+    Реальные записи не удаляются, чтобы не нарушить FK-целостность
+    (обходы, замечания, история статусов ссылаются на users.id).
+    Пользователь помечается is_active=False, логин заменяется на
+    deleted_<id>, чтобы освободить логин для новых приглашений.
+    """
     if str(current_user.id) == user_id:
         raise HTTPException(400, "Нельзя удалить самого себя")
     user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if not user:
         raise HTTPException(404, "Пользователь не найден")
+
     await log_action(db, str(current_user.id), "user_delete", "user", user_id, {"login": user.login})
-    await db.delete(user)
+
+    # Софт-делит: деактивируем и переименовываем логин
+    user.is_active = False
+    user.login = f"deleted_{user_id[:8]}"
     await db.commit()
     return {"ok": True}
 

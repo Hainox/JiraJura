@@ -5,7 +5,7 @@ from datetime import datetime
 from geoalchemy2 import Geometry
 from sqlalchemy import (
     Column, ForeignKey, String, Integer, Numeric, Text, Boolean,
-    DateTime, Enum, UniqueConstraint, CheckConstraint, text,
+    DateTime, Enum, UniqueConstraint, CheckConstraint, text, foreign,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, relationship
@@ -138,8 +138,14 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
     district_ref = relationship("District", back_populates="users")
-    inspections = relationship("Inspection", back_populates="inspector", foreign_keys="Inspection.inspector_id")
-    assigned_issues = relationship("Issue", back_populates="assigned_user", foreign_keys="Issue.assigned_to")
+    inspections = relationship(
+        "Inspection", back_populates="inspector",
+        primaryjoin="User.id == foreign(Inspection.inspector_id)",
+    )
+    assigned_issues = relationship(
+        "Issue", back_populates="assigned_user",
+        primaryjoin="User.id == foreign(Issue.assigned_to)",
+    )
 
 
 class UserInvite(Base):

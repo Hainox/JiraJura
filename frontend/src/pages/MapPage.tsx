@@ -90,6 +90,8 @@ export default function MapPage() {
   const { data: sitesData } = useQuery({
     queryKey: ['sites', effectiveDistrictFilter, typeFilter],
     queryFn: () => sitesApi.list({ district_id: effectiveDistrictFilter, type: typeFilter, page_size: 5000 }),
+    // Админ без выбранного района не загружает все площадки — слишком долго
+    enabled: !isAdmin || !!districtFilter,
   })
 
   // Загрузка обходов для режима проверки
@@ -299,7 +301,27 @@ export default function MapPage() {
 
       {/* Content */}
       <div className="flex-1 min-h-0">
-        {viewMode === 'review' && isReviewerLike ? (
+        {/* Админ без выбранного района — показываем плейсхолдер */}
+        {isAdmin && !districtFilter ? (
+          <div className="h-full flex items-center justify-center">
+            <div className="text-center max-w-sm px-4">
+              <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-2xl mb-4">
+                <MapIcon className="w-8 h-8 text-blue-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-700 mb-2">Выберите район</h3>
+              <p className="text-sm text-gray-500">
+                Нажмите кнопку фильтров <span className="inline-block align-middle mx-0.5"><svg className="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg></span>
+                в шапке и выберите район для отображения площадок.
+              </p>
+              <button
+                onClick={() => setShowFilters(true)}
+                className="btn-primary mt-4"
+              >
+                Открыть фильтры
+              </button>
+            </div>
+          </div>
+        ) : viewMode === 'review' && isReviewerLike ? (
           <div className="overflow-y-auto h-full p-3 space-y-2">
             {filteredInspections.map((insp) => {
               const okCount = insp.answers?.filter((a) => a.result === 'ok').length ?? 0

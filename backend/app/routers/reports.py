@@ -23,7 +23,7 @@ async def weekly_report(
     district_id: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
-    week_ago = datetime.utcnow() - timedelta(days=7)
+    week_ago = datetime.now(datetime.UTC) - timedelta(days=7)
     results = []
 
     dist_q = select(District).order_by(District.name)
@@ -87,7 +87,7 @@ async def monthly_report(
     district_id: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
-    month_ago = datetime.utcnow() - timedelta(days=30)
+    month_ago = datetime.now(datetime.UTC) - timedelta(days=30)
     results = []
 
     dist_q = select(District).order_by(District.name)
@@ -434,7 +434,7 @@ async def export_xlsx(
     buf = io.BytesIO()
     wb.save(buf)
 
-    stamp = datetime.utcnow().strftime("%Y-%m-%d")
+    stamp = datetime.now(datetime.UTC).strftime("%Y-%m-%d")
     return Response(
         content=buf.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

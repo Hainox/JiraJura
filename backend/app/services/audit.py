@@ -23,7 +23,7 @@ async def log_action(
         entity_type=entity_type,
         entity_id=entity_id,
         details=json.dumps(details, ensure_ascii=False, default=str) if details else None,
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(datetime.UTC),
     )
     db.add(entry)
     # не await db.commit() — вызывающая сторона сама закоммитит

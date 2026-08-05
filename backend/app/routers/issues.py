@@ -192,7 +192,7 @@ async def update_issue(
     if data.status and data.status != issue.status:
         issue.status = data.status
         if data.status == "fixed":
-            issue.fixed_at = datetime.utcnow()
+            issue.fixed_at = datetime.now(datetime.UTC)
 
         # запись в историю
         db.add(IssueStatusHistory(
@@ -210,7 +210,7 @@ async def update_issue(
     if data.fix_comment is not None:
         issue.fix_comment = data.fix_comment
 
-    issue.updated_at = datetime.utcnow()
+    issue.updated_at = datetime.now(datetime.UTC)
     await log_action(db, str(current_user.id), "issue_update", "issue", issue_id, {
         "status": data.status, "assigned_to": str(data.assigned_to) if data.assigned_to else None,
     })

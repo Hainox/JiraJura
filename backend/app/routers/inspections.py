@@ -56,7 +56,7 @@ async def create_inspection(
         template_id=tmpl.id if tmpl else None,
         type=data.type,
         status="in_progress",
-        started_at=datetime.utcnow(),
+        started_at=datetime.now(datetime.UTC),
     )
     db.add(inspection)
     await db.commit()
@@ -143,7 +143,7 @@ async def update_inspection(
     if data.status:
         obj.status = data.status
         if data.status in ("completed", "issues_found", "critical"):
-            obj.completed_at = datetime.utcnow()
+            obj.completed_at = datetime.now(datetime.UTC)
     if data.comment is not None:
         obj.comment = data.comment
     if data.reviewer_comment is not None:
@@ -156,7 +156,7 @@ async def update_inspection(
     # Если reviewer/admin меняет статус — фиксируем кто и когда проверил
     if current_user.role in ("reviewer", "admin") and data.status:
         obj.reviewed_by = current_user.id
-        obj.reviewed_at = datetime.utcnow()
+        obj.reviewed_at = datetime.now(datetime.UTC)
         await log_action(db, str(current_user.id), "inspection_review", "inspection", inspection_id, {
             "status": data.status, "reviewer_comment": data.reviewer_comment,
         })

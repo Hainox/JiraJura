@@ -1,5 +1,5 @@
 """Issues router."""
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -62,6 +62,7 @@ def _issue_to_out(i: Issue) -> IssueOut:
         site_name=site_name,
         district_name=district_name,
         fix_comment=i.fix_comment if hasattr(i, 'fix_comment') else None,
+        reviewer_comment=i.reviewer_comment if hasattr(i, 'reviewer_comment') else None,
         fix_photos=fix_photos,
         created_at=i.created_at,
         updated_at=i.updated_at,
@@ -190,9 +191,21 @@ async def update_issue(
     old_status = issue.status
 
     if data.status and data.status != issue.status:
+        # Переход fixed→closed: только reviewer/admin, из статуса fixed
+        if data.status == 'closed':
+            if current_user.role not in ('reviewer', 'admin'):
+                raise HTTPException(403, "Только проверяющий или админ может принять исправление")
+        # Переход fixed→revision_needed: обязателен reviewer_comment
+        if data.status == 'revision_needed':
+            if current_user.role not in ('reviewer', 'admin'):
+                raise HTTPException(403, "Только проверяющий или админ может отправить на доработку")
+            if not data.reviewer_comment:
+                raise HTTPException(400, "Укажите комментарий — что нужно доработать")
+            issue.reviewer_comment = data.reviewer_comment
+
         issue.status = data.status
         if data.status == "fixed":
-            issue.fixed_at = datetime.now(datetime.UTC)
+            issue.fixed_at = datetime.now(timezone.utc)
 
         # запись в историю
         db.add(IssueStatusHistory(
@@ -209,10 +222,13 @@ async def update_issue(
         issue.due_date = data.due_date
     if data.fix_comment is not None:
         issue.fix_comment = data.fix_comment
+    if data.reviewer_comment is not None:
+        issue.reviewer_comment = data.reviewer_comment
 
-    issue.updated_at = datetime.now(datetime.UTC)
+    issue.updated_at = datetime.now(timezone.utc)
     await log_action(db, str(current_user.id), "issue_update", "issue", issue_id, {
         "status": data.status, "assigned_to": str(data.assigned_to) if data.assigned_to else None,
+        "reviewer_comment": data.reviewer_comment,
     })
     await db.commit()
 

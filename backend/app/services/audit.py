@@ -1,6 +1,6 @@
 """Сервис аудита — запись действий в таблицу audit_log."""
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,7 +23,7 @@ async def log_action(
         entity_type=entity_type,
         entity_id=entity_id,
         details=json.dumps(details, ensure_ascii=False, default=str) if details else None,
-        created_at=datetime.now(datetime.UTC),
+        created_at=datetime.now(timezone.utc),
     )
     db.add(entry)
     # не await db.commit() — вызывающая сторона сама закоммитит

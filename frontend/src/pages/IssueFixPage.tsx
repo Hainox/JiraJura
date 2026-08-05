@@ -3,16 +3,18 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { issuesApi, inspectionsApi } from '@/lib/api'
 import { usePhotoUpload } from '@/lib/usePhotoUpload'
+import { useAuthStore } from '@/stores/auth'
 import type { IssueOut } from '@/types'
 import {
-  Camera, ImagePlus, CheckCircle2, AlertTriangle,
-  Calendar, User, MapPin, Clock,
+  Camera, ImagePlus, CheckCircle2, AlertTriangle, XCircle,
+  Calendar, User, MapPin, Clock, RotateCcw,
 } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
 
 const STATUS_LABELS: Record<string, string> = {
   open: 'Открыто', assigned: 'Назначено', in_work: 'В работе',
-  fixed: 'Исправлено', control: 'На контроле', closed: 'Закрыто', overdue: 'Просрочено',
+  fixed: 'Исправлено', control: 'На контроле', closed: 'Закрыто',
+  overdue: 'Просрочено', revision_needed: 'На доработке',
 }
 const STATUS_COLORS: Record<string, string> = {
   open: 'bg-red-100 text-red-800',
@@ -22,6 +24,7 @@ const STATUS_COLORS: Record<string, string> = {
   control: 'bg-purple-100 text-purple-800',
   closed: 'bg-gray-100 text-gray-600',
   overdue: 'bg-red-200 text-red-900',
+  revision_needed: 'bg-orange-100 text-orange-800',
 }
 const CRIT_LABELS: Record<string, string> = {
   low: 'Низкая', medium: 'Средняя', high: 'Высокая', critical: 'Критическая',
@@ -37,10 +40,15 @@ export default function IssueFixPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const user = useAuthStore((s) => s.user)
   const issueId = id!
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [fixComment, setFixComment] = useState('')
+  const [reviewerComment, setReviewerComment] = useState('')
+
+  const isAdmin = user?.role === 'admin'
+  const isReviewerLike = user?.role === 'reviewer' || isAdmin
 
   const { data: issue, isLoading } = useQuery<IssueOut>({
     queryKey: ['issue', issueId],
@@ -72,6 +80,42 @@ export default function IssueFixPage() {
       navigate('/issues')
     },
     onError: () => toast.error('Ошибка сохранения'),
+  })
+
+  // Принять исправление (fixed → closed)
+  const acceptMutation = useMutation({
+    mutationFn: () =>
+      issuesApi.update(issueId, {
+        status: 'closed',
+        reviewer_comment: reviewerComment || undefined,
+      }),
+    onSuccess: () => {
+      toast.success('Исправление принято!')
+      queryClient.invalidateQueries({ queryKey: ['issue', issueId] })
+      queryClient.invalidateQueries({ queryKey: ['issues'] })
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(msg || 'Ошибка')
+    },
+  })
+
+  // Вернуть на доработку (fixed → revision_needed)
+  const rejectMutation = useMutation({
+    mutationFn: () =>
+      issuesApi.update(issueId, {
+        status: 'revision_needed',
+        reviewer_comment: reviewerComment || '(без комментария)',
+      }),
+    onSuccess: () => {
+      toast.success('Отправлено на доработку')
+      queryClient.invalidateQueries({ queryKey: ['issue', issueId] })
+      queryClient.invalidateQueries({ queryKey: ['issues'] })
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(msg || 'Ошибка')
+    },
   })
 
   const handleMarkFixed = () => markFixedMutation.mutate()
@@ -166,7 +210,6 @@ export default function IssueFixPage() {
             </div>
           </div>
 
-          {/* Ссылка на обход */}
           <button
             onClick={() => navigate(`/inspections/${issue.inspection_id}`)}
             className="text-xs text-primary-600 hover:text-primary-800 underline"
@@ -175,7 +218,18 @@ export default function IssueFixPage() {
           </button>
         </div>
 
-        {/* Фото ДО — из обхода (смотрим через API inspections) */}
+        {/* Комментарий проверяющего (если вернули на доработку) */}
+        {issue.reviewer_comment && issue.status === 'revision_needed' && (
+          <div className="card bg-orange-50 border-orange-200">
+            <h3 className="font-semibold text-orange-800 mb-2 flex items-center gap-1.5">
+              <RotateCcw className="w-4 h-4" />
+              Возвращено на доработку
+            </h3>
+            <p className="text-sm text-orange-700 whitespace-pre-wrap">{issue.reviewer_comment}</p>
+          </div>
+        )}
+
+        {/* Фото ДО — из обхода */}
         <IssueBeforePhotos inspectionId={issue.inspection_id} />
 
         {/* Фото ПОСЛЕ — исправления */}
@@ -204,37 +258,40 @@ export default function IssueFixPage() {
             </div>
           )}
 
-          <div className="flex gap-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              className="hidden"
-              onChange={handleFileInput}
-            />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isUploading}
-              className="btn-outline flex items-center gap-1.5 py-2 px-4 text-sm"
-            >
-              {isUploading ? (
-                <>
-                  <span className="w-4 h-4 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
-                  Загрузка...
-                </>
-              ) : (
-                <>
-                  <Camera className="w-4 h-4" />
-                  Загрузить фото исправления
-                </>
-              )}
-            </button>
-          </div>
+          {/* Загрузка новых фото — только если не closed и не revision_needed */}
+          {issue.status !== 'closed' && issue.status !== 'revision_needed' && (
+            <div className="flex gap-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={handleFileInput}
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading}
+                className="btn-outline flex items-center gap-1.5 py-2 px-4 text-sm"
+              >
+                {isUploading ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
+                    Загрузка...
+                  </>
+                ) : (
+                  <>
+                    <Camera className="w-4 h-4" />
+                    Загрузить фото исправления
+                  </>
+                )}
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* Комментарий к исправлению + кнопка фиксации */}
-        {issue.status !== 'closed' && issue.status !== 'fixed' && (
+        {/* Блок «Зафиксировать исправление» — для reviewer, когда статус не fixed/closed/revision_needed */}
+        {isReviewerLike && issue.status !== 'fixed' && issue.status !== 'closed' && issue.status !== 'revision_needed' && (
           <div className="card space-y-3">
             <h3 className="font-semibold text-gray-800">Зафиксировать исправление</h3>
 
@@ -279,12 +336,78 @@ export default function IssueFixPage() {
           </div>
         )}
 
-        {/* Уже зафиксировано */}
-        {issue.fix_comment && (issue.status === 'fixed' || issue.status === 'closed') && (
+        {/* Приёмка админом: когда статус fixed → принять / на доработку */}
+        {isAdmin && issue.status === 'fixed' && (
+          <div className="card space-y-3 bg-white border-2 border-primary-200">
+            <h3 className="font-semibold text-gray-800 flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 text-primary-600" />
+              Приёмка исправления
+            </h3>
+
+            {issue.fix_comment && (
+              <div className="bg-green-50 rounded-lg p-3 text-sm text-green-800">
+                <div className="font-medium text-xs text-green-600 mb-0.5">Описание от проверяющего:</div>
+                {issue.fix_comment}
+              </div>
+            )}
+
+            {/* Фото ДО vs ПОСЛЕ */}
+            {fixPhotos.length > 0 && (
+              <div>
+                <div className="text-xs text-gray-500 mb-1 font-medium">Фото исправления:</div>
+                <div className="flex flex-wrap gap-2">
+                  {fixPhotos.map((p) => (
+                    <a key={p.id} href={p.url} target="_blank" rel="noreferrer">
+                      <img src={p.url} alt="" className="w-20 h-20 object-cover rounded-lg border-2 border-green-200" />
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <textarea
+              className="input-field text-sm"
+              rows={2}
+              placeholder="Комментарий (необязательно при приёмке, обязательно при возврате)..."
+              value={reviewerComment}
+              onChange={(e) => setReviewerComment(e.target.value)}
+            />
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => acceptMutation.mutate()}
+                disabled={acceptMutation.isPending}
+                className="btn-primary flex-1 py-3 flex items-center justify-center gap-2"
+              >
+                {acceptMutation.isPending ? (
+                  <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <CheckCircle2 className="w-5 h-5" />
+                )}
+                Принять
+              </button>
+              <button
+                onClick={() => rejectMutation.mutate()}
+                disabled={rejectMutation.isPending}
+                className="btn-danger flex-1 py-3 flex items-center justify-center gap-2"
+              >
+                {rejectMutation.isPending ? (
+                  <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <XCircle className="w-5 h-5" />
+                )}
+                На доработку
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Уже исправлено — для не-админов */}
+        {!isAdmin && issue.fix_comment && (issue.status === 'fixed' || issue.status === 'closed') && (
           <div className="card bg-green-50 border-green-200">
             <h3 className="font-semibold text-green-800 mb-2 flex items-center gap-1.5">
               <CheckCircle2 className="w-4 h-4" />
-              Исправление зафиксировано
+              {issue.status === 'closed' ? 'Принято' : 'Исправление зафиксировано'}
             </h3>
             <p className="text-sm text-green-700">{issue.fix_comment}</p>
             {fixPhotos.length > 0 && (

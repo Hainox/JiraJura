@@ -60,7 +60,7 @@ ISSUE_CRITICALITY_ENUM = Enum(
 )
 
 ISSUE_STATUS_ENUM = Enum(
-    'open', 'assigned', 'in_work', 'fixed', 'control', 'closed', 'overdue',
+    'open', 'assigned', 'in_work', 'fixed', 'control', 'closed', 'overdue', 'revision_needed',
     name='issue_status', create_type=False,
 )
 
@@ -264,6 +264,7 @@ class Issue(Base):
     assigned_to = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     due_date = Column(DateTime)
     fix_comment = Column(Text)
+    reviewer_comment = Column(Text)
     fixed_at = Column(DateTime(timezone=True))
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)

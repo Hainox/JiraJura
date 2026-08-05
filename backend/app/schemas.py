@@ -236,6 +236,7 @@ class IssueUpdate(BaseModel):
     due_date: Optional[datetime] = None
     comment: Optional[str] = None  # для истории статуса
     fix_comment: Optional[str] = None  # описание исправления
+    reviewer_comment: Optional[str] = None  # комментарий проверяющего (при приёмке/возврате)
 
 
 class IssueOut(BaseModel):
@@ -254,6 +255,7 @@ class IssueOut(BaseModel):
     site_name: Optional[str] = None
     district_name: Optional[str] = None
     fix_comment: Optional[str] = None
+    reviewer_comment: Optional[str] = None
     fix_photos: list[PhotoOut] = []
     created_at: datetime
     updated_at: Optional[datetime] = None

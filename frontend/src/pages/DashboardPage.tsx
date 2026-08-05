@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
+import { reportsApi, api } from '@/lib/api'
 import { ArrowLeft, RefreshCw, TrendingUp, MapPin, AlertTriangle, CheckCircle2, Clock, Users, Building, FileSpreadsheet } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
 
@@ -19,29 +20,24 @@ export default function DashboardPage() {
   const { data, isLoading, refetch } = useQuery<DashboardData>({
     queryKey: ['dashboard'],
     queryFn: async () => {
-      const token = localStorage.getItem('access_token')
-      const res = await fetch('/api/v1/dashboard/', { headers: { Authorization: `Bearer ${token}` } })
-      return res.json()
+      const res = await api.get('/dashboard/')
+      return res.data
     },
   })
 
   const { data: districts } = useQuery<DistrictStat[]>({
     queryKey: ['dashboard-districts'],
     queryFn: async () => {
-      const token = localStorage.getItem('access_token')
-      const res = await fetch('/api/v1/dashboard/districts', { headers: { Authorization: `Bearer ${token}` } })
-      return res.json()
+      const res = await api.get('/dashboard/districts')
+      return res.data
     },
     enabled: showDistricts,
   })
 
-  const exportXlsx = async () => {
-    const token = localStorage.getItem('access_token')
-    const res = await fetch('/api/v1/reports/export.xlsx', { headers: { Authorization: `Bearer ${token}` } })
-    const blob = await res.blob()
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a'); a.href = url; a.download = 'report.xlsx'
-    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url)
+  const exportXlsx = () => {
+    toast.promise(reportsApi.exportXlsx(), {
+      loading: 'Готовлю файл...', success: 'Отчёт скачан', error: 'Ошибка выгрузки',
+    })
   }
 
   if (isLoading) return <div className="h-full flex items-center justify-center text-gray-400">Загрузка...</div>
@@ -69,7 +65,7 @@ export default function DashboardPage() {
 
         {/* Quick actions */}
         <div className="flex gap-2">
-          <button onClick={() => { exportXlsx(); toast.success('Отчёт скачан') }} className="btn-primary flex-1 flex items-center justify-center gap-2 text-sm py-2">
+          <button onClick={exportXlsx} className="btn-primary flex-1 flex items-center justify-center gap-2 text-sm py-2">
             <FileSpreadsheet className="w-4 h-4" /> Excel-отчёт
           </button>
           <button onClick={() => setShowDistricts((v) => !v)} className="btn-outline flex-1 flex items-center justify-center gap-2 text-sm py-2">

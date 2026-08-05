@@ -1,5 +1,5 @@
 """PDF-отчёт по одному обходу — возвращает HTML для печати."""
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Response, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -17,7 +17,7 @@ RESULT_RU = {"ok": "В порядке", "defect": "Нарушение", "not_app
 
 
 @router.get("/{inspection_id}")
-async def pdf_report(inspection_id: str, db: AsyncSession = Depends(get_db)):
+async def pdf_report(inspection_id: str, request: Request, db: AsyncSession = Depends(get_db)):
     q = select(Inspection).where(Inspection.id == inspection_id).options(
         selectinload(Inspection.site).selectinload(Site.courtyard).selectinload(Courtyard.district),
         selectinload(Inspection.inspector),
@@ -40,8 +40,6 @@ async def pdf_report(inspection_id: str, db: AsyncSession = Depends(get_db)):
     answers_ok = [a for a in insp.answers if a.result == "ok"]
     answers_defect = [a for a in insp.answers if a.result == "defect"]
 
-    photos_by_answer = {p.checklist_answer_id: p for p in defect_photos}
-
     # items lookup
     item_ids = [a.checklist_item_id for a in insp.answers]
     items = {}
@@ -52,6 +50,9 @@ async def pdf_report(inspection_id: str, db: AsyncSession = Depends(get_db)):
 
     site_str = insp.site.courtyard.name if insp.site.courtyard else "Площадка"
     district_str = insp.site.courtyard.district.name if insp.site.courtyard and insp.site.courtyard.district else ""
+
+    # Абсолютный базовый URL для фото (чтобы работали при печати/скачивании)
+    base_url = f"{request.url.scheme}://{request.url.netloc}"
 
     html = f"""<!DOCTYPE html>
 <html lang="ru">
@@ -102,13 +103,13 @@ async def pdf_report(inspection_id: str, db: AsyncSession = Depends(get_db)):
     if general_photos:
         html += '<div class="section"><h2>Общие фото</h2><div class="photos">'
         for p in general_photos:
-            html += f'<img src="/uploads/{p.storage_path}" />'
+            html += f'<img src="{base_url}/uploads/{p.storage_path}" />'
         html += "</div></div>"
 
     if defect_photos:
         html += '<div class="section"><h2>Фото дефектов</h2><div class="photos">'
         for p in defect_photos:
-            html += f'<img src="/uploads/{p.storage_path}" />'
+            html += f'<img src="{base_url}/uploads/{p.storage_path}" />'
         html += "</div></div>"
 
     if insp.comment:

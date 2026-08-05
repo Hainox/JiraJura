@@ -35,15 +35,9 @@ export default function ProfilePage() {
   })
 
   const passwordMutation = useMutation({
-    mutationFn: () => {
-      // Since there's no "change own password" endpoint, use admin reset endpoint
-      if (user?.role === 'admin') {
-        return authApi.resetPassword(user!.id)
-      }
-      throw new Error('not supported')
-    },
-    onSuccess: (data) => {
-      toast.success(`Новый пароль: ${data.new_password}`)
+    mutationFn: () => authApi.changePassword(newPassword),
+    onSuccess: () => {
+      toast.success('Пароль изменён')
       setCurrentPassword('')
       setNewPassword('')
       setConfirmPassword('')

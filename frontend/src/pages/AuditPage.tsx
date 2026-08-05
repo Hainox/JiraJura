@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
+import { api } from '@/lib/api'
 import { ArrowLeft, RefreshCw } from 'lucide-react'
 
 const ACTION_LABELS: Record<string, string> = {
@@ -19,16 +20,13 @@ export default function AuditPage() {
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['audit', actionFilter, page],
     queryFn: async () => {
-      const token = localStorage.getItem('access_token')
-      const params = new URLSearchParams({ page: String(page), page_size: '50' })
-      if (actionFilter) params.set('action', actionFilter)
-      const res = await fetch(`/api/v1/audit/?${params}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      return res.json() as Promise<{
+      const params: Record<string, string> = { page: String(page), page_size: '50' }
+      if (actionFilter) params.action = actionFilter
+      const res = await api.get('/audit/', { params })
+      return res.data as {
         total: number
         items: { id: string; user_name?: string; action: string; entity_type: string; entity_id?: string; details?: string; created_at: string }[]
-      }>
+      }
     },
   })
 

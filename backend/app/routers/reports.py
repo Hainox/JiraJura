@@ -2,6 +2,7 @@
 import io
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy import select, func
@@ -12,7 +13,7 @@ from app.database import get_db
 from app.models import (
     District, Courtyard, Site, Inspection, Issue, ChecklistAnswer, User,
 )
-from app.schemas import ReportWeeklyOut, ReportMonthlyOut
+from app.schemas import ReportWeeklyOut, ReportMonthlyOut, DashboardDistrictRow, DashboardOut
 from app.services.permissions import require_role
 
 router = APIRouter()
@@ -146,6 +147,106 @@ async def monthly_report(
     return results
 
 
+# ── Дашборд админа ─────────────────────────────────────────────
+
+@router.get("/dashboard", response_model=DashboardOut)
+async def admin_dashboard(
+    district_id: Optional[str] = Query(None),
+    date_from: Optional[date] = Query(None),
+    date_to: Optional[date] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("reviewer", "admin")),
+):
+    """Сводка по районам для дашборда: обходы, замечания, статусы."""
+    dt_from = datetime.combine(date_from, datetime.min.time()) if date_from else None
+    dt_to = (datetime.combine(date_to, datetime.min.time()) + timedelta(days=1)) if date_to else None
+
+    def period(q, column):
+        if dt_from is not None:
+            q = q.where(column >= dt_from)
+        if dt_to is not None:
+            q = q.where(column < dt_to)
+        return q
+
+    dist_q = select(District).order_by(District.name)
+    if district_id:
+        dist_q = dist_q.where(District.id == district_id)
+    districts = (await db.execute(dist_q)).scalars().all()
+
+    rows: list[DashboardDistrictRow] = []
+    total_row = DashboardDistrictRow(
+        district_id=UUID("00000000-0000-0000-0000-000000000000"),
+        district_name="ВСЕГО", total_sites=0, inspections_total=0,
+        inspections_completed=0, inspections_in_progress=0,
+        issues_total=0, issues_open=0, issues_fixed=0,
+        issues_revision_needed=0, issues_closed=0,
+    )
+
+    for d in districts:
+        site_sub = (
+            select(Site.id)
+            .join(Courtyard, Site.courtyard_id == Courtyard.id)
+            .where(Courtyard.district_id == d.id)
+        )
+
+        total_sites = (await db.execute(
+            select(func.count()).select_from(Site).where(Site.id.in_(site_sub), Site.is_active)
+        )).scalar_one() or 0
+
+        insp_base = select(func.count()).select_from(Inspection).where(Inspection.site_id.in_(site_sub))
+        inspections_total = (await db.execute(period(insp_base, Inspection.created_at))).scalar_one() or 0
+        inspections_completed = (await db.execute(period(
+            select(func.count()).select_from(Inspection).where(Inspection.site_id.in_(site_sub), Inspection.status == "completed"),
+            Inspection.created_at,
+        ))).scalar_one() or 0
+        inspections_in_progress = (await db.execute(period(
+            select(func.count()).select_from(Inspection).where(Inspection.site_id.in_(site_sub), Inspection.status == "in_progress"),
+            Inspection.created_at,
+        ))).scalar_one() or 0
+
+        iss_base = select(func.count()).select_from(Issue).where(Issue.site_id.in_(site_sub))
+        issues_total = (await db.execute(period(iss_base, Issue.created_at))).scalar_one() or 0
+        issues_open = (await db.execute(period(
+            select(func.count()).select_from(Issue).where(
+                Issue.site_id.in_(site_sub), Issue.status.in_(["open", "assigned", "in_work"])
+            ), Issue.created_at,
+        ))).scalar_one() or 0
+        issues_fixed = (await db.execute(period(
+            select(func.count()).select_from(Issue).where(Issue.site_id.in_(site_sub), Issue.status == "fixed"),
+            Issue.created_at,
+        ))).scalar_one() or 0
+        issues_revision_needed = (await db.execute(
+            select(func.count()).select_from(Issue).where(Issue.site_id.in_(site_sub), Issue.status == "revision_needed")
+        )).scalar_one() or 0
+        issues_closed = (await db.execute(period(
+            select(func.count()).select_from(Issue).where(Issue.site_id.in_(site_sub), Issue.status == "closed"),
+            Issue.created_at,
+        ))).scalar_one() or 0
+
+        row = DashboardDistrictRow(
+            district_id=d.id, district_name=d.name, total_sites=total_sites,
+            inspections_total=inspections_total, inspections_completed=inspections_completed,
+            inspections_in_progress=inspections_in_progress,
+            issues_total=issues_total, issues_open=issues_open,
+            issues_fixed=issues_fixed, issues_revision_needed=issues_revision_needed,
+            issues_closed=issues_closed,
+        )
+        rows.append(row)
+
+        # суммируем в totals
+        total_row.total_sites += total_sites
+        total_row.inspections_total += inspections_total
+        total_row.inspections_completed += inspections_completed
+        total_row.inspections_in_progress += inspections_in_progress
+        total_row.issues_total += issues_total
+        total_row.issues_open += issues_open
+        total_row.issues_fixed += issues_fixed
+        total_row.issues_revision_needed += issues_revision_needed
+        total_row.issues_closed += issues_closed
+
+    return DashboardOut(districts=rows, totals=total_row)
+
+
 # ── Выгрузка в Excel ─────────────────────────────────────────────
 
 INSPECTION_STATUS_RU = {
@@ -156,7 +257,7 @@ INSPECTION_STATUS_RU = {
 ISSUE_STATUS_RU = {
     "open": "Открыто", "assigned": "Назначено", "in_work": "В работе",
     "fixed": "Устранено", "control": "На контроле", "closed": "Закрыто",
-    "overdue": "Просрочено",
+    "overdue": "Просрочено", "revision_needed": "На доработке",
 }
 CRITICALITY_RU = {
     "low": "Низкая", "medium": "Средняя", "high": "Высокая",

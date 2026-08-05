@@ -287,3 +287,24 @@ class ReportMonthlyOut(BaseModel):
     issues_created: int
     issues_closed: int
     issues_overdue: int
+
+
+# ── Дашборд админа ─────────────────────────────────────────────
+
+class DashboardDistrictRow(BaseModel):
+    district_id: UUID
+    district_name: str
+    total_sites: int
+    inspections_total: int
+    inspections_completed: int
+    inspections_in_progress: int
+    issues_total: int
+    issues_open: int
+    issues_fixed: int
+    issues_revision_needed: int
+    issues_closed: int
+
+
+class DashboardOut(BaseModel):
+    districts: list[DashboardDistrictRow]
+    totals: DashboardDistrictRow

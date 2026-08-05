@@ -214,3 +214,23 @@ export interface ReportOut {
   issues_created?: number
   issues_closed?: number
 }
+
+// ── Dashboard ──
+export interface DashboardDistrictRow {
+  district_id: string
+  district_name: string
+  total_sites: number
+  inspections_total: number
+  inspections_completed: number
+  inspections_in_progress: number
+  issues_total: number
+  issues_open: number
+  issues_fixed: number
+  issues_revision_needed: number
+  issues_closed: number
+}
+
+export interface DashboardOut {
+  districts: DashboardDistrictRow[]
+  totals: DashboardDistrictRow
+}

@@ -18,6 +18,7 @@ import type {
   UserInvitePreview,
   UserRoleUpdate,
   PasswordResetOut,
+  DashboardOut,
 } from '@/types'
 
 export const api = axios.create({
@@ -134,6 +135,9 @@ export const inspectionsApi = {
 
 // ── Reports ──
 export const reportsApi = {
+  dashboard: (params?: { district_id?: string; date_from?: string; date_to?: string }) =>
+    api.get<DashboardOut>('/reports/dashboard', { params }).then((r) => r.data),
+
   // Скачивание Excel-выгрузки: файл приходит blob'ом (нужен Authorization-
   // заголовок, поэтому обычная ссылка <a href> не подходит) и отдаётся
   // пользователю через временный object URL.

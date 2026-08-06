@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { inspectionsApi, checklistsApi, issuesApi } from '@/lib/api'
+import { inspectionsApi, checklistsApi, issuesApi, reportsApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
 import type { InspectionOut, ChecklistTemplateOut, ChecklistItemOut, PhotoOut } from '@/types'
 import {
@@ -50,7 +50,11 @@ export default function InspectionPage() {
 
   const isInspector = user?.id === inspection?.inspector?.id
   const isReviewer = user?.role === 'reviewer' || user?.role === 'admin'
-  const isReadOnly = isReviewer && !isInspector
+  // !isInspector, не "isReviewer && !isInspector" — иначе любой ДРУГОЙ
+  // инспектор (не владелец обхода и не проверяющий/админ) видел чек-лист
+  // полностью редактируемым и мог реально создавать замечания на чужом
+  // обходе (открыв URL /inspections/:id с чужим id)
+  const isReadOnly = !isInspector
 
   // Is this inspection returned for revision?
   const isRevision = inspection?.status === 'in_progress' && !!inspection?.reviewer_comment && isInspector
@@ -319,7 +323,7 @@ export default function InspectionPage() {
           {photos.length > 0 ? photos.length : isInspector ? '!' : ''}
         </button>
         <button
-          onClick={() => window.open(`/api/v1/reports/pdf/${inspectionId}`, '_blank')}
+          onClick={() => reportsApi.openPdfReport(inspectionId).catch(() => toast.error('Не удалось открыть отчёт'))}
           className="text-xs bg-white/20 px-3 py-1.5 rounded-lg hover:bg-white/30"
           title="PDF-отчёт"
         >

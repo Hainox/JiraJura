@@ -35,7 +35,7 @@ export default function ProfilePage() {
   })
 
   const passwordMutation = useMutation({
-    mutationFn: () => authApi.changePassword(newPassword),
+    mutationFn: () => authApi.changePassword(newPassword, currentPassword),
     onSuccess: () => {
       toast.success('Пароль изменён')
       setCurrentPassword('')
@@ -43,7 +43,10 @@ export default function ProfilePage() {
       setConfirmPassword('')
       setShowPasswordForm(false)
     },
-    onError: () => toast.error('Ошибка смены пароля'),
+    onError: (err: unknown) => {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(msg || 'Ошибка смены пароля')
+    },
   })
 
   const handlePasswordChange = () => {

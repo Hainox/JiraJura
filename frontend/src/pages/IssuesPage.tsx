@@ -86,7 +86,7 @@ export default function IssuesPage() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, ...data }: { id: string; status?: string; assigned_to?: string; due_date?: string; comment?: string }) =>
+    mutationFn: ({ id, ...data }: { id: string; status?: string; assigned_to?: string | null; due_date?: string; comment?: string }) =>
       issuesApi.update(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['issues'] })
@@ -123,7 +123,10 @@ export default function IssuesPage() {
     updateMutation.mutate({
       id: issueId,
       status: editStatus || undefined,
-      assigned_to: editAssigned || undefined,
+      // явный null, а не undefined — иначе "Не назначен" молча ничего не
+      // делает: undefined-поле axios/JSON.stringify просто выбрасывает из
+      // тела запроса, и бэкенд не отличает это от "поле не трогали"
+      assigned_to: editAssigned || null,
       // due_date на бэкенде — DATE, не datetime; input[type=date] уже даёт
       // "YYYY-MM-DD" — .toISOString() только добавлял риск сдвига на день
       // и был причиной 500 на любое сохранение с указанным сроком

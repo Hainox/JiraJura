@@ -85,8 +85,8 @@ export const authApi = {
   resetPassword: (id: string) =>
     api.post<PasswordResetOut>(`/auth/users/${id}/reset-password`).then((r) => r.data),
 
-  changePassword: (newPassword: string) =>
-    api.post<LoginResponse>('/auth/change-password', { new_password: newPassword }).then((r) => r.data),
+  changePassword: (newPassword: string, currentPassword?: string) =>
+    api.post<LoginResponse>('/auth/change-password', { new_password: newPassword, current_password: currentPassword }).then((r) => r.data),
 }
 
 // ── Districts ──
@@ -154,6 +154,19 @@ export const reportsApi = {
     a.remove()
     URL.revokeObjectURL(url)
   },
+
+  // Тот же принцип, что и exportXlsx: /reports/pdf/{id} теперь требует
+  // авторизации (раньше был открыт кому угодно с UUID обхода), поэтому
+  // window.open(url) напрямую больше не сработает — заголовок Authorization
+  // так не передать. Загружаем HTML через настроенный клиент и открываем
+  // как blob-URL, печать/сохранение в PDF остаётся на браузере.
+  openPdfReport: async (inspectionId: string) => {
+    const res = await api.get(`/reports/pdf/${inspectionId}`, { responseType: 'text' })
+    const blob = new Blob([res.data as string], { type: 'text/html' })
+    const url = URL.createObjectURL(blob)
+    window.open(url, '_blank')
+    setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  },
 }
 
 // ── Issues ──
@@ -170,7 +183,7 @@ export const issuesApi = {
     api.get<IssueListOut>('/issues/', { params }).then((r) => r.data),
 
   update: (id: string, data: {
-    status?: string; assigned_to?: string; due_date?: string; comment?: string; fix_comment?: string; reviewer_comment?: string
+    status?: string; assigned_to?: string | null; due_date?: string; comment?: string; fix_comment?: string; reviewer_comment?: string
   }) =>
     api.put<IssueOut>(`/issues/${id}`, data).then((r) => r.data),
 

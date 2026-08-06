@@ -81,7 +81,7 @@ export default function IssueFixPage() {
   })
 
   const rejectMutation = useMutation({
-    mutationFn: () => issuesApi.update(issueId, { status: 'revision_needed', reviewer_comment: reviewerComment || '(без комментария)' }),
+    mutationFn: () => issuesApi.update(issueId, { status: 'revision_needed', reviewer_comment: reviewerComment }),
     onSuccess: () => {
       toast.success('Отправлено на доработку')
       queryClient.invalidateQueries({ queryKey: ['issue', issueId] })
@@ -145,7 +145,7 @@ export default function IssueFixPage() {
         {/* Слайдер ДО/ПОСЛЕ + загрузка фото */}
         <IssuePhotoComparison inspectionId={issue.inspection_id} fixPhotos={fixPhotos} />
 
-        {issue.status !== 'closed' && issue.status !== 'revision_needed' && (
+        {issue.status !== 'closed' && (
           <div className="card space-y-2">
             <h3 className="text-sm font-medium text-gray-600 flex items-center gap-1"><Camera className="w-4 h-4" />Загрузить фото исправления</h3>
             <div className="flex gap-2">
@@ -161,8 +161,11 @@ export default function IssueFixPage() {
           </div>
         )}
 
-        {/* Блок «You фиксировать исправление» */}
-        {isReviewerLike && issue.status !== 'fixed' && issue.status !== 'closed' && issue.status !== 'revision_needed' && (
+        {/* Блок «Зафиксировать исправление» — доступен и после revision_needed,
+            чтобы проверяющий мог довести замечание обратно до fixed после
+            того как админ вернул его на доработку (иначе замечание зависало
+            без единой кнопки, ведущей к повторной отправке) */}
+        {isReviewerLike && issue.status !== 'fixed' && issue.status !== 'closed' && (
           <div className="card space-y-3">
             <h3 className="font-semibold text-gray-800">Зафиксировать исправление</h3>
             <textarea className="input-field text-sm" rows={3} placeholder="Опишите, что было сделано для устранения нарушения..." value={fixComment} onChange={(e) => setFixComment(e.target.value)} />
@@ -188,10 +191,16 @@ export default function IssueFixPage() {
               <button onClick={() => acceptMutation.mutate()} disabled={acceptMutation.isPending} className="btn-primary flex-1 py-3 flex items-center justify-center gap-2">
                 {acceptMutation.isPending ? <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}Принять
               </button>
-              <button onClick={() => rejectMutation.mutate()} disabled={rejectMutation.isPending} className="btn-danger flex-1 py-3 flex items-center justify-center gap-2">
+              <button
+                onClick={() => rejectMutation.mutate()}
+                disabled={rejectMutation.isPending || !reviewerComment.trim()}
+                title={!reviewerComment.trim() ? 'Укажите, что нужно доработать' : undefined}
+                className="btn-danger flex-1 py-3 flex items-center justify-center gap-2 disabled:opacity-50"
+              >
                 {rejectMutation.isPending ? <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <XCircle className="w-5 h-5" />}На доработку
               </button>
             </div>
+            {!reviewerComment.trim() && <p className="text-xs text-gray-400 text-center">Для возврата на доработку нужен комментарий — что исправить</p>}
           </div>
         )}
 

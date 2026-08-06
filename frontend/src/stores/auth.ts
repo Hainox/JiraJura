@@ -46,6 +46,11 @@ export const useAuthStore = create<AuthState>((set) => ({
   logout: () => {
     localStorage.removeItem('access_token')
     localStorage.removeItem('user')
+    // Иначе на общем устройстве (планшет в поле) флаг форс-смены пароля
+    // от ПРЕДЫДУЩЕГО пользователя переживает logout и цепляется к
+    // следующему, кто залогинится, — даже если его собственный пароль
+    // менять не нужно.
+    localStorage.removeItem('force_pw_change')
     set({ token: null, user: null, isAuthenticated: false })
   },
 

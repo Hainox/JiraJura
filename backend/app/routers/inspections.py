@@ -11,7 +11,7 @@ from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.database import get_db
-from app.services.permissions import check_own_or_role
+from app.services.permissions import check_own_or_role, in_district_scope
 from app.models import (
     Inspection, Site, Courtyard, District, User,
     ChecklistAnswer, ChecklistItem, ChecklistTemplate, Photo, Issue,
@@ -122,7 +122,11 @@ async def list_inspections(
 
 
 @router.get("/{inspection_id}", response_model=InspectionOut)
-async def get_inspection(inspection_id: str, db: AsyncSession = Depends(get_db)):
+async def get_inspection(
+    inspection_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     q = select(Inspection).where(Inspection.id == inspection_id).options(
         selectinload(Inspection.site).selectinload(Site.courtyard).selectinload(Courtyard.district),
         selectinload(Inspection.inspector),
@@ -132,6 +136,14 @@ async def get_inspection(inspection_id: str, db: AsyncSession = Depends(get_db))
     obj = (await db.execute(q)).scalar_one_or_none()
     if not obj:
         raise HTTPException(404, "Обход не найден")
+
+    if current_user.role == "inspector":
+        check_own_or_role(current_user, obj.inspector_id, "reviewer", "admin")
+    elif current_user.role == "reviewer":
+        district_id = obj.site.courtyard.district_id if obj.site and obj.site.courtyard else None
+        if not in_district_scope(current_user, district_id):
+            raise HTTPException(403, "Обход вне вашего района")
+
     return await _inspection_to_out(obj, db)
 
 
@@ -142,10 +154,18 @@ async def update_inspection(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    obj = (await db.execute(select(Inspection).where(Inspection.id == inspection_id))).scalar_one_or_none()
+    obj = (await db.execute(
+        select(Inspection).where(Inspection.id == inspection_id).options(
+            selectinload(Inspection.site).selectinload(Site.courtyard),
+        )
+    )).scalar_one_or_none()
     if not obj:
         raise HTTPException(404, "Обход не найден")
     check_own_or_role(current_user, obj.inspector_id, "reviewer", "admin")
+    if current_user.role == "reviewer":
+        district_id = obj.site.courtyard.district_id if obj.site and obj.site.courtyard else None
+        if not in_district_scope(current_user, district_id):
+            raise HTTPException(403, "Обход вне вашего района")
 
     if data.status:
         obj.status = data.status
@@ -153,7 +173,10 @@ async def update_inspection(
             obj.completed_at = datetime.now(timezone.utc)
     if data.comment is not None:
         obj.comment = data.comment
-    if data.reviewer_comment is not None:
+    # Только reviewer/admin — иначе владелец-инспектор (check_own_or_role
+    # выше пускает и его) мог бы сам стереть/подделать комментарий
+    # проверяющего, например скрыть, что обход вернули на доработку.
+    if data.reviewer_comment is not None and current_user.role in ("reviewer", "admin"):
         obj.reviewer_comment = data.reviewer_comment
     if data.gps_lat is not None:
         obj.gps_lat = data.gps_lat
@@ -266,7 +289,22 @@ async def upload_inspection_photo(
 async def list_inspection_photos(
     inspection_id: str,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
+    obj = (await db.execute(
+        select(Inspection).where(Inspection.id == inspection_id).options(
+            selectinload(Inspection.site).selectinload(Site.courtyard),
+        )
+    )).scalar_one_or_none()
+    if not obj:
+        raise HTTPException(404, "Обход не найден")
+    if current_user.role == "inspector":
+        check_own_or_role(current_user, obj.inspector_id, "reviewer", "admin")
+    elif current_user.role == "reviewer":
+        district_id = obj.site.courtyard.district_id if obj.site and obj.site.courtyard else None
+        if not in_district_scope(current_user, district_id):
+            raise HTTPException(403, "Обход вне вашего района")
+
     q = select(Photo).where(
         Photo.inspection_id == inspection_id,
         Photo.target_type.in_(["inspection", "checklist_answer"]),

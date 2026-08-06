@@ -24,6 +24,10 @@ export default function LoginPage() {
         localStorage.setItem('force_pw_change', '1')
         navigate('/change-password')
       } else {
+        // На общем устройстве этот флаг мог остаться от предыдущего
+        // пользователя, которому меняли пароль, — без явной очистки он
+        // цепляется и к этому входу, хотя тут это не нужно
+        localStorage.removeItem('force_pw_change')
         toast.success(`Добро пожаловать, ${res.user.full_name}!`)
         navigate('/')
       }

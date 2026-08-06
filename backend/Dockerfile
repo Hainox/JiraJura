@@ -14,6 +14,8 @@ COPY bulk_invite.py .
 COPY diagnose_logins.py .
 COPY reissue_invites.py .
 COPY split_invites_by_district.py .
+COPY verify_invite_links.py .
+COPY production_status_report.py .
 COPY titul_2026-08.csv .
 COPY alembic/ ./alembic/
 RUN mkdir -p /app/uploads

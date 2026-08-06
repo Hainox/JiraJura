@@ -25,6 +25,17 @@ router = APIRouter()
 INVITE_EXPIRY = timedelta(hours=72)
 ROLES = ("inspector", "reviewer", "admin")
 
+# Без 0/O/1/l/I и других визуально похожих символов — этот пароль почти
+# всегда передаётся человеку на словах или сообщением в мессенджере
+# ("Передайте его пользователю лично"), а не вводится напрямую самим
+# сотрудником, поэтому неоднозначные символы — реальный источник ошибок
+# при перепечатывании/чтении, а не гипотетический краевой случай.
+_PASSWORD_ALPHABET = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789"
+
+
+def _gen_readable_password(length: int = 12) -> str:
+    return "".join(secrets.choice(_PASSWORD_ALPHABET) for _ in range(length))
+
 
 def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
@@ -277,7 +288,7 @@ async def reset_user_password(
     if not user:
         raise HTTPException(404, "Пользователь не найден")
 
-    new_password = secrets.token_urlsafe(10)
+    new_password = _gen_readable_password()
     user.password_hash = hash_password(new_password)
     await log_action(db, str(current_user.id), "password_reset", "user", user_id, {"login": user.login})
     await db.commit()

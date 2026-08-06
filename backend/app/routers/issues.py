@@ -193,21 +193,30 @@ async def update_issue(
     old_status = issue.status
 
     if data.status and data.status != issue.status:
-        # Переход fixed→closed: только reviewer/admin, из статуса fixed
-        if data.status == 'closed':
-            if current_user.role not in ('reviewer', 'admin'):
-                raise HTTPException(403, "Только проверяющий или админ может принять исправление")
-        # Переход fixed→revision_needed: обязателен reviewer_comment
-        if data.status == 'revision_needed':
-            if current_user.role not in ('reviewer', 'admin'):
-                raise HTTPException(403, "Только проверяющий или админ может отправить на доработку")
-            if not data.reviewer_comment:
-                raise HTTPException(400, "Укажите комментарий — что нужно доработать")
-            issue.reviewer_comment = data.reviewer_comment
+        # Цепочка инспектор→проверяющий→админ: проверяющий доводит
+        # замечание до fixed (с фото устранения), а финальное решение —
+        # принять (closed) или вернуть на доработку (revision_needed) —
+        # только у админа, и только из статуса fixed (нельзя закрыть
+        # замечание, которое проверяющий ещё не довёл до этого статуса).
+        if data.status in ('closed', 'revision_needed'):
+            if current_user.role != 'admin':
+                raise HTTPException(403, "Принять или вернуть на доработку может только админ")
+            if issue.status != 'fixed':
+                raise HTTPException(400, "Замечание должно быть в статусе «Исправлено» с фото, прежде чем принять решение")
+            if data.status == 'revision_needed':
+                if not data.reviewer_comment:
+                    raise HTTPException(400, "Укажите комментарий — что нужно доработать")
+                issue.reviewer_comment = data.reviewer_comment
+
+        if data.status == "fixed":
+            photo_count = (await db.execute(
+                select(func.count()).select_from(Photo).where(Photo.issue_id == issue_id)
+            )).scalar_one()
+            if photo_count == 0:
+                raise HTTPException(400, "Нужно приложить хотя бы одно фото исправления")
+            issue.fixed_at = datetime.now(timezone.utc)
 
         issue.status = data.status
-        if data.status == "fixed":
-            issue.fixed_at = datetime.now(timezone.utc)
 
         # запись в историю
         db.add(IssueStatusHistory(

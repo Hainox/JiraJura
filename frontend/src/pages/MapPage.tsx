@@ -1,12 +1,12 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { MapContainer, TileLayer, Marker, Popup, useMap, AttributionControl } from 'react-leaflet'
 import L from 'leaflet'
 import { sitesApi, districtsApi, reportsApi, inspectionsApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
 import type { SiteOut, DistrictOut, InspectionOut } from '@/types'
-import { List, Map as MapIcon, LogOut, ChevronRight, Users, Download, ClipboardCheck, Clock, CheckCircle2, AlertTriangle, AlertCircle, UserCircle, BarChart3 } from 'lucide-react'
+import { List, Map as MapIcon, LogOut, ChevronRight, Users, Download, ClipboardCheck, Clock, CheckCircle2, AlertTriangle, AlertCircle, UserCircle, BarChart3, Check } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
 import 'leaflet/dist/leaflet.css'
 
@@ -64,6 +64,7 @@ function FitBounds({ data }: { data: SiteOut[] | undefined }) {
 
 export default function MapPage() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const user = useAuthStore((s) => s.user)
   const logoutStore = useAuthStore((s) => s.logout)
   const [viewMode, setViewMode] = useState<'map' | 'list' | 'review'>('map')
@@ -111,6 +112,18 @@ export default function MapPage() {
   const sites = sitesData?.items ?? []
   const totalCount = sitesData?.total ?? sites.length
   const allInspections = inspectionsData?.items ?? []
+
+  // Проверяющий принимает "зелёный" (без замечаний) обход одним нажатием,
+  // не открывая его — статус не меняется (уже completed), но фиксируется
+  // reviewed_by/reviewed_at
+  const acceptInspectionMutation = useMutation({
+    mutationFn: (inspectionId: string) => inspectionsApi.update(inspectionId, { status: 'completed' }),
+    onSuccess: () => {
+      toast.success('Обход принят')
+      queryClient.invalidateQueries({ queryKey: ['inspections-review'] })
+    },
+    onError: () => toast.error('Не удалось принять обход'),
+  })
 
   // Для инспектора: загружаем его обходы чтобы раскрасить метки
   const { data: myInspectionsData } = useQuery<{ total: number; items: InspectionOut[] }>({
@@ -337,12 +350,16 @@ export default function MapPage() {
               const defectCount = insp.answers?.filter((a) => a.result === 'defect').length ?? 0
               const total = insp.answers?.length ?? 0
               const isReviewed = !!insp.reviewed_by
+              const isGreen = insp.status === 'completed' && (insp.issues_count ?? 0) === 0
 
               return (
-                <button
+                <div
                   key={insp.id}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => navigate(`/inspections/${insp.id}`)}
-                  className="card w-full text-left hover:border-primary-300 transition-colors"
+                  onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/inspections/${insp.id}`) }}
+                  className="card w-full text-left hover:border-primary-300 transition-colors cursor-pointer"
                 >
                   <div className="flex items-start gap-3">
                     <div className={`shrink-0 mt-0.5 ${
@@ -387,10 +404,20 @@ export default function MapPage() {
                           {insp.reviewed_at && `, ${new Date(insp.reviewed_at).toLocaleDateString('ru')}`}
                         </div>
                       )}
+                      {isGreen && !isReviewed && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); acceptInspectionMutation.mutate(insp.id) }}
+                          disabled={acceptInspectionMutation.isPending}
+                          className="mt-2 btn-primary text-xs py-1.5 px-3 flex items-center gap-1 disabled:opacity-50"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          Принять
+                        </button>
+                      )}
                     </div>
                     <ChevronRight className="w-4 h-4 text-gray-300 shrink-0 mt-3" />
                   </div>
-                </button>
+                </div>
               )
             })}
             {filteredInspections.length === 0 && (

@@ -88,7 +88,7 @@ describe('LoginPage', () => {
 
   it('показывает ошибку при неверном логине', async () => {
     const { authApi } = await import('@/lib/api')
-    vi.mocked(authApi.login).mockRejectedValueOnce(new Error('Unauthorized'))
+    vi.mocked(authApi.login).mockRejectedValueOnce({ response: { status: 401 } })
 
     renderLogin()
     const user = userEvent.setup()

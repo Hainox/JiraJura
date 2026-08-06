@@ -94,6 +94,16 @@ export default function MapPage() {
     enabled: !isAdmin || !!districtFilter,
   })
 
+  // Лёгкий запрос только за количеством (page_size=1 — та же count-выборка
+  // без загрузки геометрий), чтобы бейдж "Все районы (N)" показывал реальное
+  // число площадок, а не 0 из-за того что полный список ещё не загружен
+  const { data: allSitesCountData } = useQuery({
+    queryKey: ['sites-count-all', typeFilter],
+    queryFn: () => sitesApi.list({ type: typeFilter, page_size: 1 }),
+    enabled: isAdmin,
+  })
+  const allSitesTotal = allSitesCountData?.total ?? 0
+
   // Загрузка обходов для режима проверки
   const { data: inspectionsData } = useQuery<{ total: number; items: InspectionOut[] }>({
     queryKey: ['inspections-review', effectiveDistrictFilter],
@@ -197,7 +207,7 @@ export default function MapPage() {
           <div className="flex gap-2">
             {isAdmin ? (
               <select className="input-field text-sm flex-1" value={districtFilter ?? ''} onChange={(e) => setDistrictFilter(e.target.value || undefined)}>
-                <option value="">Все районы ({totalCount} площадок)</option>
+                <option value="">Все районы ({allSitesTotal} площадок)</option>
                 {districts?.map((d) => (<option key={d.id} value={d.id}>{d.name}</option>))}
               </select>
             ) : (
@@ -303,8 +313,9 @@ export default function MapPage() {
 
       {/* Content */}
       <div className="flex-1 min-h-0">
-        {/* Админ без выбранного района — показываем плейсхолдер */}
-        {isAdmin && !districtFilter ? (
+        {/* Админ без выбранного района — показываем плейсхолдер (кроме вкладки
+            "Проверка": список обходов там не зависит от выбора района) */}
+        {isAdmin && !districtFilter && viewMode !== 'review' ? (
           <div className="h-full flex items-center justify-center">
             <div className="text-center max-w-sm px-4">
               <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-2xl mb-4">

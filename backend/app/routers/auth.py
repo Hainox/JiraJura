@@ -213,7 +213,11 @@ async def update_user(
         if data.role not in ROLES:
             raise HTTPException(400, f"Роль должна быть одной из {ROLES}")
         user.role = data.role
-    if data.district_id is not None:
+    # district_id=None — валидное целевое состояние (проверяющий "весь округ"),
+    # а не "поле не передано": проверяем model_fields_set, а не is not None,
+    # иначе снять район с уже назначенного проверяющего/сделать его
+    # округ-wide через этот эндпоинт было бы физически невозможно
+    if "district_id" in data.model_fields_set:
         user.district_id = data.district_id
     if data.is_active is not None:
         user.is_active = data.is_active

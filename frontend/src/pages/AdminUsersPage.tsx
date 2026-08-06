@@ -103,7 +103,10 @@ export default function AdminUsersPage() {
         full_name: editFullName || undefined,
         phone: editPhone || undefined,
         role: editRole,
-        district_id: editRole !== 'admin' ? (editDistrictId || undefined) : undefined,
+        // всегда явно (не undefined — иначе поле пропадёт из JSON и бэкенд
+        // не сможет отличить "не меняем район" от "снимаем район" при
+        // переводе проверяющего на "весь округ")
+        district_id: editRole !== 'admin' ? (editDistrictId || null) : null,
       })
     },
     onSuccess: () => {

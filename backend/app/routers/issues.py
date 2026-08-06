@@ -233,8 +233,16 @@ async def update_issue(
                 issue.reviewer_comment = data.reviewer_comment
 
         if data.status == "fixed":
+            # Именно фото ИСПРАВЛЕНИЯ (target_type='issue_fix'), а не любое
+            # фото на issue_id — с появлением фото самого нарушения
+            # (POST /issues/{id}/photos, target_type='issue') подсчёт без
+            # фильтра по типу засчитывал фото нарушения как доказательство
+            # исправления, и статус можно было выставить fixed вообще без
+            # фото результата
             photo_count = (await db.execute(
-                select(func.count()).select_from(Photo).where(Photo.issue_id == issue_id)
+                select(func.count()).select_from(Photo).where(
+                    Photo.issue_id == issue_id, Photo.target_type == "issue_fix",
+                )
             )).scalar_one()
             if photo_count == 0:
                 raise HTTPException(400, "Нужно приложить хотя бы одно фото исправления")

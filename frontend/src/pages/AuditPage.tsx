@@ -8,6 +8,7 @@ const ACTION_LABELS: Record<string, string> = {
   invite_create: 'Создано приглашение',
   user_update: 'Пользователь изменён',
   user_delete: 'Пользователь удалён',
+  password_reset: 'Пароль сброшен',
   inspection_review: 'Обход проверен',
   issue_update: 'Замечание изменено',
 }

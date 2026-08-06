@@ -1,4 +1,5 @@
 """Сервис аутентификации — JWT."""
+import re
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
@@ -21,16 +22,35 @@ def hash_password(password: str) -> str:
     return pwd_context.hash(password)
 
 
+_BCRYPT_HASH_RE = re.compile(r"^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$")
+
+
 def verify_password(plain: str, hashed: str) -> bool:
-    """Проверка пароля — поддерживает хэши от passlib ($2b$) и pgcrypto ($2a$)."""
+    """Проверка пароля — поддерживает хэши от passlib ($2b$) и pgcrypto ($2a$).
+
+    Битый/усечённый хэш в БД (следы ad-hoc SQL за долгую историю правок)
+    не должен ронять запрос: bcrypt.checkpw — это Rust-реализация, и на
+    некорректном вводе она может упасть pyo3_runtime.PanicException, а это
+    BaseException, не Exception — обычный except Exception его не ловит,
+    и такой сбой на одном-единственном битом аккаунте валит обработку
+    запроса целиком (подозреваемая причина массовых жалоб на вход).
+    Поэтому: формат хэша проверяем заранее, а на сам вызов всё равно
+    держим самый широкий except на случай других сюрпризов рантайма.
+    """
+    if not hashed or not isinstance(hashed, str):
+        return False
     try:
         return pwd_context.verify(plain, hashed)
     except ValueError:
         pass
+    except Exception:
+        return False
     # Fallback: прямой bcrypt для хэшей из pgcrypto (crypt/gen_salt)
+    if not _BCRYPT_HASH_RE.match(hashed):
+        return False
     try:
         return bcrypt.checkpw(plain.encode(), hashed.encode())
-    except Exception:
+    except BaseException:
         return False
 
 

@@ -6,7 +6,7 @@ import L from 'leaflet'
 import { sitesApi, districtsApi, reportsApi, inspectionsApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
 import type { SiteOut, DistrictOut, InspectionOut } from '@/types'
-import { List, Map as MapIcon, LogOut, ChevronRight, Users, Download, ClipboardCheck, Clock, CheckCircle2, AlertTriangle, AlertCircle, UserCircle, BarChart3, Check } from 'lucide-react'
+import { List, Map as MapIcon, LogOut, ChevronRight, Users, Download, ClipboardCheck, Clock, CheckCircle2, AlertTriangle, AlertCircle, UserCircle, BarChart3, Check, History } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
 import 'leaflet/dist/leaflet.css'
 
@@ -125,11 +125,17 @@ export default function MapPage() {
     onError: () => toast.error('Не удалось принять обход'),
   })
 
-  // Для инспектора: загружаем его обходы чтобы раскрасить метки
+  // Обходы для раскраски меток: инспектору — свои (бэкенд сам их так и
+  // скопит), проверяющему/админу — по выбранному району, иначе на карте
+  // всегда были только синие "необойдённые" точки независимо от реального
+  // статуса — раскраска была реализована только для инспектора.
+  // page_size=1000 — реальный максимум на бэкенде (Query(..., le=1000) в
+  // list_inspections); запрос 5000 всегда падал 422 и молча оставлял карту
+  // нераскрашенной даже для инспектора.
   const { data: myInspectionsData } = useQuery<{ total: number; items: InspectionOut[] }>({
     queryKey: ['my-inspections-map', effectiveDistrictFilter],
-    queryFn: () => inspectionsApi.list({ page_size: 5000 }),
-    enabled: user?.role === 'inspector',
+    queryFn: () => inspectionsApi.list({ page_size: 1000, district_id: effectiveDistrictFilter }),
+    enabled: user?.role === 'inspector' || isReviewerLike,
   })
   const myInspections = myInspectionsData?.items ?? []
 
@@ -167,6 +173,11 @@ export default function MapPage() {
           </p>
         </div>
         <div className="flex gap-1">
+          {user?.role === 'inspector' && (
+            <button onClick={() => navigate('/my-inspections')} className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="История обходов">
+              <History className="w-5 h-5" />
+            </button>
+          )}
           {user?.role !== 'inspector' && (
             <>
               <button onClick={() => navigate('/dashboard')} className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="Дашборд">
@@ -230,16 +241,18 @@ export default function MapPage() {
               <option value={SPORT_TYPE}>Спортивные</option>
             </select>
           </div>
-          {user?.role === 'inspector' && myInspections.length > 0 && (
+          {(user?.role === 'inspector' || isReviewerLike) && myInspections.length > 0 && (
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => setMyInspOnly((v) => !v)}
-                className={`text-xs px-3 py-1 rounded-full font-medium transition-colors ${
-                  myInspOnly ? 'bg-primary-700 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                Только необойдённые
-              </button>
+              {user?.role === 'inspector' && (
+                <button
+                  onClick={() => setMyInspOnly((v) => !v)}
+                  className={`text-xs px-3 py-1 rounded-full font-medium transition-colors ${
+                    myInspOnly ? 'bg-primary-700 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  Только необойдённые
+                </button>
+              )}
               <button
                 onClick={() => setShowLegend((v) => !v)}
                 className="text-xs px-3 py-1 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 font-medium"
@@ -251,7 +264,7 @@ export default function MapPage() {
               </span>
             </div>
           )}
-          {showLegend && user?.role === 'inspector' && (
+          {showLegend && (user?.role === 'inspector' || isReviewerLike) && (
             <div className="flex gap-3 text-xs text-gray-500 flex-wrap">
               <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-blue-600 inline-block" /> Не обойдена</span>
               <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-yellow-500 inline-block" /> В процессе</span>
@@ -436,7 +449,7 @@ export default function MapPage() {
             />
             <FitBounds data={sites} />
             {sites.filter((s) => !myInspOnly || !siteStatusMap[s.id] || siteStatusMap[s.id] !== 'completed').map((s) => {
-              const status = user?.role === 'inspector' ? siteStatusMap[s.id] : null
+              const status = (user?.role === 'inspector' || isReviewerLike) ? siteStatusMap[s.id] : null
               const icon = s.type === CHILD_TYPE ? childIcon(status) : sportIcon(status)
               return <Marker key={s.id} position={[s.lat ?? 55.829, s.lon ?? 37.532]} icon={icon}>
                 <Popup>

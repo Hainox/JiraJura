@@ -11,6 +11,7 @@ COPY import_kml.py .
 COPY apply_titul.py .
 COPY fix_passwords.py .
 COPY bulk_invite.py .
+COPY diagnose_logins.py .
 COPY titul_2026-08.csv .
 COPY alembic/ ./alembic/
 RUN mkdir -p /app/uploads

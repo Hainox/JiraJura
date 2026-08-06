@@ -43,10 +43,30 @@ async def create_inspection(
     if not site:
         raise HTTPException(404, "Площадка не найдена")
 
+    # Продолжаем свой же незавершённый обход этой площадки вне зависимости
+    # от того, в какой день он был начат — иначе обход, вернувшийся на
+    # доработку (status снова 'in_progress') несколько дней назад, не
+    # находится проверкой "за сегодня" ниже, и повторное "Начать обход"
+    # тихо создаёт ещё один, осиротив исходный
+    own_unfinished = (await db.execute(
+        select(Inspection).where(
+            Inspection.site_id == data.site_id,
+            Inspection.inspector_id == current_user.id,
+            Inspection.status.in_(("planned", "in_progress")),
+        ).order_by(Inspection.created_at.desc())
+    )).scalars().first()
+    if own_unfinished:
+        q = select(Inspection).where(Inspection.id == own_unfinished.id).options(
+            selectinload(Inspection.site).selectinload(Site.courtyard).selectinload(Courtyard.district),
+            selectinload(Inspection.inspector),
+            selectinload(Inspection.answers),
+        )
+        own_unfinished = (await db.execute(q)).scalar_one()
+        return await _inspection_to_out(own_unfinished, db)
+
     # Одна проверка площадки в сутки — чтобы не копились лишние обходы
     # (случайный повторный "Начать обход" на той же площадке в тот же
-    # день). Незавершённый обход просто продолжаем, а не плодим дубль;
-    # завершённый — блокируем повторное создание с понятной причиной.
+    # день, в т.ч. другим инспектором).
     today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     existing_today = (await db.execute(
         select(Inspection).where(
@@ -55,14 +75,6 @@ async def create_inspection(
         ).order_by(Inspection.created_at.desc())
     )).scalars().first()
     if existing_today:
-        if existing_today.inspector_id == current_user.id and existing_today.status in ("planned", "in_progress"):
-            q = select(Inspection).where(Inspection.id == existing_today.id).options(
-                selectinload(Inspection.site).selectinload(Site.courtyard).selectinload(Courtyard.district),
-                selectinload(Inspection.inspector),
-                selectinload(Inspection.answers),
-            )
-            existing_today = (await db.execute(q)).scalar_one()
-            return await _inspection_to_out(existing_today, db)
         raise HTTPException(409, "Эта площадка уже проверена сегодня — повторный обход в этот же день не нужен")
 
     # подбираем шаблон чек-листа по типу площадки

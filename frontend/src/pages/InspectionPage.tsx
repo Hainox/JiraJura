@@ -89,9 +89,13 @@ export default function InspectionPage() {
     if (inspection?.photos) {
       setPhotos(inspection.photos)
     }
-    if (inspection?.reviewer_comment) {
-      setReviewerComment(inspection.reviewer_comment)
-    }
+    // reviewerComment НЕ подставляем из inspection.reviewer_comment — иначе
+    // при повторной проверке поле молча предзаполняется прошлым "вернуть
+    // на доработку" комментарием, и "✓ Принять" без единой правки заново
+    // отправляет тот же устаревший текст, из-за чего он никогда не
+    // очищается. Прошлый комментарий и так виден отдельным read-only
+    // блоком ("Предыдущий комментарий") — редактируемое поле начинается
+    // пустым каждый раз.
   }, [inspection?.answers, inspection?.photos, inspection?.reviewer_comment])
 
   const generalPhotos = useMemo(

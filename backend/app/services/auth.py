@@ -19,7 +19,13 @@ security = HTTPBearer()
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    # .strip() — пароли в этой системе почти всегда переносятся человеку
+    # копипастом через мессенджер/на словах (см. reset_user_password),
+    # где случайный завершающий пробел/перенос строки при выделении текста
+    # — обычное дело. Отбрасываем его на обоих концах (создание и
+    # verify_password ниже), иначе такой хвост навсегда "зашивается" в хэш
+    # и человек с виду верным паролем в аккаунт войти не может.
+    return pwd_context.hash(password.strip())
 
 
 _BCRYPT_HASH_RE = re.compile(r"^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$")
@@ -39,6 +45,8 @@ def verify_password(plain: str, hashed: str) -> bool:
     """
     if not hashed or not isinstance(hashed, str):
         return False
+    if plain:
+        plain = plain.strip()
     try:
         return pwd_context.verify(plain, hashed)
     except ValueError:

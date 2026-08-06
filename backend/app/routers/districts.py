@@ -18,13 +18,15 @@ async def list_districts(
 ):
     q = select(District).order_by(District.name)
 
-    # Не-админы видят только свой район
-    if current_user.role != "admin":
+    # Инспектор без района — нет доступа (неполная настройка аккаунта);
+    # проверяющий без района курирует весь округ, видит все районы (как в sites.py)
+    if current_user.role == "inspector":
         if current_user.district_id is not None:
             q = q.where(District.id == current_user.district_id)
         else:
-            # Пользователь без привязанного района не видит ничего
             return []
+    elif current_user.role == "reviewer" and current_user.district_id is not None:
+        q = q.where(District.id == current_user.district_id)
 
     result = await db.execute(q)
     return [DistrictOut.model_validate(d) for d in result.scalars().all()]

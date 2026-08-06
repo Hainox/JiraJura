@@ -212,7 +212,9 @@ export default function MapPage() {
               </select>
             ) : (
               <div className="input-field text-sm flex-1 flex items-center text-gray-700">
-                {districts && districts.length > 0 ? districts[0].name : 'Район не назначен'}
+                {user?.district_id
+                  ? (districts?.find((d) => d.id === user.district_id)?.name ?? 'Район не назначен')
+                  : 'Весь округ'}
               </div>
             )}
             <select className="input-field text-sm flex-1" value={typeFilter ?? ''} onChange={(e) => setTypeFilter(e.target.value || undefined)}>

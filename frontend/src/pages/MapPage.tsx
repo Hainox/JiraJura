@@ -107,7 +107,7 @@ export default function MapPage() {
   // Загрузка обходов для режима проверки
   const { data: inspectionsData } = useQuery<{ total: number; items: InspectionOut[] }>({
     queryKey: ['inspections-review', effectiveDistrictFilter],
-    queryFn: () => inspectionsApi.list({ page_size: 200 }),
+    queryFn: () => inspectionsApi.list({ district_id: effectiveDistrictFilter, page_size: 200 }),
     enabled: viewMode === 'review' && isReviewerLike,
   })
 

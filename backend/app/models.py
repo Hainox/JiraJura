@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from geoalchemy2 import Geometry
 from sqlalchemy import (
     Column, ForeignKey, String, Integer, Numeric, Text, Boolean,
-    DateTime, Enum, UniqueConstraint, CheckConstraint, text,
+    Date, DateTime, Enum, UniqueConstraint, CheckConstraint, text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, relationship
@@ -266,7 +266,7 @@ class Issue(Base):
     criticality = Column(ISSUE_CRITICALITY_ENUM, nullable=False, default="medium")
     status = Column(ISSUE_STATUS_ENUM, nullable=False, default="open")
     assigned_to = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
-    due_date = Column(DateTime)
+    due_date = Column(Date)
     fix_comment = Column(Text)
     reviewer_comment = Column(Text)
     fixed_at = Column(DateTime(timezone=True))

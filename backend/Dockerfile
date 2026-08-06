@@ -13,6 +13,7 @@ COPY fix_passwords.py .
 COPY bulk_invite.py .
 COPY diagnose_logins.py .
 COPY reissue_invites.py .
+COPY split_invites_by_district.py .
 COPY titul_2026-08.csv .
 COPY alembic/ ./alembic/
 RUN mkdir -p /app/uploads

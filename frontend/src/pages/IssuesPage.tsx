@@ -64,10 +64,12 @@ export default function IssuesPage() {
     queryFn: districtsApi.list,
   })
 
+  const canAssign = isAdmin || user?.role === 'reviewer'
+
   const { data: usersData } = useQuery<UserAdminOut[]>({
     queryKey: ['users'],
     queryFn: authApi.listUsers,
-    enabled: isAdmin,
+    enabled: canAssign,
   })
 
   const effectiveDistrict = isAdmin ? (districtFilter || undefined) : (user?.district_id ?? undefined)
@@ -282,14 +284,16 @@ export default function IssuesPage() {
                           onChange={(e) => setEditStatus(e.target.value)}
                         >
                           {Object.entries(STATUS_LABELS)
-                            // "На доработке" требует комментария проверяющего — эта
-                            // форма его не собирает, транзишн только через IssueFixPage
-                            .filter(([k]) => k !== 'revision_needed')
+                            // "Исправлено" (с фото) → "Принято"/"На доработке" — решает
+                            // только админ и только через IssueFixPage (нужны фото
+                            // устранения и, для доработки, комментарий — эта форма
+                            // их не собирает)
+                            .filter(([k]) => k !== 'revision_needed' && k !== 'closed')
                             .map(([k, v]) => (
                               <option key={k} value={k}>{v}</option>
                             ))}
                         </select>
-                        {isAdmin && (
+                        {canAssign && (
                           <select
                             className="input-field text-sm flex-1"
                             value={editAssigned}

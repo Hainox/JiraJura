@@ -206,9 +206,25 @@ async def complete_invite(
 @router.get("/users", response_model=list[UserAdminOut])
 async def list_users(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("admin")),
+    current_user: User = Depends(require_role("admin", "reviewer")),
 ):
-    rows = (await db.execute(select(User).order_by(User.full_name))).scalars().all()
+    """Проверяющему список тоже нужен — назначать замечания на
+    ответственных за исправление (см. IssuesPage). Видит только свой
+    район (округ-wide проверяющий — весь округ) и без телефона: это не
+    его данные, полная карточка — только у админа.
+    """
+    q = select(User).order_by(User.full_name)
+    if current_user.role == "reviewer" and current_user.district_id is not None:
+        q = q.where(User.district_id == current_user.district_id)
+    rows = (await db.execute(q)).scalars().all()
+    if current_user.role == "reviewer":
+        return [
+            UserAdminOut(
+                id=u.id, login=u.login, full_name=u.full_name, role=u.role,
+                district_id=u.district_id, phone=None, is_active=u.is_active,
+            )
+            for u in rows
+        ]
     return [UserAdminOut.model_validate(u) for u in rows]
 
 

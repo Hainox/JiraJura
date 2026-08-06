@@ -15,6 +15,7 @@ import IssueFixPage from '@/pages/IssueFixPage'
 import ProfilePage from '@/pages/ProfilePage'
 import AuditPage from '@/pages/AuditPage'
 import DashboardPage from '@/pages/DashboardPage'
+import MyInspectionsPage from '@/pages/MyInspectionsPage'
 
 function ProtectedRoute({ children, roles }: { children: React.ReactNode; roles?: Role[] }) {
   const isAuth = useAuthStore((s) => s.isAuthenticated)
@@ -96,6 +97,14 @@ export default function App() {
           element={
             <ProtectedRoute>
               <ProfilePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/my-inspections"
+          element={
+            <ProtectedRoute roles={['inspector']}>
+              <MyInspectionsPage />
             </ProtectedRoute>
           }
         />

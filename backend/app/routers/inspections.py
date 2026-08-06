@@ -202,6 +202,22 @@ async def update_inspection(
             raise HTTPException(403, "Обход вне вашего района")
 
     if data.status:
+        # Общее фото площадки обязательно при завершении обхода самим
+        # инспектором — фронтенд уже блокирует кнопки "Завершить" без него
+        # (см. generalPhotos в InspectionPage.tsx), но бэкенд эту проверку
+        # не дублировал, и прямой вызов PATCH мог завершить обход вообще
+        # без единого фото. Проверяем только когда статус меняет сам
+        # владелец-инспектор — у reviewer/admin (приём/возврат обхода) это
+        # не проверка завершения, а отдельное действие без такого UI-гейта.
+        if (data.status in ("completed", "issues_found", "critical")
+                and str(obj.inspector_id) == str(current_user.id)):
+            general_photo_count = (await db.execute(
+                select(func.count()).select_from(Photo).where(
+                    Photo.inspection_id == obj.id, Photo.target_type == "inspection",
+                )
+            )).scalar_one()
+            if general_photo_count == 0:
+                raise HTTPException(400, "Общее фото площадки обязательно перед завершением обхода")
         obj.status = data.status
         if data.status in ("completed", "issues_found", "critical"):
             obj.completed_at = datetime.now(timezone.utc)

@@ -51,7 +51,7 @@ export interface UserInvitePreview {
 
 export interface UserRoleUpdate {
   role?: Role
-  district_id?: string
+  district_id?: string | null
   is_active?: boolean
   full_name?: string
   phone?: string

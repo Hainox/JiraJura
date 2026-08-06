@@ -10,6 +10,9 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
+      // Регистрируем сам, явно (см. src/main.tsx) — с периодической проверкой
+      // обновлений, а не только авто-инъекция плагина по умолчанию
+      injectRegister: false,
       includeAssets: ['favicon.svg', 'icons.svg'],
       manifest: {
         name: 'Журнал обхода площадок САО',
@@ -27,6 +30,11 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        // Без этого SPA-фолбэк (навигация → закэшированный index.html)
+        // перехватывает ЛЮБУЮ навигацию, включая переход по /api/v1/... в
+        // адресной строке — вместо реального запроса к бэкенду отдаётся
+        // закэшированная страница логина
+        navigateFallbackDenylist: [/^\/api\//, /^\/uploads\//],
         runtimeCaching: [
           {
             // Относительный паттерн (без протокола/хоста) — фронтенд и API

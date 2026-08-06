@@ -7,14 +7,35 @@ interface AuthState {
   isAuthenticated: boolean
   login: (token: string, user: UserOut) => void
   logout: () => void
-  hydrate: () => void
   setUser: (user: UserOut) => void
 }
 
+// Читаем сохранённую сессию синхронно при создании стора, а не в useEffect
+// после первого рендера — иначе ProtectedRoute успевает отрендерить
+// <Navigate to="/login"> на isAuthenticated=false ДО того как сессия
+// восстановится, и обратно на защищённую страницу уже никто не вернёт
+// (LoginPage не следит за isAuthenticated). Из-за этого любой hard refresh
+// или открытие PWA по прямой ссылке выкидывало на экран логина навсегда,
+// даже с валидным токеном.
+function loadStoredSession(): { token: string | null; user: UserOut | null } {
+  const token = localStorage.getItem('access_token')
+  const raw = localStorage.getItem('user')
+  if (token && raw) {
+    try {
+      return { token, user: JSON.parse(raw) as UserOut }
+    } catch {
+      localStorage.removeItem('user')
+    }
+  }
+  return { token: null, user: null }
+}
+
+const stored = loadStoredSession()
+
 export const useAuthStore = create<AuthState>((set) => ({
-  token: null,
-  user: null,
-  isAuthenticated: false,
+  token: stored.token,
+  user: stored.user,
+  isAuthenticated: !!(stored.token && stored.user),
 
   login: (token, user) => {
     localStorage.setItem('access_token', token)
@@ -26,19 +47,6 @@ export const useAuthStore = create<AuthState>((set) => ({
     localStorage.removeItem('access_token')
     localStorage.removeItem('user')
     set({ token: null, user: null, isAuthenticated: false })
-  },
-
-  hydrate: () => {
-    const token = localStorage.getItem('access_token')
-    const raw = localStorage.getItem('user')
-    if (token && raw) {
-      try {
-        const user = JSON.parse(raw) as UserOut
-        set({ token, user, isAuthenticated: true })
-      } catch {
-        localStorage.removeItem('user')
-      }
-    }
   },
 
   setUser: (user) => {

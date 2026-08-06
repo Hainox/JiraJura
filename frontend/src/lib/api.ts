@@ -12,11 +12,13 @@ import type {
   IssueCreate,
   IssueListOut,
   PhotoOut,
+  UserOut,
   UserAdminOut,
   UserInviteCreate,
   UserInviteCreated,
   UserInvitePreview,
   UserRoleUpdate,
+  SelfUpdateRequest,
   PasswordResetOut,
   DashboardOut,
 } from '@/types'
@@ -69,6 +71,9 @@ export const authApi = {
   completeInvite: (token: string, password: string) =>
     api.post<LoginResponse>(`/auth/invites/${token}/complete`, { password }).then((r) => r.data),
 
+  updateMe: (data: SelfUpdateRequest) =>
+    api.patch<UserOut>('/auth/me', data).then((r) => r.data),
+
   listUsers: () => api.get<UserAdminOut[]>('/auth/users').then((r) => r.data),
 
   updateUser: (id: string, data: UserRoleUpdate) =>
@@ -116,9 +121,6 @@ export const inspectionsApi = {
     api.get<InspectionListOut>('/inspections/', { params }).then((r) => r.data),
 
   update: (id: string, data: Record<string, unknown>) =>
-    api.patch<InspectionOut>(`/inspections/${id}`, data).then((r) => r.data),
-
-  complete: (id: string, data: { status: string; comment?: string; gps_lat?: number; gps_lon?: number }) =>
     api.patch<InspectionOut>(`/inspections/${id}`, data).then((r) => r.data),
 
   uploadPhoto: (id: string, file: File, checklistAnswerId?: string) => {

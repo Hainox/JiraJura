@@ -10,6 +10,7 @@ import { notify as toast } from '@/lib/toast'
 const STATUS_LABELS: Record<string, string> = {
   open: 'Открыто', assigned: 'Назначено', in_work: 'В работе',
   fixed: 'Исправлено', control: 'На контроле', closed: 'Закрыто', overdue: 'Просрочено',
+  revision_needed: 'На доработке',
 }
 const STATUS_COLORS: Record<string, string> = {
   open: 'bg-red-100 text-red-800',
@@ -19,6 +20,7 @@ const STATUS_COLORS: Record<string, string> = {
   control: 'bg-purple-100 text-purple-800',
   closed: 'bg-gray-100 text-gray-600',
   overdue: 'bg-red-200 text-red-900',
+  revision_needed: 'bg-orange-100 text-orange-800',
 }
 const STATUS_ICONS: Record<string, React.ReactNode> = {
   open: <AlertTriangle className="w-4 h-4 text-red-500" />,
@@ -28,6 +30,7 @@ const STATUS_ICONS: Record<string, React.ReactNode> = {
   control: <RefreshCw className="w-4 h-4 text-purple-500" />,
   closed: <XCircle className="w-4 h-4 text-gray-400" />,
   overdue: <Clock className="w-4 h-4 text-red-600" />,
+  revision_needed: <RefreshCw className="w-4 h-4 text-orange-500" />,
 }
 const CRIT_LABELS: Record<string, string> = {
   low: 'Низкая', medium: 'Средняя', high: 'Высокая', critical: 'Критическая',
@@ -88,7 +91,10 @@ export default function IssuesPage() {
       toast.success('Замечание обновлено')
       setEditingIssue(null)
     },
-    onError: () => toast.error('Ошибка обновления'),
+    onError: (err: unknown) => {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(msg || 'Ошибка обновления')
+    },
   })
 
   const issues = data?.items ?? []
@@ -272,9 +278,13 @@ export default function IssuesPage() {
                           value={editStatus}
                           onChange={(e) => setEditStatus(e.target.value)}
                         >
-                          {Object.entries(STATUS_LABELS).map(([k, v]) => (
-                            <option key={k} value={k}>{v}</option>
-                          ))}
+                          {Object.entries(STATUS_LABELS)
+                            // "На доработке" требует комментария проверяющего — эта
+                            // форма его не собирает, транзишн только через IssueFixPage
+                            .filter(([k]) => k !== 'revision_needed')
+                            .map(([k, v]) => (
+                              <option key={k} value={k}>{v}</option>
+                            ))}
                         </select>
                         {isAdmin && (
                           <select

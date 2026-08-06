@@ -104,17 +104,17 @@ export default function InspectionPage() {
     return map
   }, [photos, inspection?.answers])
 
+  const buildAnswerList = () =>
+    Object.entries(answers)
+      .filter(([, a]) => a.result !== 'pending')
+      .map(([itemId, a]) => ({
+        checklist_item_id: itemId,
+        result: a.result,
+        comment: a.comment || undefined,
+      }))
+
   const saveMutation = useMutation({
-    mutationFn: () => {
-      const answerList = Object.entries(answers)
-        .filter(([, a]) => a.result !== 'pending')
-        .map(([itemId, a]) => ({
-          checklist_item_id: itemId,
-          result: a.result,
-          comment: a.comment || undefined,
-        }))
-      return inspectionsApi.update(inspectionId, { answers: answerList })
-    },
+    mutationFn: () => inspectionsApi.update(inspectionId, { answers: buildAnswerList() }),
     onSuccess: () => {
       toast.success('Сохранено')
       queryClient.invalidateQueries({ queryKey: ['inspection', inspectionId] })
@@ -134,8 +134,11 @@ export default function InspectionPage() {
   })
 
   const completeMutation = useMutation({
+    // Завершение — тот же PATCH, что и «Сохранить», но с добавленным status:
+    // если отправить только status, набранные ответы чек-листа, ещё не
+    // сохранённые отдельным «Сохранить», молча теряются на сервере
     mutationFn: (result: 'completed' | 'issues_found') =>
-      inspectionsApi.complete(inspectionId, { status: result }),
+      inspectionsApi.update(inspectionId, { status: result, answers: buildAnswerList() }),
     onSuccess: () => {
       toast.success('Обход завершён')
       queryClient.invalidateQueries({ queryKey: ['inspection', inspectionId] })
@@ -183,8 +186,16 @@ export default function InspectionPage() {
   })
 
   const uploadItemPhotoMutation = useMutation({
-    mutationFn: ({ file, checklistItemId }: { file: File; checklistItemId: string }) => {
-      const answer = inspection?.answers?.find((a) => a.checklist_item_id === checklistItemId)
+    mutationFn: async ({ file, checklistItemId }: { file: File; checklistItemId: string }) => {
+      let answer = inspection?.answers?.find((a) => a.checklist_item_id === checklistItemId)
+      if (!answer) {
+        // Ответ по этому пункту ещё не сохранён на сервере — без сохранения
+        // backend не может связать фото с пунктом чек-листа (checklist_answer_id)
+        // и молча положит его как общее фото обхода, оторванное от пункта
+        const updated = await inspectionsApi.update(inspectionId, { answers: buildAnswerList() })
+        queryClient.setQueryData(['inspection', inspectionId], updated)
+        answer = updated.answers?.find((a) => a.checklist_item_id === checklistItemId)
+      }
       return inspectionsApi.uploadPhoto(inspectionId, file, answer?.id)
     },
     onSuccess: (photo) => {

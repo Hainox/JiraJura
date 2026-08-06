@@ -47,6 +47,13 @@ class UserRoleUpdate(BaseModel):
     phone: Optional[str] = None
 
 
+class SelfUpdateRequest(BaseModel):
+    """Самостоятельное редактирование профиля — только своих ФИО/телефона,
+    без role/district_id/is_active (те меняет только admin)."""
+    full_name: Optional[str] = None
+    phone: Optional[str] = None
+
+
 class PasswordResetOut(BaseModel):
     new_password: str
 

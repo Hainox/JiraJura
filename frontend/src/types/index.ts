@@ -57,6 +57,11 @@ export interface UserRoleUpdate {
   phone?: string
 }
 
+export interface SelfUpdateRequest {
+  full_name?: string
+  phone?: string
+}
+
 export interface PasswordResetOut {
   new_password: string
 }

@@ -26,7 +26,7 @@ export default function ProfilePage() {
   const [showPasswordForm, setShowPasswordForm] = useState(false)
 
   const updateMutation = useMutation({
-    mutationFn: () => authApi.updateUser(user!.id, { full_name: fullName, phone }),
+    mutationFn: () => authApi.updateMe({ full_name: fullName, phone }),
     onSuccess: (data) => {
       setUser({ ...user!, full_name: data.full_name, phone: data.phone })
       toast.success('Профиль обновлён')

@@ -10,8 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models import User, UserInvite
 from app.schemas import (
-    LoginRequest, TokenResponse, UserOut, UserAdminOut, UserRoleUpdate, PasswordResetOut,
-    ChangePasswordRequest,
+    LoginRequest, TokenResponse, UserOut, UserAdminOut, UserRoleUpdate, SelfUpdateRequest,
+    PasswordResetOut, ChangePasswordRequest,
     UserInviteCreate, UserInviteCreated, UserInvitePreview, InviteCompleteRequest,
 )
 from app.services.auth import (
@@ -55,6 +55,24 @@ async def me(user: User = Depends(get_current_user)):
     if user is None:
         raise HTTPException(status_code=401)
     return UserOut.model_validate(user)
+
+
+@router.patch("/me", response_model=UserOut)
+async def update_me(
+    data: SelfUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Самостоятельное редактирование своего профиля (ФИО, телефон) —
+    доступно любой роли, в отличие от /users/{id} (только admin, там же
+    можно менять role/district_id/is_active)."""
+    if data.full_name is not None:
+        current_user.full_name = data.full_name
+    if data.phone is not None:
+        current_user.phone = data.phone
+    await db.commit()
+    await db.refresh(current_user)
+    return UserOut.model_validate(current_user)
 
 
 # ── Приглашения на регистрацию (только admin создаёт) ──────────

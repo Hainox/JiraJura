@@ -23,7 +23,11 @@ router = APIRouter()
 async def weekly_report(
     district_id: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("reviewer", "admin")),
 ):
+    if current_user.role == "reviewer" and current_user.district_id is not None:
+        district_id = str(current_user.district_id)
+
     week_ago = datetime.now(timezone.utc) - timedelta(days=7)
     results = []
 
@@ -87,7 +91,11 @@ async def weekly_report(
 async def monthly_report(
     district_id: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("reviewer", "admin")),
 ):
+    if current_user.role == "reviewer" and current_user.district_id is not None:
+        district_id = str(current_user.district_id)
+
     month_ago = datetime.now(timezone.utc) - timedelta(days=30)
     results = []
 
@@ -158,6 +166,9 @@ async def admin_dashboard(
     current_user: User = Depends(require_role("reviewer", "admin")),
 ):
     """Сводка по районам для дашборда: обходы, замечания, статусы."""
+    if current_user.role == "reviewer" and current_user.district_id is not None:
+        district_id = str(current_user.district_id)
+
     dt_from = datetime.combine(date_from, datetime.min.time()) if date_from else None
     dt_to = (datetime.combine(date_to, datetime.min.time()) + timedelta(days=1)) if date_to else None
 

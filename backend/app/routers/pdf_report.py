@@ -1,4 +1,6 @@
 """PDF-отчёт по одному обходу — возвращает HTML для печати."""
+import html as _html
+
 from fastapi import APIRouter, Depends, HTTPException, Response, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,6 +8,8 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models import Inspection, Site, Courtyard, District, ChecklistAnswer, ChecklistItem, Photo, User
+from app.services.auth import get_current_user
+from app.services.permissions import check_own_or_role, in_district_scope
 
 router = APIRouter()
 
@@ -16,8 +20,22 @@ STATUS_RU = {
 RESULT_RU = {"ok": "В порядке", "defect": "Нарушение", "not_applicable": "Н/П", "not_checked": "Не проверено"}
 
 
+def _e(text) -> str:
+    """Экранировать перед вставкой в HTML — все текстовые поля ниже (ФИО,
+    комментарии инспектора/проверяющего, названия дворов) заполняются
+    пользователями с ролью inspector и без этого дают stored XSS: комментарий
+    вида <img onerror=...> крадёт токен из localStorage у любого
+    reviewer/admin, кто откроет отчёт по этому обходу (обычное действие)."""
+    return _html.escape(str(text)) if text is not None else ""
+
+
 @router.get("/{inspection_id}")
-async def pdf_report(inspection_id: str, request: Request, db: AsyncSession = Depends(get_db)):
+async def pdf_report(
+    inspection_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     q = select(Inspection).where(Inspection.id == inspection_id).options(
         selectinload(Inspection.site).selectinload(Site.courtyard).selectinload(Courtyard.district),
         selectinload(Inspection.inspector),
@@ -27,6 +45,13 @@ async def pdf_report(inspection_id: str, request: Request, db: AsyncSession = De
     insp = (await db.execute(q)).scalar_one_or_none()
     if not insp:
         raise HTTPException(404, "Обход не найден")
+
+    if current_user.role == "inspector":
+        check_own_or_role(current_user, insp.inspector_id, "reviewer", "admin")
+    elif current_user.role == "reviewer":
+        district_id = insp.site.courtyard.district_id if insp.site and insp.site.courtyard else None
+        if not in_district_scope(current_user, district_id):
+            raise HTTPException(403, "Обход вне вашего района")
 
     # фото
     photos_q = select(Photo).where(
@@ -48,8 +73,9 @@ async def pdf_report(inspection_id: str, request: Request, db: AsyncSession = De
         for item in (await db.execute(items_q)).scalars().all():
             items[str(item.id)] = item
 
-    site_str = insp.site.courtyard.name if insp.site.courtyard else "Площадка"
-    district_str = insp.site.courtyard.district.name if insp.site.courtyard and insp.site.courtyard.district else ""
+    site_str = _e(insp.site.courtyard.name if insp.site.courtyard else "Площадка")
+    district_str = _e(insp.site.courtyard.district.name if insp.site.courtyard and insp.site.courtyard.district else "")
+    inspector_name = _e(insp.inspector.full_name)
 
     # Абсолютный базовый URL для фото (чтобы работали при печати/скачивании)
     base_url = f"{request.url.scheme}://{request.url.netloc}"
@@ -79,8 +105,8 @@ async def pdf_report(inspection_id: str, request: Request, db: AsyncSession = De
 <body>
 <h1>Обход: {site_str}</h1>
 <div class="meta">
-  Район: {district_str} &bull; Тип: {insp.site.type} ({insp.site.area_m2} м²)<br>
-  Инспектор: {insp.inspector.full_name} &bull;
+  Район: {district_str} &bull; Тип: {_e(insp.site.type)} ({insp.site.area_m2} м²)<br>
+  Инспектор: {inspector_name} &bull;
   Дата: {insp.created_at.strftime('%d.%m.%Y %H:%M') if insp.created_at else ''} &bull;
   Статус: <strong>{STATUS_RU.get(insp.status, insp.status)}</strong>
 </div>
@@ -92,32 +118,32 @@ async def pdf_report(inspection_id: str, request: Request, db: AsyncSession = De
 """
     for a in answers_defect + answers_ok:
         item = items.get(str(a.checklist_item_id))
-        cat = item.category if item else ""
-        question = item.question if item else str(a.checklist_item_id)
+        cat = _e(item.category if item else "")
+        question = _e(item.question if item else str(a.checklist_item_id))
         result = RESULT_RU.get(a.result, a.result)
         cls = "ok" if a.result == "ok" else "defect"
-        html += f"<tr><td>{cat}</td><td>{question}</td><td class=\"{cls}\">{result}</td><td>{a.comment or ''}</td></tr>\n"
+        html += f"<tr><td>{cat}</td><td>{question}</td><td class=\"{cls}\">{result}</td><td>{_e(a.comment or '')}</td></tr>\n"
 
     html += "</table></div>"
 
     if general_photos:
         html += '<div class="section"><h2>Общие фото</h2><div class="photos">'
         for p in general_photos:
-            html += f'<img src="{base_url}/uploads/{p.storage_path}" />'
+            html += f'<img src="{_e(base_url)}/uploads/{_e(p.storage_path)}" />'
         html += "</div></div>"
 
     if defect_photos:
         html += '<div class="section"><h2>Фото дефектов</h2><div class="photos">'
         for p in defect_photos:
-            html += f'<img src="{base_url}/uploads/{p.storage_path}" />'
+            html += f'<img src="{_e(base_url)}/uploads/{_e(p.storage_path)}" />'
         html += "</div></div>"
 
     if insp.comment:
-        html += f'<div class="section"><h2>Комментарий инспектора</h2><p>{insp.comment}</p></div>'
+        html += f'<div class="section"><h2>Комментарий инспектора</h2><p>{_e(insp.comment)}</p></div>'
     if insp.reviewer_comment:
-        html += f'<div class="section"><h2>Комментарий проверяющего</h2><p>{insp.reviewer_comment}</p>'
+        html += f'<div class="section"><h2>Комментарий проверяющего</h2><p>{_e(insp.reviewer_comment)}</p>'
         if insp.reviewed_by_user:
-            html += f'<p style="font-size:12px;color:#666">Проверил: {insp.reviewed_by_user.full_name}, {insp.reviewed_at.strftime("%d.%m.%Y") if insp.reviewed_at else ""}</p>'
+            html += f'<p style="font-size:12px;color:#666">Проверил: {_e(insp.reviewed_by_user.full_name)}, {insp.reviewed_at.strftime("%d.%m.%Y") if insp.reviewed_at else ""}</p>'
         html += "</div>"
 
     html += f'<div class="footer">Сформировано: {insp.created_at.strftime("%d.%m.%Y") if insp.created_at else ""} &bull; Журнал обхода площадок САО</div></body></html>'

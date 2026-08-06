@@ -306,6 +306,10 @@ async def reset_user_password(
 
     new_password = _gen_readable_password()
     user.password_hash = hash_password(new_password)
+    # Без этого сгенерированный пароль молча становится постоянным — UI
+    # обещает "передайте лично", подразумевая временный пароль, но ничто
+    # не заставляет человека задать свой собственный при следующем входе.
+    user.must_change_password = True
     await log_action(db, str(current_user.id), "password_reset", "user", user_id, {"login": user.login})
     await db.commit()
     return PasswordResetOut(new_password=new_password)
@@ -317,7 +321,13 @@ async def change_password(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Смена пароля (принудительная при первом входе)."""
+    """Смена пароля — принудительная при первом входе (current_password не
+    нужен, вход с временным паролем уже произошёл) либо самостоятельная
+    (нужен текущий пароль — иначе кто угодно с чужой открытой сессией мог
+    бы перехватить аккаунт)."""
+    if not current_user.must_change_password:
+        if not data.current_password or not verify_password(data.current_password, current_user.password_hash):
+            raise HTTPException(status_code=401, detail="Неверный текущий пароль")
     current_user.password_hash = hash_password(data.new_password)
     current_user.must_change_password = False
     await db.commit()

@@ -17,7 +17,7 @@ from app.config import settings
 from app.models import Issue, IssueStatusHistory, Site, Courtyard, District, User, Photo
 from app.schemas import IssueCreate, IssueUpdate, IssueOut, IssueListOut, UserOut, PhotoOut
 from app.services.auth import get_current_user
-from app.services.permissions import require_role
+from app.services.permissions import require_role, check_own_or_role, in_district_scope
 from app.services.audit import log_action
 
 router = APIRouter()
@@ -74,24 +74,26 @@ async def create_issue(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    issue = Issue(
-        inspection_id=data.inspection_id,
-        site_id=data.inspection_id,  # будет переопределено ниже
-        title=data.title,
-        description=data.description,
-        criticality=data.criticality,
-        status="open",
-        created_by=current_user.id,
-    )
-
-    # подтягиваем site_id из обхода
+    # Замечание можно завести только на СВОЁМ обходе (инспектор) либо
+    # проверяющему/админу — иначе кто угодно, зная UUID чужого обхода,
+    # мог бы подложить туда фиктивное замечание.
     from app.models import Inspection
     insp = (await db.execute(
         select(Inspection).where(Inspection.id == data.inspection_id)
     )).scalar_one_or_none()
     if not insp:
         raise HTTPException(404, "Обход не найден")
-    issue.site_id = insp.site_id
+    check_own_or_role(current_user, insp.inspector_id, "reviewer", "admin")
+
+    issue = Issue(
+        inspection_id=data.inspection_id,
+        site_id=insp.site_id,
+        title=data.title,
+        description=data.description,
+        criticality=data.criticality,
+        status="open",
+        created_by=current_user.id,
+    )
 
     db.add(issue)
     await db.commit()
@@ -160,7 +162,11 @@ async def list_issues(
 
 
 @router.get("/{issue_id}", response_model=IssueOut)
-async def get_issue(issue_id: str, db: AsyncSession = Depends(get_db)):
+async def get_issue(
+    issue_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     q = select(Issue).where(Issue.id == issue_id).options(
         selectinload(Issue.site_ref).selectinload(Site.courtyard).selectinload(Courtyard.district),
         selectinload(Issue.assigned_user),
@@ -170,6 +176,14 @@ async def get_issue(issue_id: str, db: AsyncSession = Depends(get_db)):
     issue = (await db.execute(q)).scalar_one_or_none()
     if not issue:
         raise HTTPException(404, "Замечание не найдено")
+
+    if current_user.role == "inspector":
+        check_own_or_role(current_user, issue.created_by, "reviewer", "admin")
+    elif current_user.role == "reviewer":
+        district_id = issue.site_ref.courtyard.district_id if issue.site_ref and issue.site_ref.courtyard else None
+        if not in_district_scope(current_user, district_id):
+            raise HTTPException(403, "Замечание вне вашего района")
+
     return _issue_to_out(issue)
 
 
@@ -189,6 +203,11 @@ async def update_issue(
     )).scalar_one_or_none()
     if not issue:
         raise HTTPException(404, "Замечание не найдено")
+
+    if current_user.role == "reviewer":
+        district_id = issue.site_ref.courtyard.district_id if issue.site_ref and issue.site_ref.courtyard else None
+        if not in_district_scope(current_user, district_id):
+            raise HTTPException(403, "Замечание вне вашего района")
 
     old_status = issue.status
 
@@ -227,7 +246,11 @@ async def update_issue(
             comment=data.comment,
         ))
 
-    if data.assigned_to is not None:
+    # model_fields_set, не "is not None" — иначе явный null (снять
+    # назначение через "Не назначен" в форме) неотличим от "поле не
+    # прислали", и снять уже назначенного исполнителя невозможно (тот же
+    # класс бага, что уже был исправлен для UserRoleUpdate.district_id).
+    if "assigned_to" in data.model_fields_set:
         issue.assigned_to = data.assigned_to
     if data.due_date is not None:
         issue.due_date = data.due_date

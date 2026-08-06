@@ -1,6 +1,6 @@
 """Sites router."""
 from typing import Optional
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -37,13 +37,16 @@ async def list_sites(
         )
     )
 
-    # Не-админы видят только площадки своего района
-    if current_user.role != "admin":
+    # Не-админы: инспектор видит только площадки своего района (без района —
+    # ничего, это неполная настройка аккаунта). Проверяющий с district_id=NULL
+    # намеренно курирует весь округ — фильтр не применяется, как в issues/reports.
+    if current_user.role == "inspector":
         if current_user.district_id is not None:
             base = base.where(Courtyard.district_id == current_user.district_id)
         else:
-            # Пользователь без привязанного района не видит ничего
             return SiteListOut(total=0, items=[])
+    elif current_user.role == "reviewer" and current_user.district_id is not None:
+        base = base.where(Courtyard.district_id == current_user.district_id)
 
     if district_id:
         # Дополнительно: если не-админ передал чужой district_id — игнорируем,
@@ -86,16 +89,18 @@ async def get_site(
         )
     )
 
-    # Не-админы могут смотреть только площадки своего района
-    if current_user.role != "admin":
+    # Не-админы: инспектор без района — нет доступа; проверяющий без района
+    # курирует весь округ (см. list_sites)
+    if current_user.role == "inspector":
         if current_user.district_id is not None:
             q = q.where(Courtyard.district_id == current_user.district_id)
         else:
             raise HTTPException(403, "Нет доступа к площадкам")
+    elif current_user.role == "reviewer" and current_user.district_id is not None:
+        q = q.where(Courtyard.district_id == current_user.district_id)
 
     row = (await db.execute(q)).one_or_none()
     if not row:
-        from fastapi import HTTPException
         raise HTTPException(404, "Площадка не найдена")
     return _site_to_out(row.Site, row.centroid_lat, row.centroid_lon)
 

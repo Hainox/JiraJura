@@ -5,9 +5,8 @@ import { MapContainer, TileLayer, Marker, Popup, useMap, AttributionControl } fr
 import L from 'leaflet'
 import { sitesApi, districtsApi, reportsApi, inspectionsApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
-import { useTheme } from '@/lib/theme'
 import type { SiteOut, DistrictOut, InspectionOut } from '@/types'
-import { List, Map as MapIcon, LogOut, ChevronRight, Users, Download, ClipboardCheck, Clock, CheckCircle2, AlertTriangle, AlertCircle, Sun, Moon, UserCircle, BarChart3 } from 'lucide-react'
+import { List, Map as MapIcon, LogOut, ChevronRight, Users, Download, ClipboardCheck, Clock, CheckCircle2, AlertTriangle, AlertCircle, UserCircle, BarChart3 } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
 import 'leaflet/dist/leaflet.css'
 
@@ -74,8 +73,6 @@ export default function MapPage() {
   const [reviewStatusFilter, setReviewStatusFilter] = useState<string>('all')
   const [myInspOnly, setMyInspOnly] = useState(false)
   const [showLegend, setShowLegend] = useState(false)
-
-  const { theme, toggleTheme } = useTheme()
 
   const isAdmin = user?.role === 'admin'
   const isReviewerLike = user?.role === 'reviewer' || isAdmin
@@ -188,9 +185,6 @@ export default function MapPage() {
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
             </svg>
-          </button>
-          <button onClick={toggleTheme} className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title={theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}>
-            {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
           </button>
           <button onClick={() => navigate('/profile')} className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="Профиль">
             <UserCircle className="w-5 h-5" />

@@ -1,4 +1,3 @@
-import { useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/auth'
 import type { Role } from '@/types'
@@ -30,12 +29,6 @@ function ProtectedRoute({ children, roles }: { children: React.ReactNode; roles?
 }
 
 export default function App() {
-  const hydrate = useAuthStore((s) => s.hydrate)
-
-  useEffect(() => {
-    hydrate()
-  }, [hydrate])
-
   return (
     <ErrorBoundary>
       <div className="h-full flex flex-col bg-gray-50">

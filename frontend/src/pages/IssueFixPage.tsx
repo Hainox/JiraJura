@@ -143,7 +143,7 @@ export default function IssueFixPage() {
         )}
 
         {/* Слайдер ДО/ПОСЛЕ + загрузка фото */}
-        <IssuePhotoComparison inspectionId={issue.inspection_id} fixPhotos={fixPhotos} />
+        <IssuePhotoComparison inspectionId={issue.inspection_id} issuePhotos={issue.photos ?? []} fixPhotos={fixPhotos} />
 
         {issue.status !== 'closed' && (
           <div className="card space-y-2">
@@ -217,10 +217,17 @@ export default function IssueFixPage() {
 }
 
 /** Сравнение фото ДО/ПОСЛЕ через слайдер */
-function IssuePhotoComparison({ inspectionId, fixPhotos }: { inspectionId: string; fixPhotos: { id: string; url: string }[] }) {
+function IssuePhotoComparison({
+  inspectionId, issuePhotos, fixPhotos,
+}: { inspectionId: string; issuePhotos: { id: string; url: string }[]; fixPhotos: { id: string; url: string }[] }) {
   const [pairIndex, setPairIndex] = useState(0)
   const { data: inspection } = useQuery({ queryKey: ['inspection', inspectionId], queryFn: () => inspectionsApi.get(inspectionId), enabled: !!inspectionId })
-  const beforePhotos = inspection?.photos?.filter((p) => p.target_type === 'inspection') ?? []
+  // Фото самого замечания — если инспектор их прикрепил при создании
+  // (см. InspectionPage.tsx); для старых замечаний без своих фото падаем
+  // назад на общий альбом обхода, как было раньше
+  const beforePhotos = issuePhotos.length > 0
+    ? issuePhotos
+    : inspection?.photos?.filter((p) => p.target_type === 'inspection') ?? []
   const totalPairs = Math.max(beforePhotos.length, fixPhotos.length, 1)
   const safeIndex = Math.min(pairIndex, totalPairs - 1)
   const beforeUrl = beforePhotos[safeIndex]?.url

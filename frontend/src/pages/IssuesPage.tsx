@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { issuesApi, districtsApi, authApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
 import type { IssueOut, DistrictOut, UserAdminOut } from '@/types'
-import { ArrowLeft, Search, Filter, RefreshCw, UserPlus, Calendar, Clock, AlertTriangle, CheckCircle2, XCircle, Wrench, ExternalLink } from 'lucide-react'
+import { ArrowLeft, Search, Filter, RefreshCw, UserPlus, Calendar, Clock, AlertTriangle, CheckCircle2, XCircle, Wrench, ExternalLink, Camera } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
 
 const STATUS_LABELS: Record<string, string> = {
@@ -218,6 +218,11 @@ export default function IssuesPage() {
                           {STATUS_ICONS[issue.status]}
                           {STATUS_LABELS[issue.status] ?? issue.status}
                         </span>
+                        {!!issue.photos?.length && (
+                          <span className="badge text-xs bg-gray-100 text-gray-600 flex items-center gap-0.5" title="Фото нарушения">
+                            <Camera className="w-3 h-3" />{issue.photos.length}
+                          </span>
+                        )}
                       </div>
 
                       <div className="text-xs text-gray-500 mt-1">

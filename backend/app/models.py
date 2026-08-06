@@ -282,6 +282,9 @@ class Issue(Base):
     fix_photos = relationship("Photo",
                           primaryjoin="and_(Issue.id==Photo.issue_id, Photo.target_type=='issue_fix')",
                           viewonly=True)
+    photos = relationship("Photo",
+                          primaryjoin="and_(Issue.id==Photo.issue_id, Photo.target_type=='issue')",
+                          viewonly=True)
 
 
 class IssueStatusHistory(Base):

@@ -269,6 +269,7 @@ class IssueOut(BaseModel):
     district_name: Optional[str] = None
     fix_comment: Optional[str] = None
     reviewer_comment: Optional[str] = None
+    photos: list[PhotoOut] = []
     fix_photos: list[PhotoOut] = []
     created_at: datetime
     updated_at: Optional[datetime] = None

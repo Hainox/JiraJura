@@ -198,6 +198,7 @@ export interface IssueOut {
   district_name?: string
   fix_comment?: string
   reviewer_comment?: string
+  photos?: PhotoOut[]
   fix_photos?: PhotoOut[]
   created_at: string
   updated_at?: string

@@ -126,6 +126,9 @@ async def create_invite(
         expires_at=expires_at,
     )
     db.add(invite)
+    # invite.id — Python-side default (uuid.uuid4), заполняется только при
+    # flush; без него в лог попадала строка "None" вместо реального id
+    await db.flush()
     await log_action(db, str(current_user.id), "invite_create", "user_invite", str(invite.id), {"login": data.login, "role": data.role})
     await db.commit()
     await db.refresh(invite)
@@ -226,7 +229,10 @@ async def update_user(
     if data.phone is not None:
         user.phone = data.phone
 
-    await log_action(db, str(current_user.id), "user_update", "user", user_id, data.model_dump(exclude_none=True))
+    # exclude_unset (не exclude_none!) — иначе явно переданный district_id=null
+    # (снятие района) вырезается из лога вместе с полями, которых вовсе не было
+    # в запросе, и в аудите остаётся пустая запись вместо реального изменения
+    await log_action(db, str(current_user.id), "user_update", "user", user_id, data.model_dump(exclude_unset=True))
     await db.commit()
     await db.refresh(user)
     return UserAdminOut.model_validate(user)
@@ -273,6 +279,7 @@ async def reset_user_password(
 
     new_password = secrets.token_urlsafe(10)
     user.password_hash = hash_password(new_password)
+    await log_action(db, str(current_user.id), "password_reset", "user", user_id, {"login": user.login})
     await db.commit()
     return PasswordResetOut(new_password=new_password)
 

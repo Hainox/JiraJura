@@ -1,6 +1,6 @@
 """Pydantic схемы для API."""
 from __future__ import annotations
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 from uuid import UUID
@@ -240,7 +240,7 @@ class IssueCreate(BaseModel):
 class IssueUpdate(BaseModel):
     status: Optional[str] = None
     assigned_to: Optional[UUID] = None
-    due_date: Optional[datetime] = None
+    due_date: Optional[date] = None
     comment: Optional[str] = None  # для истории статуса
     fix_comment: Optional[str] = None  # описание исправления
     reviewer_comment: Optional[str] = None  # комментарий проверяющего (при приёмке/возврате)
@@ -256,7 +256,7 @@ class IssueOut(BaseModel):
     inspection_id: UUID
     assigned_to: Optional[UUID] = None
     assigned_user: Optional[UserOut] = None
-    due_date: Optional[datetime] = None
+    due_date: Optional[date] = None
     created_by: UUID
     creator: Optional[UserOut] = None
     site_name: Optional[str] = None

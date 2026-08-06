@@ -122,7 +122,10 @@ export default function IssuesPage() {
       id: issueId,
       status: editStatus || undefined,
       assigned_to: editAssigned || undefined,
-      due_date: editDueDate ? new Date(editDueDate).toISOString() : undefined,
+      // due_date на бэкенде — DATE, не datetime; input[type=date] уже даёт
+      // "YYYY-MM-DD" — .toISOString() только добавлял риск сдвига на день
+      // и был причиной 500 на любое сохранение с указанным сроком
+      due_date: editDueDate || undefined,
     })
   }
 

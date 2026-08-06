@@ -76,6 +76,7 @@ async def list_inspections(
     site_id: Optional[str] = Query(None),
     inspector_id: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
+    district_id: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=1000),
     db: AsyncSession = Depends(get_db),
@@ -98,10 +99,16 @@ async def list_inspections(
     elif inspector_id:
         base = base.where(Inspection.inspector_id == inspector_id)
 
+    # Проверяющий со своим районом всегда ограничен им; иначе (округ-wide
+    # проверяющий или admin) — можно явно выбрать район через district_id
+    effective_district_id = district_id
     if current_user.role == "reviewer" and current_user.district_id is not None:
+        effective_district_id = str(current_user.district_id)
+
+    if effective_district_id:
         base = base.join(Site, Inspection.site_id == Site.id).join(
             Courtyard, Site.courtyard_id == Courtyard.id
-        ).where(Courtyard.district_id == current_user.district_id)
+        ).where(Courtyard.district_id == effective_district_id)
 
     count_q = select(func.count()).select_from(base.subquery())
     total = (await db.execute(count_q)).scalar_one()

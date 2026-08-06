@@ -32,9 +32,8 @@ def _issue_to_out(i: Issue) -> IssueOut:
         if i.site_ref.courtyard and i.site_ref.courtyard.district:
             district_name = i.site_ref.courtyard.district.name
 
-    # фото исправлений
-    fix_photos = [
-        PhotoOut(
+    def _photo_out(p):
+        return PhotoOut(
             id=p.id, target_type=p.target_type,
             inspection_id=p.inspection_id, issue_id=p.issue_id,
             url=f"/uploads/{p.storage_path}",
@@ -42,8 +41,10 @@ def _issue_to_out(i: Issue) -> IssueOut:
             gps_lat=p.gps_lat, gps_lon=p.gps_lon,
             taken_at=p.taken_at, created_at=p.created_at,
         )
-        for p in i.fix_photos
-    ]
+
+    # фото самого нарушения (документируют, что было найдено) и отдельно — фото исправления
+    photos = [_photo_out(p) for p in i.photos]
+    fix_photos = [_photo_out(p) for p in i.fix_photos]
 
     return IssueOut(
         id=i.id,
@@ -62,6 +63,7 @@ def _issue_to_out(i: Issue) -> IssueOut:
         district_name=district_name,
         fix_comment=i.fix_comment if hasattr(i, 'fix_comment') else None,
         reviewer_comment=i.reviewer_comment if hasattr(i, 'reviewer_comment') else None,
+        photos=photos,
         fix_photos=fix_photos,
         created_at=i.created_at,
         updated_at=i.updated_at,
@@ -104,6 +106,7 @@ async def create_issue(
         selectinload(Issue.site_ref).selectinload(Site.courtyard).selectinload(Courtyard.district),
         selectinload(Issue.assigned_user),
         selectinload(Issue.creator_ref),
+        selectinload(Issue.photos),
         selectinload(Issue.fix_photos),
     )
     issue = (await db.execute(q)).scalar_one()
@@ -126,6 +129,7 @@ async def list_issues(
         selectinload(Issue.site_ref).selectinload(Site.courtyard).selectinload(Courtyard.district),
         selectinload(Issue.assigned_user),
         selectinload(Issue.creator_ref),
+        selectinload(Issue.photos),
         selectinload(Issue.fix_photos),
     ).order_by(Issue.created_at.desc())
 
@@ -171,6 +175,7 @@ async def get_issue(
         selectinload(Issue.site_ref).selectinload(Site.courtyard).selectinload(Courtyard.district),
         selectinload(Issue.assigned_user),
         selectinload(Issue.creator_ref),
+        selectinload(Issue.photos),
         selectinload(Issue.fix_photos),
     )
     issue = (await db.execute(q)).scalar_one_or_none()
@@ -271,6 +276,7 @@ async def update_issue(
         selectinload(Issue.site_ref).selectinload(Site.courtyard).selectinload(Courtyard.district),
         selectinload(Issue.assigned_user),
         selectinload(Issue.creator_ref),
+        selectinload(Issue.photos),
         selectinload(Issue.fix_photos),
     )
     issue = (await db.execute(q)).scalar_one()
@@ -278,6 +284,67 @@ async def update_issue(
 
 
 UPLOAD_DIR = os.environ.get("UPLOAD_DIR", "uploads")
+
+
+@router.post("/{issue_id}/photos", response_model=PhotoOut)
+async def upload_issue_photo(
+    issue_id: str,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Загрузить фото самого нарушения (не путать с фото исправления) —
+    чтобы каждое замечание документировалось отдельно, а не тонуло в общих
+    фото обхода."""
+    issue = (await db.execute(
+        select(Issue).where(Issue.id == issue_id).options(
+            selectinload(Issue.site_ref).selectinload(Site.courtyard),
+        )
+    )).scalar_one_or_none()
+    if not issue:
+        raise HTTPException(404, "Замечание не найдено")
+
+    if current_user.role == "inspector":
+        check_own_or_role(current_user, issue.created_by, "reviewer", "admin")
+    elif current_user.role == "reviewer":
+        district_id = issue.site_ref.courtyard.district_id if issue.site_ref and issue.site_ref.courtyard else None
+        if not in_district_scope(current_user, district_id):
+            raise HTTPException(403, "Замечание вне вашего района")
+
+    ext = file.filename.rsplit(".", 1)[-1] if file.filename and "." in file.filename else "jpg"
+    safe_ext = ext.lower()[:5]
+    filename = f"{_uuid.uuid4()}.{safe_ext}"
+    rel_path = os.path.join("issues", filename)
+    abs_path = os.path.join(UPLOAD_DIR, rel_path)
+    os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+
+    max_bytes = settings.MAX_PHOTO_SIZE_MB * 1024 * 1024
+    size = 0
+    with open(abs_path, "wb") as f:
+        while chunk := await file.read(1024 * 1024):
+            size += len(chunk)
+            if size > max_bytes:
+                f.close()
+                os.remove(abs_path)
+                raise HTTPException(413, f"Файл больше {settings.MAX_PHOTO_SIZE_MB} МБ")
+            f.write(chunk)
+
+    photo = Photo(
+        target_type="issue",
+        issue_id=issue.id,
+        storage_path=rel_path,
+    )
+    db.add(photo)
+    await db.commit()
+    await db.refresh(photo)
+
+    return PhotoOut(
+        id=photo.id, target_type=photo.target_type,
+        inspection_id=photo.inspection_id, issue_id=photo.issue_id,
+        url=f"/uploads/{photo.storage_path}",
+        thumbnail_url=None, gps_lat=None, gps_lon=None,
+        taken_at=None, created_at=photo.created_at,
+    )
 
 
 @router.post("/{issue_id}/fix-photos", response_model=PhotoOut)

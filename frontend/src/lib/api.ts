@@ -196,4 +196,14 @@ export const issuesApi = {
       })
       .then((r) => r.data)
   },
+
+  uploadPhoto: (issueId: string, file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api
+      .post<PhotoOut>(`/issues/${issueId}/photos`, form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      .then((r) => r.data)
+  },
 }

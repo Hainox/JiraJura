@@ -36,6 +36,11 @@ export default function InspectionPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const itemFileInputRef = useRef<HTMLInputElement>(null)
   const [uploadingForItemId, setUploadingForItemId] = useState<string | null>(null)
+  // Замечание, для которого сейчас предлагаем прикрепить фото сразу после
+  // создания — свои фото, а не общий фотоальбом обхода
+  const [issuePhotoTargetId, setIssuePhotoTargetId] = useState<string | null>(null)
+  const [issuePhotoCount, setIssuePhotoCount] = useState(0)
+  const issuePhotoInputRef = useRef<HTMLInputElement>(null)
 
   // Reviewer state
   const [reviewerComment, setReviewerComment] = useState('')
@@ -170,15 +175,36 @@ export default function InspectionPage() {
         description: issueDesc || undefined,
         criticality: issueCriticality,
       }),
-    onSuccess: () => {
+    onSuccess: (issue) => {
       toast.success('Замечание создано')
-      setShowIssueForm(false)
       setIssueTitle('')
       setIssueDesc('')
+      // не закрываем панель сразу — даём прикрепить фото именно к этому
+      // замечанию, а не заставляем грузить его отдельно в общий альбом
+      setIssuePhotoTargetId(issue.id)
+      setIssuePhotoCount(0)
       queryClient.invalidateQueries({ queryKey: ['issues'] })
     },
     onError: () => toast.error('Ошибка создания замечания'),
   })
+
+  const uploadIssuePhotoMutation = useMutation({
+    mutationFn: (file: File) => {
+      if (!issuePhotoTargetId) return Promise.reject(new Error('no target issue'))
+      return issuesApi.uploadPhoto(issuePhotoTargetId, file)
+    },
+    onSuccess: () => {
+      setIssuePhotoCount((c) => c + 1)
+      toast.success('Фото замечания загружено')
+    },
+    onError: () => toast.error('Ошибка загрузки фото замечания'),
+  })
+
+  const finishIssuePhotos = () => {
+    setIssuePhotoTargetId(null)
+    setIssuePhotoCount(0)
+    setShowIssueForm(false)
+  }
 
   const uploadGeneralPhotoMutation = useMutation({
     mutationFn: (file: File) => inspectionsApi.uploadPhoto(inspectionId, file),
@@ -586,7 +612,34 @@ export default function InspectionPage() {
             value={answers[activeItem.id]?.comment ?? ''}
             onChange={(e) => handleComment(activeItem.id, e.target.value)}
           />
-          {!showIssueForm ? (
+          {issuePhotoTargetId ? (
+            <div className="space-y-2">
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-xs text-green-800">
+                Замечание создано. Прикрепите фото нарушения — {issuePhotoCount > 0 ? `загружено: ${issuePhotoCount}` : 'пока без фото'}.
+              </div>
+              <input
+                ref={issuePhotoInputRef} type="file" accept="image/*" capture="environment" className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) uploadIssuePhotoMutation.mutate(file)
+                  e.target.value = ''
+                }}
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => issuePhotoInputRef.current?.click()}
+                  disabled={uploadIssuePhotoMutation.isPending}
+                  className="btn-outline flex-1 py-2 text-sm"
+                >
+                  <Camera className="w-4 h-4 inline mr-1" />
+                  {issuePhotoCount > 0 ? 'Добавить ещё фото' : 'Сфотографировать'}
+                </button>
+                <button onClick={finishIssuePhotos} className="btn-primary py-2 px-4 text-sm">
+                  Готово
+                </button>
+              </div>
+            </div>
+          ) : !showIssueForm ? (
             <button onClick={() => setShowIssueForm(true)} className="btn-outline w-full py-2 text-sm">
               <Plus className="w-4 h-4 inline mr-1" />Создать замечание
             </button>

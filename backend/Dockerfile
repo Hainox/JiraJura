@@ -7,17 +7,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app/ ./app/
 COPY alembic.ini .
 COPY schema.sql .
-COPY import_kml.py .
-COPY apply_titul.py .
-COPY fix_passwords.py .
-COPY bulk_invite.py .
-COPY diagnose_logins.py .
-COPY reissue_invites.py .
-COPY split_invites_by_district.py .
-COPY verify_invite_links.py .
-COPY production_status_report.py .
-COPY reset_shared_passwords.py .
-COPY titul_2026-08.csv .
+# Разовые эксплуатационные скрипты в корне backend/ (диагностика логинов,
+# рассылка приглашений, сверка списков и т.п.) — копируем всё разом, чтобы
+# не забывать вручную дописывать сюда каждый новый скрипт (это уже дважды
+# приводило к "No such file or directory" на проде, см. историю).
+COPY *.py ./
+COPY *.csv ./
 COPY alembic/ ./alembic/
 RUN mkdir -p /app/uploads
 

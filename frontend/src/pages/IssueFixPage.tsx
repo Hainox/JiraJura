@@ -149,7 +149,10 @@ export default function IssueFixPage() {
           <div className="card space-y-2">
             <h3 className="text-sm font-medium text-gray-600 flex items-center gap-1"><Camera className="w-4 h-4" />Загрузить фото исправления</h3>
             <div className="flex gap-2">
-              <input ref={fileInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFileInput} />
+              {/* Без capture="environment" — см. комментарий в InspectionPage.tsx:
+                  на некоторых Android WebView с заблокированным разрешением
+                  камеры input с этим атрибутом молча ничего не делал по тапу */}
+              <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileInput} />
               <button onClick={() => fileInputRef.current?.click()} disabled={isUploading} className="btn-outline flex items-center gap-1.5 py-2 px-4 text-sm">
                 {isUploading ? (
                   <><span className="w-4 h-4 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />Загрузка...</>

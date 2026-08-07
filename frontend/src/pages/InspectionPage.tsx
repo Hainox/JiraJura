@@ -507,7 +507,12 @@ export default function InspectionPage() {
           </div>
           {!isReadOnly && (
             <>
-              <input ref={fileInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleGeneralPhotoUpload} />
+              {/* Без capture="environment" — на некоторых Android WebView с
+                  ранее заблокированным разрешением на камеру этот атрибут
+                  заставлял input молча ничего не делать по тапу (ни диалога,
+                  ни ошибки), без фолбэка на выбор из галереи/файлов. Без
+                  capture — обычный системный выбор (камера ИЛИ галерея). */}
+              <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleGeneralPhotoUpload} />
               <button onClick={() => fileInputRef.current?.click()} disabled={uploadGeneralPhotoMutation.isPending} className="btn-outline py-1.5 px-3 text-sm">
                 <Camera className="w-4 h-4 inline mr-1" />
                 {uploadGeneralPhotoMutation.isPending ? 'Загрузка...' : 'Добавить общее фото'}
@@ -519,7 +524,7 @@ export default function InspectionPage() {
 
       {/* Скрытый input для загрузки фото пункта */}
       {!isReadOnly && (
-        <input ref={itemFileInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleItemPhotoUpload} />
+        <input ref={itemFileInputRef} type="file" accept="image/*" className="hidden" onChange={handleItemPhotoUpload} />
       )}
 
       {/* Прогресс-бар */}
@@ -622,7 +627,7 @@ export default function InspectionPage() {
                 Замечание создано. Прикрепите фото нарушения — {issuePhotoCount > 0 ? `загружено: ${issuePhotoCount}` : 'пока без фото'}.
               </div>
               <input
-                ref={issuePhotoInputRef} type="file" accept="image/*" capture="environment" className="hidden"
+                ref={issuePhotoInputRef} type="file" accept="image/*" className="hidden"
                 onChange={(e) => {
                   const file = e.target.files?.[0]
                   if (file) uploadIssuePhotoMutation.mutate(file)

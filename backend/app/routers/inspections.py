@@ -74,15 +74,18 @@ async def create_inspection(
     # UTC — иначе "сутки" физически начинались в 03:00 по Москве
     # (00:00 UTC), и вчерашние обходы с 00:00 до 03:00 МСК ошибочно не
     # засчитывались как сегодняшние.
-    today_start = datetime.now(MSK).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
-    existing_today = (await db.execute(
-        select(Inspection).where(
-            Inspection.site_id == data.site_id,
-            Inspection.created_at >= today_start,
-        ).order_by(Inspection.created_at.desc())
-    )).scalars().first()
-    if existing_today:
-        raise HTTPException(409, "Эта площадка уже проверена сегодня — повторный обход в этот же день не нужен")
+    # ENABLE_DAILY_INSPECTION_LIMIT=false в .env — аварийно отключить эту
+    # проверку без редеплоя, если она где-то мешает реальной работе.
+    if settings.ENABLE_DAILY_INSPECTION_LIMIT:
+        today_start = datetime.now(MSK).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+        existing_today = (await db.execute(
+            select(Inspection).where(
+                Inspection.site_id == data.site_id,
+                Inspection.created_at >= today_start,
+            ).order_by(Inspection.created_at.desc())
+        )).scalars().first()
+        if existing_today:
+            raise HTTPException(409, "Эта площадка уже проверена сегодня — повторный обход в этот же день не нужен")
 
     # подбираем шаблон чек-листа по типу площадки
     tmpl = (await db.execute(

@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     MAX_PHOTO_SIZE_MB: int = 20
     APP_ENV: str = "development"
     CORS_ORIGINS: str = "http://localhost:5173"
+    # Аварийный рубильник на "одна проверка площадки в сутки" — выключить
+    # без редеплоя кода, если лимит где-то ошибочно блокирует реальную
+    # работу в поле, пока разбираемся в чём дело. По умолчанию включён.
+    ENABLE_DAILY_INSPECTION_LIMIT: bool = True
 
     model_config = {"env_file": ".env"}
 

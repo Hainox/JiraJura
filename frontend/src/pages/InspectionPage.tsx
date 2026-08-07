@@ -568,13 +568,13 @@ export default function InspectionPage() {
                 )}
 
                 {!isReadOnly && answers[item.id]?.result === 'defect' && (
-                  <div className="mt-1.5">
+                  <div className="mt-2">
                     <button
                       onClick={() => triggerItemUpload(item.id)}
                       disabled={uploadItemPhotoMutation.isPending && uploadingForItemId === item.id}
-                      className="text-xs text-primary-600 hover:text-primary-800 flex items-center gap-1"
+                      className="w-full py-2.5 rounded-lg font-medium text-sm bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 flex items-center justify-center gap-2 disabled:opacity-60"
                     >
-                      <Camera className="w-3 h-3" />
+                      <Camera className="w-4 h-4" />
                       {uploadItemPhotoMutation.isPending && uploadingForItemId === item.id ? 'Загрузка...' : 'Добавить фото дефекта'}
                     </button>
                   </div>

@@ -1,8 +1,12 @@
 """Inspections router."""
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 import uuid as _uuid
 import os
+
+# Все инспекторы и площадки — Москва, без перехода на летнее время с 2014
+# года, так что фиксированный UTC+3 корректен круглый год.
+MSK = timezone(timedelta(hours=3))
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy import select, func
@@ -66,8 +70,11 @@ async def create_inspection(
 
     # Одна проверка площадки в сутки — чтобы не копились лишние обходы
     # (случайный повторный "Начать обход" на той же площадке в тот же
-    # день, в т.ч. другим инспектором).
-    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    # день, в т.ч. другим инспектором). Полночь берём московскую, а не
+    # UTC — иначе "сутки" физически начинались в 03:00 по Москве
+    # (00:00 UTC), и вчерашние обходы с 00:00 до 03:00 МСК ошибочно не
+    # засчитывались как сегодняшние.
+    today_start = datetime.now(MSK).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
     existing_today = (await db.execute(
         select(Inspection).where(
             Inspection.site_id == data.site_id,

@@ -117,6 +117,21 @@ export default function InspectionPage() {
     return map
   }, [photos, inspection?.answers])
 
+  // Пункты чек-листа с requires_photo (например «Фото общего вида
+  // площадки») были помечены обязательными к фото ещё в schema.sql, но это
+  // никогда не проверялось — обход завершался вообще без этих фото. Как и
+  // с общим фото объекта, блокируем только уже отмеченные пункты — чтобы
+  // не мешать завершению с обычными "не проверено" пунктами.
+  const missingRequiredPhotoItems = useMemo(
+    () => allItems.filter((item) => {
+      if (!item.requires_photo) return false
+      const a = answers[item.id]
+      if (!a || a.result === 'pending') return false
+      return (photosByAnswer[item.id] ?? []).length === 0
+    }),
+    [allItems, answers, photosByAnswer]
+  )
+
   const buildAnswerList = () =>
     Object.entries(answers)
       .filter(([, a]) => a.result !== 'pending')
@@ -411,6 +426,17 @@ export default function InspectionPage() {
               </div>
             </div>
           )}
+          {missingRequiredPhotoItems.length > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-700 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <div>
+                <div className="font-medium">Нужно фото для отмеченных пунктов!</div>
+                <div className="text-red-600 mt-0.5">
+                  {missingRequiredPhotoItems.map((it) => it.question).join(', ')}
+                </div>
+              </div>
+            </div>
+          )}
           <div className="flex gap-2">
             <button
               onClick={() => { setShowCompleteConfirm(false) }}
@@ -420,7 +446,7 @@ export default function InspectionPage() {
             </button>
             <button
               onClick={() => completeMutation.mutate('completed')}
-              disabled={completeMutation.isPending || generalPhotos.length === 0}
+              disabled={completeMutation.isPending || generalPhotos.length === 0 || missingRequiredPhotoItems.length > 0}
               className="flex-1 py-2 text-sm bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-40"
             >
               ✓ Всё в порядке
@@ -428,7 +454,7 @@ export default function InspectionPage() {
             {stats.nok > 0 && (
               <button
                 onClick={() => completeMutation.mutate('issues_found')}
-                disabled={completeMutation.isPending || generalPhotos.length === 0}
+                disabled={completeMutation.isPending || generalPhotos.length === 0 || missingRequiredPhotoItems.length > 0}
                 className="flex-1 py-2 text-sm bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700 disabled:opacity-40"
               >
                 ⚠ Завершить с нарушениями

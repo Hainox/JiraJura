@@ -363,9 +363,18 @@ async def upload_fix_photo(
     current_user: User = Depends(require_role("reviewer", "admin")),
 ):
     """Загрузить фото исправления для замечания."""
-    issue = (await db.execute(select(Issue).where(Issue.id == issue_id))).scalar_one_or_none()
+    issue = (await db.execute(
+        select(Issue).where(Issue.id == issue_id).options(
+            selectinload(Issue.site_ref).selectinload(Site.courtyard),
+        )
+    )).scalar_one_or_none()
     if not issue:
         raise HTTPException(404, "Замечание не найдено")
+
+    if current_user.role == "reviewer":
+        district_id = issue.site_ref.courtyard.district_id if issue.site_ref and issue.site_ref.courtyard else None
+        if not in_district_scope(current_user, district_id):
+            raise HTTPException(403, "Замечание вне вашего района")
 
     ext = file.filename.rsplit(".", 1)[-1] if file.filename and "." in file.filename else "jpg"
     safe_ext = ext.lower()[:5]

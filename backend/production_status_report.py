@@ -37,21 +37,34 @@ async def main():
             "FROM user_invites WHERE used_at IS NULL ORDER BY full_name, created_at DESC"
         ))).fetchall()
 
-        # дедуп по ФИО (как в reissue_invites.py) — не размножаем дубли-логины на одного человека
-        seen_names_global = set()
-        pending_by_district = defaultdict(list)
-        pending_admins = []
-        pending_okrug_reviewers = []
+        # дедуп по ФИО (как в reissue_invites.py) — не размножаем дубли-логины
+        # на одного человека. Дедуп делаем ПОСЛЕ разбивки по районам/ролям,
+        # а не по ФИО глобально на весь округ — у full_name нет уникальности
+        # в базе, и два разных человека с одинаковым ФИО в разных районах
+        # иначе схлопывались бы в одного, а второй молча пропадал бы из отчёта.
+        pending_by_district_raw = defaultdict(list)
+        pending_admins_raw = []
+        pending_okrug_reviewers_raw = []
         for r in pending_rows:
-            if r.full_name in seen_names_global:
-                continue
-            seen_names_global.add(r.full_name)
             if r.role == "admin":
-                pending_admins.append(r)
+                pending_admins_raw.append(r)
             elif r.district_id is None:
-                pending_okrug_reviewers.append(r)
+                pending_okrug_reviewers_raw.append(r)
             else:
-                pending_by_district[r.district_id].append(r)
+                pending_by_district_raw[r.district_id].append(r)
+
+        def _dedup_by_name(rows):
+            seen, out = set(), []
+            for r in rows:
+                if r.full_name in seen:
+                    continue
+                seen.add(r.full_name)
+                out.append(r)
+            return out
+
+        pending_admins = _dedup_by_name(pending_admins_raw)
+        pending_okrug_reviewers = _dedup_by_name(pending_okrug_reviewers_raw)
+        pending_by_district = {did: _dedup_by_name(rows) for did, rows in pending_by_district_raw.items()}
 
         district_stats = []
         for d in districts:
@@ -106,8 +119,11 @@ async def main():
                 work_stats.append((d.name, 0, 0, 0, 0, 0, 0, 0, 0))
                 continue
 
+            # 'issues_found'/'critical' — тоже финальные статусы обхода
+            # (обход закончен, просто нашли нарушения), без них "завершено"
+            # занижалось.
             insp_total, insp_done = (await db.execute(text(
-                "SELECT COUNT(*), COUNT(*) FILTER (WHERE status = 'completed') "
+                "SELECT COUNT(*), COUNT(*) FILTER (WHERE status IN ('completed', 'issues_found', 'critical')) "
                 "FROM inspections WHERE site_id = ANY(:sids)"
             ), {"sids": site_ids})).fetchone()
 

@@ -24,7 +24,7 @@ export default function DashboardPage() {
     queryFn: districtsApi.list,
   })
 
-  const { data, isLoading, refetch } = useQuery<DashboardOut>({
+  const { data, isLoading, isError, refetch } = useQuery<DashboardOut>({
     queryKey: ['dashboard', districtFilter, dateFrom, dateTo],
     queryFn: () => reportsApi.dashboard({
       district_id: districtFilter || undefined,
@@ -95,8 +95,25 @@ export default function DashboardPage() {
 
       {isLoading ? (
         <div className="flex-1 flex items-center justify-center text-gray-400">Загрузка...</div>
+      ) : isError && !data ? (
+        // Раньше при ЛЮБОЙ ошибке запроса (сеть моргнула, 500 и т.п.) карточки
+        // молча показывали 0 через `?? 0`, а таблица оставалась пустой без
+        // единого слова об ошибке — выглядело так, будто обходов и замечаний
+        // за период реально нет, хотя на самом деле просто не удалось
+        // загрузить данные. Явно показываем, что это ошибка, а не факт.
+        <div className="flex-1 flex flex-col items-center justify-center text-gray-500 gap-3 p-4 text-center">
+          <AlertTriangle className="w-8 h-8 text-red-400" />
+          <div>Не удалось загрузить сводку — сервер не ответил или произошла ошибка.</div>
+          <button onClick={() => refetch()} className="btn-primary text-sm px-4 py-2">Попробовать снова</button>
+        </div>
       ) : (
         <div className="overflow-y-auto flex-1 p-4 space-y-4">
+          {isError && (
+            <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-lg px-3 py-2 flex items-center justify-between gap-2">
+              <span>Не удалось обновить данные — показана последняя загруженная сводка.</span>
+              <button onClick={() => refetch()} className="underline shrink-0">Обновить</button>
+            </div>
+          )}
           {/* KPI cards — totals */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <KpiCard icon={<ClipboardCheck className="w-5 h-5" />} label="Обходов" value={t?.inspections_total ?? 0} color="bg-blue-500" />

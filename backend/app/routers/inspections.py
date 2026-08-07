@@ -4,10 +4,6 @@ from typing import Optional
 import uuid as _uuid
 import os
 
-# Все инспекторы и площадки — Москва, без перехода на летнее время с 2014
-# года, так что фиксированный UTC+3 корректен круглый год.
-MSK = timezone(timedelta(hours=3))
-
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +12,7 @@ from sqlalchemy.orm import selectinload
 from app.config import settings
 from app.database import get_db
 from app.services.permissions import check_own_or_role, in_district_scope
+from app.services.timezone import MSK
 from app.models import (
     Inspection, Site, Courtyard, District, User,
     ChecklistAnswer, ChecklistItem, ChecklistTemplate, Photo, Issue,
@@ -274,6 +271,28 @@ async def update_inspection(
                     result=ans.result,
                     comment=ans.comment,
                 ))
+
+    # Пункты чек-листа с requires_photo=TRUE (например «Фото общего вида
+    # площадки») были помечены как обязательные к фото ещё в schema.sql, но
+    # это никогда не проверялось — обход можно было завершить вообще без
+    # этих фото. Проверяем после апсерта ответов выше (autoflush делает
+    # только что добавленные/обновлённые ChecklistAnswer видимыми для
+    # запроса ниже) и, как и общее фото площадки, только когда статус
+    # меняет сам владелец-инспектор.
+    if (data.status in ("completed", "issues_found", "critical")
+            and str(obj.inspector_id) == str(current_user.id)):
+        missing_photo_items = (await db.execute(
+            select(ChecklistItem.question)
+            .join(ChecklistAnswer, ChecklistAnswer.checklist_item_id == ChecklistItem.id)
+            .outerjoin(Photo, Photo.checklist_answer_id == ChecklistAnswer.id)
+            .where(
+                ChecklistAnswer.inspection_id == inspection_id,
+                ChecklistItem.requires_photo.is_(True),
+                Photo.id.is_(None),
+            )
+        )).scalars().all()
+        if missing_photo_items:
+            raise HTTPException(400, f"Нужно фото для пункта(ов) чек-листа: {', '.join(missing_photo_items)}")
 
     await db.commit()
 

@@ -15,8 +15,17 @@ from app.models import (
 )
 from app.schemas import ReportWeeklyOut, ReportMonthlyOut, DashboardDistrictRow, DashboardOut
 from app.services.permissions import require_role
+from app.services.timezone import msk_day_bounds_utc
 
 router = APIRouter()
+
+# Обход считается завершённым, даже если по итогу нашлись нарушения —
+# 'issues_found'/'critical' это тоже финальные статусы (проставляются вместе
+# с completed_at, см. update_inspection в inspections.py), а не промежуточные
+# наравне с 'in_progress'. Без этого списка "Завершено" в дашборде/отчётах
+# занижался, а "В процессе" — по факту не завышался, но обходы с найденными
+# нарушениями просто выпадали из обеих колонок.
+INSPECTION_DONE_STATUSES = ("completed", "issues_found", "critical")
 
 
 @router.get("/weekly", response_model=list[ReportWeeklyOut])
@@ -169,8 +178,7 @@ async def admin_dashboard(
     if current_user.role == "reviewer" and current_user.district_id is not None:
         district_id = str(current_user.district_id)
 
-    dt_from = datetime.combine(date_from, datetime.min.time()) if date_from else None
-    dt_to = (datetime.combine(date_to, datetime.min.time()) + timedelta(days=1)) if date_to else None
+    dt_from, dt_to = msk_day_bounds_utc(date_from, date_to)
 
     def period(q, column):
         if dt_from is not None:
@@ -207,7 +215,7 @@ async def admin_dashboard(
         insp_base = select(func.count()).select_from(Inspection).where(Inspection.site_id.in_(site_sub))
         inspections_total = (await db.execute(period(insp_base, Inspection.created_at))).scalar_one() or 0
         inspections_completed = (await db.execute(period(
-            select(func.count()).select_from(Inspection).where(Inspection.site_id.in_(site_sub), Inspection.status == "completed"),
+            select(func.count()).select_from(Inspection).where(Inspection.site_id.in_(site_sub), Inspection.status.in_(INSPECTION_DONE_STATUSES)),
             Inspection.created_at,
         ))).scalar_one() or 0
         inspections_in_progress = (await db.execute(period(
@@ -314,8 +322,7 @@ async def export_xlsx(
     if current_user.role == "reviewer" and current_user.district_id is not None:
         district_id = str(current_user.district_id)
 
-    dt_from = datetime.combine(date_from, datetime.min.time()) if date_from else None
-    dt_to = (datetime.combine(date_to, datetime.min.time()) + timedelta(days=1)) if date_to else None
+    dt_from, dt_to = msk_day_bounds_utc(date_from, date_to)
 
     def period(q, column):
         if dt_from is not None:
@@ -473,13 +480,16 @@ async def export_xlsx(
         summary_data.append((d.name, total_sites, inspected, created, closed, open_now, overdue))
 
     # ── Динамика по дням (инспектор × дата) ──
+    # Группируем по User.id, а не по ФИО — у full_name нет уникальности в
+    # базе, и два инспектора-тёзки схлопывались бы в один столбец с суммой
+    # их обходов на двоих.
     from collections import defaultdict
     day_stats_q = (
         select(
-            func.date(Inspection.created_at), User.full_name, func.count()
+            func.date(Inspection.created_at), User.id, User.full_name, func.count()
         )
         .join(User, Inspection.inspector_id == User.id)
-        .group_by(func.date(Inspection.created_at), User.full_name)
+        .group_by(func.date(Inspection.created_at), User.id, User.full_name)
         .order_by(func.date(Inspection.created_at).desc(), User.full_name)
     )
     if district_id:
@@ -487,16 +497,17 @@ async def export_xlsx(
     day_stats_q = period(day_stats_q, Inspection.created_at)
     day_stats = (await db.execute(day_stats_q)).all()
 
-    # группируем: дата → {инспектор: кол-во}
-    day_data: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
-    inspectors_set: set[str] = set()
-    for dt, name, cnt in day_stats:
-        day_data[str(dt)][name] = cnt
-        inspectors_set.add(name)
-    sorted_inspectors = sorted(inspectors_set)
+    # группируем: дата → {id инспектора: кол-во}
+    day_data: dict[str, dict] = defaultdict(lambda: defaultdict(int))
+    inspector_names: dict = {}
+    for dt, insp_id, name, cnt in day_stats:
+        day_data[str(dt)][insp_id] = cnt
+        inspector_names[insp_id] = name
+    sorted_inspector_ids = sorted(inspector_names, key=lambda i: (inspector_names[i], str(i)))
+    sorted_inspectors = [inspector_names[i] for i in sorted_inspector_ids]
     dynamics_rows = []
     for dt in sorted(day_data.keys(), reverse=True):
-        row = [dt] + [day_data[dt].get(insp, 0) for insp in sorted_inspectors]
+        row = [dt] + [day_data[dt].get(insp_id, 0) for insp_id in sorted_inspector_ids]
         dynamics_rows.append(tuple(row))
 
     # ── Просроченные замечания ──

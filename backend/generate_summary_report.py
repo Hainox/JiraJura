@@ -70,19 +70,36 @@ async def fetch_all(db: AsyncSession) -> dict:
         "FROM user_invites WHERE used_at IS NULL ORDER BY full_name, created_at DESC"
     ))).fetchall()
 
-    seen_names_global = set()
-    pending_by_district = defaultdict(list)
-    pending_admins, pending_okrug_reviewers = [], []
+    # Один человек может попасть в выборку дважды, если его приглашали
+    # повторно под чуть другим логином (опечатка/транслитерация) — дедуп
+    # оставляет самую свежую запись (после ORDER BY full_name, created_at
+    # DESC первая по имени и есть самая свежая). Важно: дедуп делаем ПОСЛЕ
+    # разбивки по районам/ролям, а не по ФИО глобально на весь округ — у
+    # full_name нет уникальности в базе, и два разных человека с одинаковым
+    # ФИО в разных районах иначе схлопывались бы в одного, а второй молча
+    # пропадал бы из отчёта.
+    pending_by_district_raw = defaultdict(list)
+    pending_admins_raw, pending_okrug_reviewers_raw = [], []
     for r in pending_rows:
-        if r.full_name in seen_names_global:
-            continue
-        seen_names_global.add(r.full_name)
         if r.role == "admin":
-            pending_admins.append(r)
+            pending_admins_raw.append(r)
         elif r.district_id is None:
-            pending_okrug_reviewers.append(r)
+            pending_okrug_reviewers_raw.append(r)
         else:
-            pending_by_district[r.district_id].append(r)
+            pending_by_district_raw[r.district_id].append(r)
+
+    def _dedup_by_name(rows):
+        seen, out = set(), []
+        for r in rows:
+            if r.full_name in seen:
+                continue
+            seen.add(r.full_name)
+            out.append(r)
+        return out
+
+    pending_admins = _dedup_by_name(pending_admins_raw)
+    pending_okrug_reviewers = _dedup_by_name(pending_okrug_reviewers_raw)
+    pending_by_district = {did: _dedup_by_name(rows) for did, rows in pending_by_district_raw.items()}
 
     reg_stats = []
     for d in districts:
@@ -122,8 +139,11 @@ async def fetch_all(db: AsyncSession) -> dict:
             })
             continue
 
+        # 'issues_found'/'critical' — тоже финальные статусы обхода (обход
+        # закончен, просто нашли нарушения), а не промежуточные наравне с
+        # 'in_progress' — без них "завершено" занижалось.
         insp_total, insp_done = (await db.execute(text(
-            "SELECT COUNT(*), COUNT(*) FILTER (WHERE status = 'completed') "
+            "SELECT COUNT(*), COUNT(*) FILTER (WHERE status IN ('completed', 'issues_found', 'critical')) "
             "FROM inspections WHERE site_id = ANY(:sids)"
         ), {"sids": site_ids})).fetchone()
 
@@ -158,11 +178,13 @@ async def fetch_all(db: AsyncSession) -> dict:
     # ── Лидеры дня (обходов начато сегодня, по Москве) ──
     today_msk = datetime.now(MSK).date()
     data["today_msk"] = today_msk
+    # Группируем по u.id, не по full_name — у ФИО нет уникальности в базе,
+    # инспекторы-тёзки иначе схлопывались бы в одну строку с суммой обходов.
     data["leaders_today"] = (await db.execute(text(
-        "SELECT u.full_name, COUNT(*) AS cnt FROM inspections i "
+        "SELECT u.id, u.full_name, COUNT(*) AS cnt FROM inspections i "
         "JOIN users u ON u.id = i.inspector_id "
         "WHERE date(i.created_at AT TIME ZONE 'Europe/Moscow') = :today "
-        "GROUP BY u.full_name ORDER BY cnt DESC LIMIT 5"
+        "GROUP BY u.id, u.full_name ORDER BY cnt DESC LIMIT 5"
     ), {"today": today_msk})).fetchall()
 
     # ── Обходы (полный лог) ──
@@ -263,22 +285,25 @@ async def fetch_all(db: AsyncSession) -> dict:
     ]
 
     # ── Динамика: число отмеченных пунктов чек-листа по дням на инспектора ──
+    # Группируем по u.id — у ФИО нет уникальности, инспекторы-тёзки иначе
+    # схлопывались бы в один столбец с суммой на двоих.
     dyn_rows = (await db.execute(text(
-        "SELECT date(ca.created_at AT TIME ZONE 'Europe/Moscow') AS d, u.full_name, COUNT(*) AS cnt "
+        "SELECT date(ca.created_at AT TIME ZONE 'Europe/Moscow') AS d, u.id, u.full_name, COUNT(*) AS cnt "
         "FROM checklist_answers ca "
         "JOIN inspections i ON i.id = ca.inspection_id "
         "JOIN users u ON u.id = i.inspector_id "
-        "GROUP BY d, u.full_name ORDER BY d DESC, u.full_name"
+        "GROUP BY d, u.id, u.full_name ORDER BY d DESC, u.full_name"
     ))).fetchall()
     day_data: dict = defaultdict(lambda: defaultdict(int))
-    inspectors_set: set = set()
+    inspector_names: dict = {}
     for r in dyn_rows:
-        day_data[str(r.d)][r.full_name] = r.cnt
-        inspectors_set.add(r.full_name)
-    sorted_inspectors = sorted(inspectors_set)
+        day_data[str(r.d)][r.id] = r.cnt
+        inspector_names[r.id] = r.full_name
+    sorted_inspector_ids = sorted(inspector_names, key=lambda i: (inspector_names[i], str(i)))
+    sorted_inspectors = [inspector_names[i] for i in sorted_inspector_ids]
     data["dynamics_inspectors"] = sorted_inspectors
     data["dynamics_rows"] = [
-        tuple([d] + [day_data[d].get(insp, 0) for insp in sorted_inspectors])
+        tuple([d] + [day_data[d].get(insp_id, 0) for insp_id in sorted_inspector_ids])
         for d in sorted(day_data.keys(), reverse=True)
     ]
 

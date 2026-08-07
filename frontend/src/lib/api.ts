@@ -62,6 +62,8 @@ export const authApi = {
   login: (data: LoginRequest) =>
     api.post<LoginResponse>('/auth/login', data).then((r) => r.data),
 
+  me: () => api.get<UserOut>('/auth/me').then((r) => r.data),
+
   createInvite: (data: UserInviteCreate) =>
     api.post<UserInviteCreated>('/auth/invites', data).then((r) => r.data),
 

@@ -1,5 +1,8 @@
+import { useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '@/stores/auth'
+import { authApi } from '@/lib/api'
 import type { Role } from '@/types'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import LoginPage from '@/pages/LoginPage'
@@ -29,7 +32,30 @@ function ProtectedRoute({ children, roles }: { children: React.ReactNode; roles?
   return <>{children}</>
 }
 
+// Роль/район/ФИО и т.п. приходят в localStorage один раз при входе и
+// иначе никогда не обновляются — если админ поменял пользователю район
+// или роль, пока тот уже залогинен, сессия молча продолжает работать по
+// старым данным (в проде так у инспектора с назначенным районом
+// в базе на карте была пустая площадка/"Район не назначен", пока он не
+// перелогинился вручную). Подтягиваем актуальные данные с сервера при
+// каждом возврате в приложение — refetchOnWindowFocus у react-query как
+// раз покрывает случай "открыл вкладку после того как админ что-то поменял".
+function useSyncUserFromServer() {
+  const isAuth = useAuthStore((s) => s.isAuthenticated)
+  const setUser = useAuthStore((s) => s.setUser)
+  const { data } = useQuery({
+    queryKey: ['auth-me'],
+    queryFn: authApi.me,
+    enabled: isAuth,
+    staleTime: 5 * 60 * 1000,
+  })
+  useEffect(() => {
+    if (data) setUser(data)
+  }, [data, setUser])
+}
+
 export default function App() {
+  useSyncUserFromServer()
   return (
     <ErrorBoundary>
       <div className="h-full flex flex-col bg-gray-50">

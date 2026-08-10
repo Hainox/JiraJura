@@ -43,6 +43,9 @@ export default function IssueFixPage() {
 
   const isAdmin = user?.role === 'admin'
   const isReviewerLike = user?.role === 'reviewer' || isAdmin
+  // Смонтирована на /issues/:id (reviewer) и /admin/issues/:id (admin) —
+  // см. тот же паттерн в IssuesPage.tsx.
+  const issuesListPath = isAdmin ? '/admin/issues' : '/issues'
 
   const { data: issue, isLoading } = useQuery<IssueOut>({
     queryKey: ['issue', issueId], queryFn: () => issuesApi.get(issueId), enabled: !!issueId,
@@ -62,7 +65,7 @@ export default function IssueFixPage() {
       toast.success('Исправление зафиксировано!')
       queryClient.invalidateQueries({ queryKey: ['issue', issueId] })
       queryClient.invalidateQueries({ queryKey: ['issues'] })
-      navigate('/issues')
+      navigate(issuesListPath)
     },
     onError: () => toast.error('Ошибка сохранения'),
   })
@@ -102,7 +105,7 @@ export default function IssueFixPage() {
     <div className="h-full flex flex-col bg-gray-50">
       <div className="bg-primary-800 text-white px-4 py-3 shrink-0">
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate('/issues')} className="p-1.5 rounded-lg hover:bg-primary-700 transition-colors shrink-0">
+          <button onClick={() => navigate(issuesListPath)} className="p-1.5 rounded-lg hover:bg-primary-700 transition-colors shrink-0">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
             </svg>

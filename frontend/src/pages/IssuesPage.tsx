@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { issuesApi, districtsApi, authApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
+import { useIssuesViewStore } from '@/stores/issuesView'
 import type { IssueOut, DistrictOut, UserAdminOut } from '@/types'
 import { ArrowLeft, Search, Filter, RefreshCw, UserPlus, Calendar, Clock, AlertTriangle, CheckCircle2, XCircle, Wrench, ExternalLink, Camera } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
@@ -47,12 +48,23 @@ export default function IssuesPage() {
   const queryClient = useQueryClient()
   const user = useAuthStore((s) => s.user)
   const isAdmin = user?.role === 'admin'
+  // Эта страница смонтирована на двух роутах: /issues (reviewer) и
+  // /admin/issues (admin) — префикс переключает "назад" и переходы на
+  // карточку замечания так, чтобы админ никогда не попадал в reviewer-роут.
+  const basePath = isAdmin ? '/admin' : ''
 
-  const [statusFilter, setStatusFilter] = useState<string>('')
-  const [criticalityFilter, setCriticalityFilter] = useState<string>('')
-  const [districtFilter, setDistrictFilter] = useState<string>('')
-  const [searchTerm, setSearchTerm] = useState('')
-  const [page, setPage] = useState(1)
+  // Фильтры/страница — в сторе (useIssuesViewStore), а не в useState: см.
+  // тот же паттерн и обоснование в MapPage.tsx/stores/mapView.ts.
+  const statusFilter = useIssuesViewStore((s) => s.statusFilter)
+  const setStatusFilter = useIssuesViewStore((s) => s.setStatusFilter)
+  const criticalityFilter = useIssuesViewStore((s) => s.criticalityFilter)
+  const setCriticalityFilter = useIssuesViewStore((s) => s.setCriticalityFilter)
+  const districtFilter = useIssuesViewStore((s) => s.districtFilter)
+  const setDistrictFilter = useIssuesViewStore((s) => s.setDistrictFilter)
+  const searchTerm = useIssuesViewStore((s) => s.searchTerm)
+  const setSearchTerm = useIssuesViewStore((s) => s.setSearchTerm)
+  const page = useIssuesViewStore((s) => s.page)
+  const setPage = useIssuesViewStore((s) => s.setPage)
 
   const [editingIssue, setEditingIssue] = useState<string | null>(null)
   const [editStatus, setEditStatus] = useState('')
@@ -141,7 +153,7 @@ export default function IssuesPage() {
       {/* Header */}
       <div className="bg-primary-800 text-white px-4 py-3 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate('/')} className="p-1.5 rounded-lg hover:bg-primary-700 transition-colors">
+          <button onClick={() => navigate(basePath || '/')} className="p-1.5 rounded-lg hover:bg-primary-700 transition-colors">
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
@@ -266,7 +278,7 @@ export default function IssuesPage() {
                       {(user?.role === 'reviewer' || isAdmin) && (
                         <>
                           <button
-                            onClick={() => navigate(`/issues/${issue.id}`)}
+                            onClick={() => navigate(`${basePath}/issues/${issue.id}`)}
                             className="p-1.5 rounded-lg hover:bg-green-100 transition-colors text-green-600 hover:text-green-700"
                             title="Зафиксировать исправление"
                           >

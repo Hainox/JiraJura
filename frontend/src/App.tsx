@@ -22,6 +22,7 @@ import MyInspectionsPage from '@/pages/MyInspectionsPage'
 import AdminPanelPage from '@/pages/AdminPanelPage'
 import AdminSitesPage from '@/pages/AdminSitesPage'
 import AdminChecklistsPage from '@/pages/AdminChecklistsPage'
+import AdminReviewsPage from '@/pages/AdminReviewsPage'
 
 function ProtectedRoute({ children, roles }: { children: React.ReactNode; roles?: Role[] }) {
   const isAuth = useAuthStore((s) => s.isAuthenticated)
@@ -105,6 +106,42 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+        {/* Отдельное меню админа для замечаний/приёмки — те же компоненты,
+            что и у reviewer, они сами определяют "домашний" роут по роли
+            (см. isAdmin/basePath внутри), но смонтированы отдельно, чтобы
+            админ никогда не задевал roles={['reviewer']} ниже. */}
+        <Route
+          path="/admin/issues"
+          element={
+            <ProtectedRoute roles={['admin']}>
+              <IssuesPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/issues/:id"
+          element={
+            <ProtectedRoute roles={['admin']}>
+              <IssueFixPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/dashboard"
+          element={
+            <ProtectedRoute roles={['admin']}>
+              <DashboardPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/reviews"
+          element={
+            <ProtectedRoute roles={['admin']}>
+              <AdminReviewsPage />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/"
           element={
@@ -140,7 +177,7 @@ export default function App() {
         <Route
           path="/issues"
           element={
-            <ProtectedRoute roles={['reviewer', 'admin']}>
+            <ProtectedRoute roles={['reviewer']}>
               <IssuesPage />
             </ProtectedRoute>
           }
@@ -172,7 +209,7 @@ export default function App() {
         <Route
           path="/dashboard"
           element={
-            <ProtectedRoute roles={['reviewer', 'admin']}>
+            <ProtectedRoute roles={['reviewer']}>
               <DashboardPage />
             </ProtectedRoute>
           }
@@ -180,7 +217,7 @@ export default function App() {
         <Route
           path="/issues/:id"
           element={
-            <ProtectedRoute roles={['reviewer', 'admin']}>
+            <ProtectedRoute roles={['reviewer']}>
               <IssueFixPage />
             </ProtectedRoute>
           }

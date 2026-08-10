@@ -19,7 +19,7 @@
 """
 import asyncio
 import os
-from collections import defaultdict
+from collections import defaultdict, Counter
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import text
@@ -260,6 +260,10 @@ async def fetch_all(db: AsyncSession) -> dict:
         "LEFT JOIN users assignee ON assignee.id = iss.assigned_to "
         "ORDER BY iss.created_at DESC"
     ))).fetchall()
+    # Для диаграмм на листе "Замечания" — те же строки, но посчитанные, а
+    # не построчно (столбец пустых значений не годится диаграмме)
+    data["issues_by_criticality"] = Counter(CRITICALITY_RU.get(r.criticality, r.criticality) for r in issues)
+    data["issues_by_status"] = Counter(ISSUE_STATUS_RU.get(r.status, r.status) for r in issues)
     data["issue_rows"] = [
         (_fmt_dt(r.created_at), r.dist_name, r.court_name, r.title, r.description or "",
          CRITICALITY_RU.get(r.criticality, r.criticality), ISSUE_STATUS_RU.get(r.status, r.status),
@@ -329,11 +333,34 @@ def _sheet(wb, title, headers, rows, widths):
 def build_workbook(data: dict):
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill
+    from openpyxl.chart import BarChart, PieChart, Reference
+    from openpyxl.chart.label import DataLabelList
 
     RED = PatternFill("solid", fgColor="FFC7CE")
     YELLOW = PatternFill("solid", fgColor="FFEB9C")
     GREEN = PatternFill("solid", fgColor="C6EFCE")
     BOLD = Font(bold=True)
+
+    def _pie(ws, title, cats_ref, data_ref, anchor):
+        chart = PieChart()
+        chart.title = title
+        chart.height, chart.width = 7, 10
+        chart.add_data(data_ref, titles_from_data=False)
+        chart.set_categories(cats_ref)
+        chart.dataLabels = DataLabelList()
+        chart.dataLabels.showVal = True
+        chart.dataLabels.showPercent = True
+        ws.add_chart(chart, anchor)
+
+    def _bar(ws, title, cats_ref, data_ref, anchor, y_title=""):
+        chart = BarChart()
+        chart.type = "col"
+        chart.title = title
+        chart.y_axis.title = y_title
+        chart.height, chart.width = 9, 18
+        chart.add_data(data_ref, titles_from_data=True)
+        chart.set_categories(cats_ref)
+        ws.add_chart(chart, anchor)
 
     wb = Workbook()
 
@@ -399,6 +426,21 @@ def build_workbook(data: dict):
     for col, w in zip("ABCDEF", (55, 30, 20, 15, 15, 15)):
         ov.column_dimensions[col].width = w
 
+    # Вспомогательные данные для диаграмм — в стороне от читаемого текста
+    # (тот в колонках A-B), чтобы не мешать
+    ov["H1"] = "Обходы"
+    ov["H2"], ov["I2"] = "Завершено", data["total_insp_done"]
+    ov["H3"], ov["I3"] = "В процессе", data["total_insp"] - data["total_insp_done"]
+    ov["H5"] = "Замечания"
+    ov["H6"], ov["I6"] = "Открыто", data["total_iss"] - data["total_iss_closed"]
+    ov["H7"], ov["I7"] = "Закрыто", data["total_iss_closed"]
+    if data["total_insp"] > 0:
+        _pie(ov, "Обходы: завершено / в процессе",
+             Reference(ov, min_col=8, min_row=2, max_row=3), Reference(ov, min_col=9, min_row=2, max_row=3), "K2")
+    if data["total_iss"] > 0:
+        _pie(ov, "Замечания: открыто / закрыто",
+             Reference(ov, min_col=8, min_row=6, max_row=7), Reference(ov, min_col=9, min_row=6, max_row=7), "K16")
+
     # ── Регистрация ──
     reg_ws = wb.create_sheet("Регистрация")
     reg_ws.append(["Регистрация пользователей по районам"])
@@ -449,6 +491,12 @@ def build_workbook(data: dict):
     for col, w in zip("ABCD", (45, 18, 18, 15)):
         reg_ws.column_dimensions[col].width = w
 
+    if data["reg_stats"]:
+        n = len(data["reg_stats"])
+        _bar(reg_ws, "% регистрации по районам",
+             Reference(reg_ws, min_col=1, min_row=5, max_row=4 + n),
+             Reference(reg_ws, min_col=4, min_row=4, max_row=4 + n), "F5", y_title="%")
+
     # ── Сводка по районам (с % регистрации) ──
     reg_pct_by_name = {x["name"]: x["pct"] for x in data["reg_stats"]}
     sum_ws = wb.create_sheet("Сводка по районам")
@@ -479,15 +527,40 @@ def build_workbook(data: dict):
     for col, w in zip("ABCDEFGH", (24, 12, 10, 10, 12, 10, 14, 14)):
         sum_ws.column_dimensions[col].width = w
 
+    if data["work_stats"]:
+        n = len(data["work_stats"])
+        _bar(sum_ws, "Обходы по районам: всего / завершено",
+             Reference(sum_ws, min_col=1, min_row=2, max_row=1 + n),
+             Reference(sum_ws, min_col=3, max_col=4, min_row=1, max_row=1 + n), "J2")
+
     _sheet(wb, "Обходы",
         ["Дата", "Район", "Двор", "Тип площадки", "Инспектор", "Телефон", "Статус", "Начат", "Завершён", "Пунктов ОК", "Дефектов", "Фото", "Комментарий"],
         data["insp_rows"], [16, 20, 40, 20, 24, 16, 14, 16, 16, 12, 10, 7, 40])
     _sheet(wb, "Нарушения по чек-листу",
         ["Дата обхода", "Район", "Двор", "Тип площадки", "Категория", "Пункт чек-листа", "Комментарий инспектора", "Инспектор"],
         data["defect_rows"], [16, 20, 40, 20, 18, 50, 40, 24])
-    _sheet(wb, "Замечания",
+    iss_ws = _sheet(wb, "Замечания",
         ["Дата", "Район", "Двор", "Заголовок", "Описание", "Критичность", "Статус", "Автор", "Назначено", "Срок", "Устранено"],
         data["issue_rows"], [16, 20, 40, 30, 40, 12, 14, 24, 24, 16, 16])
+
+    # Диаграммы по критичности/статусу — данные для них в стороне от
+    # таблицы (та занимает колонки A-K)
+    if data["issues_by_criticality"]:
+        iss_ws["N1"] = "Критичность"
+        for i, (label, cnt) in enumerate(data["issues_by_criticality"].most_common(), start=2):
+            iss_ws.cell(i, 14, label)
+            iss_ws.cell(i, 15, cnt)
+        last = 1 + len(data["issues_by_criticality"])
+        _pie(iss_ws, "Замечания по критичности",
+             Reference(iss_ws, min_col=14, min_row=2, max_row=last), Reference(iss_ws, min_col=15, min_row=2, max_row=last), "P1")
+    if data["issues_by_status"]:
+        iss_ws["N17"] = "Статус"
+        for i, (label, cnt) in enumerate(data["issues_by_status"].most_common(), start=18):
+            iss_ws.cell(i, 14, label)
+            iss_ws.cell(i, 15, cnt)
+        last = 17 + len(data["issues_by_status"])
+        _pie(iss_ws, "Замечания по статусу",
+             Reference(iss_ws, min_col=14, min_row=18, max_row=last), Reference(iss_ws, min_col=15, min_row=18, max_row=last), "P17")
     _sheet(wb, "Просроченные замечания",
         ["Заголовок", "Район", "Двор", "Автор", "Создано", "Срок", "Описание"],
         data["overdue_rows"], [30, 20, 40, 24, 16, 16, 40])

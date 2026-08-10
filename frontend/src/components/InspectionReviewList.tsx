@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { ChevronRight, Check, CheckCircle2, AlertTriangle, Clock } from 'lucide-react'
+import { ChevronRight, Check, CheckCircle2, AlertTriangle, Clock, Eye } from 'lucide-react'
 import type { InspectionOut } from '@/types'
 
 const STATUS_LABELS: Record<string, string> = {
@@ -35,13 +35,19 @@ export default function InspectionReviewList({
         const isReviewed = !!insp.reviewed_by
         const isGreen = insp.status === 'completed' && (insp.issues_count ?? 0) === 0
 
+        // ?review=1 сразу открывает панель проверки на странице обхода — без
+        // этого было не очевидно, что не-"зелёные" обходы вообще можно
+        // проверить: у них нет кнопки "Принять", а панель проверки скрыта
+        // за отдельной иконкой в шапке, до которой ещё надо было додуматься.
+        const reviewPath = `/inspections/${insp.id}?review=1`
+
         return (
           <div
             key={insp.id}
             role="button"
             tabIndex={0}
-            onClick={() => navigate(`/inspections/${insp.id}`)}
-            onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/inspections/${insp.id}`) }}
+            onClick={() => navigate(reviewPath)}
+            onKeyDown={(e) => { if (e.key === 'Enter') navigate(reviewPath) }}
             className="card w-full text-left hover:border-primary-300 transition-colors cursor-pointer"
           >
             <div className="flex items-start gap-3">
@@ -87,15 +93,25 @@ export default function InspectionReviewList({
                     {insp.reviewed_at && `, ${new Date(insp.reviewed_at).toLocaleDateString('ru')}`}
                   </div>
                 )}
-                {isGreen && !isReviewed && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onAccept(insp.id) }}
-                    disabled={acceptPending}
-                    className="mt-2 btn-primary text-xs py-1.5 px-3 flex items-center gap-1 disabled:opacity-50"
-                  >
-                    <Check className="w-3.5 h-3.5" />
-                    Принять
-                  </button>
+                {!isReviewed && (
+                  isGreen ? (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onAccept(insp.id) }}
+                      disabled={acceptPending}
+                      className="mt-2 btn-primary text-xs py-1.5 px-3 flex items-center gap-1 disabled:opacity-50"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      Принять
+                    </button>
+                  ) : (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); navigate(reviewPath) }}
+                      className="mt-2 btn-outline text-xs py-1.5 px-3 flex items-center gap-1"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      Проверить
+                    </button>
+                  )
                 )}
               </div>
               <ChevronRight className="w-4 h-4 text-gray-300 shrink-0 mt-3" />

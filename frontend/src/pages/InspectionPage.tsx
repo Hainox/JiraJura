@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { inspectionsApi, checklistsApi, issuesApi, reportsApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
@@ -21,6 +21,7 @@ const STATUS_LABELS: Record<string, string> = {
 export default function InspectionPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const queryClient = useQueryClient()
   const inspectionId = id!
   const user = useAuthStore((s) => s.user)
@@ -44,7 +45,11 @@ export default function InspectionPage() {
 
   // Reviewer state
   const [reviewerComment, setReviewerComment] = useState('')
-  const [showReviewPanel, setShowReviewPanel] = useState(false)
+  // ?review=1 в ссылке (см. AdminReviewsPage/InspectionReviewList) сразу
+  // открывает панель проверки — иначе из списка "Приёмка обходов" было не
+  // очевидно, что любой обход (не только "зелёный") можно проверить, для
+  // этого нужно было ещё найти и нажать иконку-глаз в шапке.
+  const [showReviewPanel, setShowReviewPanel] = useState(searchParams.get('review') === '1')
   const [showCompleteConfirm, setShowCompleteConfirm] = useState(false)
 
   const { data: inspection, isLoading } = useQuery<InspectionOut>({
@@ -54,7 +59,11 @@ export default function InspectionPage() {
   })
 
   const isInspector = user?.id === inspection?.inspector?.id
-  const isReviewer = user?.role === 'reviewer' || user?.role === 'admin'
+  const isAdmin = user?.role === 'admin'
+  const isReviewer = user?.role === 'reviewer' || isAdmin
+  // Админ не должен ощущать себя "проверяющим" (см. тот же принцип в
+  // MapPage.tsx/App.tsx) — те же действия, но подпись роли другая.
+  const reviewPanelLabel = isAdmin ? 'администратора' : 'проверяющего'
   // !isInspector, не "isReviewer && !isInspector" — иначе любой ДРУГОЙ
   // инспектор (не владелец обхода и не проверяющий/админ) видел чек-лист
   // полностью редактируемым и мог реально создавать замечания на чужом
@@ -471,7 +480,7 @@ export default function InspectionPage() {
           <textarea
             className="input-field text-sm"
             rows={2}
-            placeholder="Комментарий проверяющего..."
+            placeholder={`Комментарий ${reviewPanelLabel}...`}
             value={reviewerComment}
             onChange={(e) => setReviewerComment(e.target.value)}
           />

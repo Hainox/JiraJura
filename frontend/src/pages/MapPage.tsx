@@ -378,9 +378,25 @@ export default function MapPage() {
 
       {/* Content */}
       <div className="flex-1 min-h-0">
-        {/* Админ без выбранного района — показываем плейсхолдер (кроме вкладки
-            "Проверка": список обходов там не зависит от выбора района) */}
-        {isAdmin && !districtFilter && viewMode !== 'review' ? (
+        {/* Инспектор без назначенного района — бэкенд молча отдаёт 0 площадок
+            (см. sites.py), внешне неотличимо от "в районе правда нет
+            площадок". Реальная причина жалоб вида "задания не отображаются" —
+            объясняем прямо, а не оставляем пустую карту без единого слова. */}
+        {user?.role === 'inspector' && !user?.district_id ? (
+          <div className="h-full flex items-center justify-center">
+            <div className="text-center max-w-sm px-4">
+              <div className="inline-flex items-center justify-center w-16 h-16 bg-amber-100 rounded-2xl mb-4">
+                <AlertCircle className="w-8 h-8 text-amber-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-700 mb-2">Район не назначен</h3>
+              <p className="text-sm text-gray-500">
+                Вашему аккаунту не назначен район, поэтому площадки не отображаются. Обратитесь к администратору, чтобы он указал ваш район.
+              </p>
+            </div>
+          </div>
+        ) : /* Админ без выбранного района — показываем плейсхолдер (кроме вкладки
+            "Проверка": список обходов там не зависит от выбора района) */
+        isAdmin && !districtFilter && viewMode !== 'review' ? (
           <div className="h-full flex items-center justify-center">
             <div className="text-center max-w-sm px-4">
               <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-2xl mb-4">

@@ -5,7 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import District, Courtyard, Site, User
+from app.models import District, Courtyard, Site, User, UserInvite
 from app.schemas import DistrictOut, DistrictAdminOut, DistrictUpdate, DistrictMergeRequest
 from app.services.auth import get_current_user
 from app.services.permissions import require_role
@@ -129,10 +129,23 @@ async def merge_district(
                 Courtyard.__table__.update().where(Courtyard.id == c.id).values(district_id=data.into_district_id)
             )
 
+    # users.district_id/user_invites.district_id тоже ссылаются на districts
+    # (без ON DELETE) — если хоть один инспектор/проверяющий или неиспользованное
+    # приглашение всё ещё числится за исходным районом, DELETE ниже упадёт
+    # IntegrityError и весь merge молча откатится. Именно так объединение
+    # реального задвоенного района могло не срабатывать раньше — переносим
+    # ссылки на целевой район вместо того чтобы просто удалить исходный.
+    await db.execute(User.__table__.update().where(User.district_id == district_id).values(district_id=data.into_district_id))
+    await db.execute(UserInvite.__table__.update().where(UserInvite.district_id == district_id).values(district_id=data.into_district_id))
+
     await db.execute(District.__table__.delete().where(District.id == district_id))
     await log_action(db, str(current_user.id), "district_merge", "district", district_id, {
         "into_district_id": str(data.into_district_id), "courtyards_moved": len(courtyards),
     })
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(409, "Не удалось объединить районы — на исходный район всё ещё что-то ссылается")
     await db.refresh(dst)
     return DistrictOut.model_validate(dst)

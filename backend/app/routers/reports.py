@@ -11,11 +11,11 @@ from sqlalchemy.orm import aliased
 
 from app.database import get_db
 from app.models import (
-    District, Courtyard, Site, Inspection, Issue, ChecklistAnswer, User,
+    District, Courtyard, Site, Inspection, Issue, ChecklistAnswer, ChecklistItem, User, UserInvite,
 )
 from app.schemas import ReportWeeklyOut, ReportMonthlyOut, DashboardDistrictRow, DashboardOut
 from app.services.permissions import require_role
-from app.services.timezone import msk_day_bounds_utc
+from app.services.timezone import MSK, msk_day_bounds_utc
 
 router = APIRouter()
 
@@ -319,6 +319,9 @@ async def export_xlsx(
     district_id для него принудительно замещается собственным районом.
     """
     from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+    from openpyxl.chart import BarChart, PieChart, Reference
+    from openpyxl.chart.label import DataLabelList
 
     if current_user.role == "reviewer" and current_user.district_id is not None:
         district_id = str(current_user.district_id)
@@ -331,6 +334,94 @@ async def export_xlsx(
         if dt_to is not None:
             q = q.where(column < dt_to)
         return q
+
+    # ── Регистрация (для листов "Обзор"/"Регистрация" — тот же расчёт, что
+    # в эталонном generate_summary_report.py, который раньше запускался
+    # только вручную на сервере; переносим сюда, чтобы админ/reviewer могли
+    # получить тот же отчёт кнопкой "Excel" в приложении, без SSH) ──
+    pending_q = select(UserInvite.district_id, UserInvite.full_name, UserInvite.role, UserInvite.created_at).where(UserInvite.used_at.is_(None))
+    if district_id:
+        pending_q = pending_q.where(UserInvite.district_id == district_id)
+    pending_q = pending_q.order_by(UserInvite.full_name, UserInvite.created_at.desc())
+    pending_rows = (await db.execute(pending_q)).all()
+
+    # Дедуп по ФИО в рамках каждой группы (район/админы/окружные) — один
+    # человек мог быть приглашён повторно под другим логином (опечатка).
+    def _dedup_by_name(rows):
+        seen, out = set(), []
+        for r in rows:
+            if r.full_name in seen:
+                continue
+            seen.add(r.full_name)
+            out.append(r)
+        return out
+
+    pending_by_district_raw: dict = {}
+    pending_admins_raw, pending_okrug_reviewers_raw = [], []
+    for r in pending_rows:
+        if r.role == "admin":
+            pending_admins_raw.append(r)
+        elif r.district_id is None:
+            pending_okrug_reviewers_raw.append(r)
+        else:
+            pending_by_district_raw.setdefault(r.district_id, []).append(r)
+    pending_admins = _dedup_by_name(pending_admins_raw)
+    pending_okrug_reviewers = _dedup_by_name(pending_okrug_reviewers_raw)
+    pending_by_district = {did: _dedup_by_name(rows) for did, rows in pending_by_district_raw.items()}
+
+    reg_districts_q = select(District).order_by(District.name)
+    if district_id:
+        reg_districts_q = reg_districts_q.where(District.id == district_id)
+    reg_districts = (await db.execute(reg_districts_q)).scalars().all()
+
+    reg_stats = []
+    for d in reg_districts:
+        registered = (await db.execute(
+            select(func.count()).select_from(User).where(User.district_id == d.id, User.is_active)
+        )).scalar_one()
+        pending = pending_by_district.get(d.id, [])
+        total = registered + len(pending)
+        pct = (registered / total) if total else 1.0
+        reg_stats.append({"name": d.name, "registered": registered, "pending": pending, "total": total, "pct": pct})
+    reg_stats.sort(key=lambda x: x["pct"])
+    total_reg = sum(x["registered"] for x in reg_stats)
+    total_all_invited = sum(x["total"] for x in reg_stats)
+    overall_reg_pct = (total_reg / total_all_invited) if total_all_invited else 1.0
+
+    # ── Топ категорий нарушений и лидеры дня — та же зона видимости
+    # (district_id), что и у остальных листов этой выгрузки ──
+    # cat_expr переиспользуется как единый объект и в SELECT, и в GROUP BY —
+    # если вместо этого написать func.coalesce(...) дважды, SQLAlchemy
+    # биндит каждое вхождение отдельным параметром, и Postgres не признаёт
+    # их одним и тем же выражением (GroupingError: must appear in GROUP BY).
+    cat_expr = func.coalesce(ChecklistItem.category, "Без категории").label("cat")
+    top_cat_q = (
+        select(cat_expr, func.count())
+        .select_from(ChecklistAnswer)
+        .join(ChecklistItem, ChecklistAnswer.checklist_item_id == ChecklistItem.id)
+        .where(ChecklistAnswer.result == "defect")
+    )
+    if district_id:
+        top_cat_q = (
+            top_cat_q.join(Inspection, ChecklistAnswer.inspection_id == Inspection.id)
+            .join(Site, Inspection.site_id == Site.id).join(Courtyard, Site.courtyard_id == Courtyard.id)
+            .where(Courtyard.district_id == district_id)
+        )
+    top_cat_q = top_cat_q.group_by(cat_expr).order_by(func.count().desc()).limit(5)
+    top_categories = (await db.execute(top_cat_q)).all()
+
+    odd_districts = [d.name for d in (await db.execute(select(District))).scalars().all() if ";" in d.name or "," in d.name]
+
+    today_msk = datetime.now(MSK).date()
+    leaders_q = (
+        select(User.id, User.full_name, func.count())
+        .select_from(Inspection).join(User, Inspection.inspector_id == User.id)
+        .where(func.date(func.timezone("Europe/Moscow", Inspection.created_at)) == today_msk)
+    )
+    if district_id:
+        leaders_q = leaders_q.join(Site, Inspection.site_id == Site.id).join(Courtyard, Site.courtyard_id == Courtyard.id).where(Courtyard.district_id == district_id)
+    leaders_q = leaders_q.group_by(User.id, User.full_name).order_by(func.count().desc()).limit(5)
+    leaders_today = (await db.execute(leaders_q)).all()
 
     # ── Обходы ──
     insp_q = (
@@ -454,7 +545,6 @@ async def export_xlsx(
     ]
 
     # ── Нарушения по чек-листу (детально) ──
-    from app.models import ChecklistItem
     defect_q = (
         select(
             ChecklistAnswer, ChecklistItem.question, ChecklistItem.category,
@@ -581,10 +671,174 @@ async def export_xlsx(
 
     # ── Сборка файла ──
     wb = Workbook()
-    wb.remove(wb.active)
 
-    # Первым листом — снимок "кто чем занят прямо сейчас", не история за
-    # период: это то, что проверяющему нужно открыть первым делом.
+    RED = PatternFill("solid", fgColor="FFC7CE")
+    YELLOW = PatternFill("solid", fgColor="FFEB9C")
+    GREEN = PatternFill("solid", fgColor="C6EFCE")
+
+    def _pie(ws, title, cats_ref, data_ref, anchor):
+        chart = PieChart()
+        chart.title = title
+        chart.height, chart.width = 7, 10
+        chart.add_data(data_ref, titles_from_data=False)
+        chart.set_categories(cats_ref)
+        chart.dataLabels = DataLabelList()
+        chart.dataLabels.showVal = True
+        chart.dataLabels.showPercent = True
+        ws.add_chart(chart, anchor)
+
+    def _bar(ws, title, cats_ref, data_ref, anchor, y_title=""):
+        chart = BarChart()
+        chart.type = "col"
+        chart.title = title
+        chart.y_axis.title = y_title
+        chart.height, chart.width = 9, 18
+        chart.add_data(data_ref, titles_from_data=True)
+        chart.set_categories(cats_ref)
+        ws.add_chart(chart, anchor)
+
+    # ── Обзор — тот же лист, что в generate_summary_report.py (раньше
+    # доступен только через ручной запуск скрипта на сервере) ──
+    now_str = datetime.now(MSK).strftime("%d.%m.%Y %H:%M")
+    total_sites_all = sum(x[1] for x in summary_data) if summary_data else 0
+    total_insp_all = len(insp_data)
+    total_insp_done_all = sum(1 for r in insp_data if r[6] != "В процессе")
+    total_iss_all = len(iss_data)
+    total_iss_closed_all = sum(1 for r in iss_data if r[6] == "Закрыто")
+
+    ov = wb.active
+    ov.title = "Обзор"
+
+    def _row(*vals):
+        ov.append(list(vals))
+
+    _row("Сводный отчёт по проекту «Журнал обхода площадок» — САО г. Москвы")
+    ov["A1"].font = Font(bold=True, size=14)
+    _row(f"Снимок на {now_str} (МСК)")
+    _row()
+    _row("Ключевые цифры")
+    ov[f"A{ov.max_row}"].font = Font(bold=True)
+    _row("Регистрация", f"{total_reg} / {total_all_invited} ({overall_reg_pct:.0%})")
+    _row("Площадок в системе", total_sites_all)
+    _row("Обходов всего / завершено", f"{total_insp_all} / {total_insp_done_all} (в процессе: {total_insp_all - total_insp_done_all})")
+    _row("Нарушений создано / открыто сейчас", f"{total_iss_all} / {total_iss_all - total_iss_closed_all} (закрыто: {total_iss_closed_all})")
+    _row()
+    _row("Требуют внимания в первую очередь")
+    ov[f"A{ov.max_row}"].font = Font(bold=True)
+
+    low_reg = [x for x in reg_stats if x["pct"] < 0.5 and x["total"] > 0]
+    if low_reg:
+        names = ", ".join(f"{x['name']} ({x['pct']:.0%})" for x in low_reg)
+        _row(f"• Регистрация < 50%: {names} — стоит выяснить, не мешает ли что-то войти в систему.")
+
+    not_registered_admins = pending_admins + pending_okrug_reviewers
+    if not_registered_admins:
+        names = ", ".join(r.full_name for r in not_registered_admins)
+        _row(f"• Не зарегистрированы админы/окружные проверяющие ({len(not_registered_admins)}): {names} — у них административные права, стоит дожать в первую очередь.")
+
+    if top_categories:
+        cats = ", ".join(f"{cat} ({cnt})" for cat, cnt in top_categories)
+        _row(f"• Систематические типы нарушений: {cats}.")
+
+    if odd_districts:
+        _row(f"• Похоже на опечатку/задвоение района при заведении в систему: {', '.join(odd_districts)} — не отдельный реальный район.")
+
+    _row()
+    _row("Лидеры дня по личной активности (обходов начато сегодня)")
+    ov[f"A{ov.max_row}"].font = Font(bold=True)
+    for _id, full_name, cnt in leaders_today:
+        _row(f"   {full_name}", cnt)
+
+    _row()
+    _row("Состав отчёта")
+    ov[f"A{ov.max_row}"].font = Font(bold=True)
+    for name, desc in [
+        ("Регистрация", "Кто зарегистрирован/нет по районам, поимённо, худшие районы сверху"),
+        ("Задания", "Снимок сейчас: кто отвечает за площадку и когда там были в последний раз"),
+        ("Сводка по районам", "Площадки/обходы/нарушения за период, в одной таблице"),
+        ("Обходы", "Детальный лог всех обходов: инспектор, площадка, статус, ОК/дефектов/фото"),
+        ("Нарушения по чек-листу", "Разбивка нарушений по категориям и конкретным пунктам чек-листа"),
+        ("Замечания", "Все зафиксированные замечания с критичностью и статусом"),
+        ("Просроченные замечания", "Замечания с истёкшим сроком устранения"),
+        ("Динамика", "Активность каждого сотрудника по дням (число отмеченных пунктов чек-листа)"),
+    ]:
+        _row(name, desc)
+
+    for col, w in zip("ABCDEF", (55, 30, 20, 15, 15, 15)):
+        ov.column_dimensions[col].width = w
+
+    ov["H1"] = "Обходы"
+    ov["H2"], ov["I2"] = "Завершено", total_insp_done_all
+    ov["H3"], ov["I3"] = "В процессе", total_insp_all - total_insp_done_all
+    ov["H5"] = "Замечания"
+    ov["H6"], ov["I6"] = "Открыто", total_iss_all - total_iss_closed_all
+    ov["H7"], ov["I7"] = "Закрыто", total_iss_closed_all
+    if total_insp_all > 0:
+        _pie(ov, "Обходы: завершено / в процессе",
+             Reference(ov, min_col=8, min_row=2, max_row=3), Reference(ov, min_col=9, min_row=2, max_row=3), "K2")
+    if total_iss_all > 0:
+        _pie(ov, "Замечания: открыто / закрыто",
+             Reference(ov, min_col=8, min_row=6, max_row=7), Reference(ov, min_col=9, min_row=6, max_row=7), "K16")
+
+    # ── Регистрация ──
+    reg_ws = wb.create_sheet("Регистрация")
+    reg_ws.append(["Регистрация пользователей по районам"])
+    reg_ws.append([f"Снимок на {now_str} — user_invites + users, дедуп по ФИО"])
+    reg_ws.append([])
+    reg_ws.append(["Район", "Зарегистрировано", "Всего приглашено", "% регистрации"])
+    for cell in reg_ws[reg_ws.max_row]:
+        cell.font = Font(bold=True)
+    for x in reg_stats:
+        reg_ws.append([x["name"], x["registered"], x["total"], x["pct"]])
+        fill = RED if x["pct"] < 0.5 else (YELLOW if x["pct"] < 0.8 else GREEN)
+        reg_ws.cell(reg_ws.max_row, 4).fill = fill
+        reg_ws.cell(reg_ws.max_row, 4).number_format = "0%"
+    reg_ws.append(["ИТОГО", total_reg, total_all_invited, overall_reg_pct])
+    for cell in reg_ws[reg_ws.max_row]:
+        cell.font = Font(bold=True)
+    reg_ws.cell(reg_ws.max_row, 4).number_format = "0%"
+
+    reg_ws.append([])
+    reg_ws.append(["Не зарегистрированы поимённо (по районам, худшие сверху)"])
+    reg_ws[f"A{reg_ws.max_row}"].font = Font(bold=True)
+    for x in reg_stats:
+        if not x["pending"]:
+            continue
+        reg_ws.append([x["name"]])
+        reg_ws[f"A{reg_ws.max_row}"].font = Font(bold=True)
+        for r in x["pending"]:
+            reg_ws.append([f"   {r.full_name}"])
+
+    if not district_id and pending_okrug_reviewers:
+        reg_ws.append([])
+        reg_ws.append(["Проверяющие без района (весь округ) — не зарегистрированы"])
+        reg_ws[f"A{reg_ws.max_row}"].font = Font(bold=True)
+        for r in pending_okrug_reviewers:
+            reg_ws.append([f"   {r.full_name}"])
+
+    if not district_id and pending_admins:
+        reg_ws.append([])
+        reg_ws.append(["Админы — не зарегистрированы"])
+        reg_ws[f"A{reg_ws.max_row}"].font = Font(bold=True)
+        for r in pending_admins:
+            reg_ws.append([f"   {r.full_name}"])
+
+    if odd_districts:
+        reg_ws.append([])
+        reg_ws.append([f"* {', '.join(odd_districts)} — вероятная опечатка/задвоение при заведении района, не отдельный реальный район."])
+    reg_ws.append(["Цвет строки: красный < 50% регистрации, жёлтый 50–80%, зелёный ≥ 80%."])
+    for col, w in zip("ABCD", (45, 18, 18, 15)):
+        reg_ws.column_dimensions[col].width = w
+
+    if reg_stats:
+        n = len(reg_stats)
+        _bar(reg_ws, "% регистрации по районам",
+             Reference(reg_ws, min_col=1, min_row=5, max_row=4 + n),
+             Reference(reg_ws, min_col=4, min_row=4, max_row=4 + n), "F5", y_title="%")
+
+    # Первым листом после "Обзор"/"Регистрация" — снимок "кто чем занят
+    # прямо сейчас", не история за период: это то, что проверяющему нужно
+    # открыть первым делом.
     _sheet(wb, "Задания",
         ["Район", "Двор", "Тип площадки", "Назначенный инспектор", "Телефон", "Последний обход", "Статус последнего обхода"],
         assignment_data, [24, 40, 20, 26, 16, 18, 22])

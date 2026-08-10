@@ -3,9 +3,12 @@ import type {
   LoginRequest,
   LoginResponse,
   DistrictOut,
+  DistrictAdminOut,
+  CourtyardAdminOut,
   SiteOut,
   SiteListOut,
   ChecklistTemplateOut,
+  ChecklistItemOut,
   InspectionOut,
   InspectionListOut,
   IssueOut,
@@ -94,16 +97,42 @@ export const authApi = {
 // ── Districts ──
 export const districtsApi = {
   list: () => api.get<DistrictOut[]>('/districts/').then((r) => r.data),
+
+  listAdmin: () => api.get<DistrictAdminOut[]>('/districts/admin').then((r) => r.data),
+
+  rename: (id: string, name: string) =>
+    api.patch<DistrictOut>(`/districts/${id}`, { name }).then((r) => r.data),
+
+  // Переносит все дворы/площадки из id в intoDistrictId и удаляет
+  // опустевший id — инструмент починки задвоенных районов вида
+  // "Бескудниковский;Восточное Дегунино" через UI, не через psql.
+  merge: (id: string, intoDistrictId: string) =>
+    api.post<DistrictOut>(`/districts/${id}/merge`, { into_district_id: intoDistrictId }).then((r) => r.data),
+}
+
+// ── Дворы (админ) ──
+export const courtyardsApi = {
+  list: (params?: { district_id?: string; search?: string }) =>
+    api.get<CourtyardAdminOut[]>('/courtyards/', { params }).then((r) => r.data),
+
+  update: (id: string, data: { name?: string; district_id?: string }) =>
+    api.patch<CourtyardAdminOut>(`/courtyards/${id}`, data).then((r) => r.data),
 }
 
 // ── Sites ──
 export const sitesApi = {
   // параметр фильтра по типу в API называется `type` и принимает значение
   // enum'а site_type как есть: «Детская площадка» / «Спортивная площадка»
-  list: (params?: { district_id?: string; type?: string; page_size?: number; assigned_to_me?: boolean }) =>
+  list: (params?: {
+    district_id?: string; courtyard_id?: string; type?: string; page_size?: number
+    assigned_to_me?: boolean; include_inactive?: boolean
+  }) =>
     api.get<SiteListOut>('/sites/', { params }).then((r) => r.data),
 
   get: (id: string) => api.get<SiteOut>(`/sites/${id}`).then((r) => r.data),
+
+  update: (id: string, data: { type?: string; area_m2?: number; cleaning_type?: string; is_active?: boolean; courtyard_id?: string }) =>
+    api.patch<SiteOut>(`/sites/${id}`, data).then((r) => r.data),
 
   // inspector_id: null снимает назначение — явно, не "не менять" (см.
   // комментарий у SiteAssignUpdate в backend/app/schemas.py)
@@ -115,6 +144,20 @@ export const sitesApi = {
 export const checklistsApi = {
   template: (params?: { site_type?: string }) =>
     api.get<ChecklistTemplateOut[]>('/sites/templates/checklist', { params }).then((r) => r.data),
+
+  // Как template(), но включает отключённые (is_active=false) пункты —
+  // только для админ-панели, чтобы их можно было снова включить.
+  listAdminTemplates: () =>
+    api.get<ChecklistTemplateOut[]>('/checklists/templates').then((r) => r.data),
+
+  createItem: (data: { template_id: string; category?: string; question: string; sort_order?: number; is_critical?: boolean; requires_photo?: boolean }) =>
+    api.post<ChecklistItemOut>('/checklists/items', data).then((r) => r.data),
+
+  updateItem: (id: string, data: { category?: string; question?: string; sort_order?: number; is_critical?: boolean; requires_photo?: boolean; is_active?: boolean }) =>
+    api.patch<ChecklistItemOut>(`/checklists/items/${id}`, data).then((r) => r.data),
+
+  deleteItem: (id: string) =>
+    api.delete<ChecklistItemOut>(`/checklists/items/${id}`).then((r) => r.data),
 }
 
 // ── Inspections ──

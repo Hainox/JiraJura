@@ -138,6 +138,7 @@ CREATE TABLE checklist_items (
     sort_order      INT DEFAULT 0,
     is_critical     BOOLEAN DEFAULT FALSE,               -- критический пункт?
     requires_photo  BOOLEAN DEFAULT FALSE,               -- требуется ли фото
+    is_active       BOOLEAN NOT NULL DEFAULT TRUE,        -- FALSE = скрытый админом пункт, из новых обходов не показывается
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

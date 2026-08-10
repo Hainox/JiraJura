@@ -197,6 +197,10 @@ class ChecklistItem(Base):
     sort_order = Column(Integer, default=0)
     is_critical = Column(Boolean, default=False)
     requires_photo = Column(Boolean, default=False)
+    # FALSE — админ "удалил" пункт через админ-панель. Не хард-delete: у
+    # старых обходов уже есть checklist_answers, ссылающиеся на этот пункт
+    # (FK без ondelete=CASCADE) — удаление сломало бы их историю.
+    is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), default=_utcnow)
 
     template = relationship("ChecklistTemplate", back_populates="items")

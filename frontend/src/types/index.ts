@@ -79,6 +79,19 @@ export interface DistrictOut {
   name: string
 }
 
+export interface DistrictAdminOut extends DistrictOut {
+  courtyards_count: number
+  sites_count: number
+}
+
+export interface CourtyardAdminOut {
+  id: string
+  name: string
+  district_id: string
+  district_name: string
+  sites_count: number
+}
+
 // ── Sites ──
 export interface SiteOut {
   id: string
@@ -105,6 +118,7 @@ export interface ChecklistItemOut {
   sort_order: number
   is_critical: boolean
   requires_photo: boolean
+  is_active: boolean
 }
 
 export interface ChecklistTemplateOut {

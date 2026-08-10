@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { MapContainer, TileLayer, Marker, Popup, useMap, AttributionControl } from 'react-leaflet'
+import MarkerClusterGroup from 'react-leaflet-cluster'
 import L from 'leaflet'
 import { sitesApi, districtsApi, reportsApi, inspectionsApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
@@ -9,6 +10,8 @@ import type { SiteOut, DistrictOut, InspectionOut } from '@/types'
 import { List, Map as MapIcon, LogOut, ChevronRight, Users, Download, ClipboardCheck, Clock, CheckCircle2, AlertTriangle, AlertCircle, UserCircle, BarChart3, Check, History } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
 import 'leaflet/dist/leaflet.css'
+import 'leaflet.markercluster/dist/MarkerCluster.css'
+import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
 
 const CHILD_TYPE = 'Детская площадка'
 const SPORT_TYPE = 'Спортивная площадка'
@@ -464,29 +467,33 @@ export default function MapPage() {
               maxZoom={19}
             />
             <FitBounds data={sites} />
-            {sites.filter((s) => !myInspOnly || !siteStatusMap[s.id] || siteStatusMap[s.id] !== 'completed').map((s) => {
-              const status = (user?.role === 'inspector' || isReviewerLike) ? siteStatusMap[s.id] : null
-              const icon = s.type === CHILD_TYPE ? childIcon(status) : sportIcon(status)
-              return <Marker key={s.id} position={[s.lat ?? 55.829, s.lon ?? 37.532]} icon={icon}>
-                <Popup>
-                  <div className="min-w-[180px]">
-                    <div className="font-semibold text-sm">{s.courtyard?.name ?? 'Площадка'}</div>
-                    <div className="text-xs text-gray-500 mt-0.5">{s.district?.name}</div>
-                    <div className="text-xs text-gray-400 mt-0.5">
-                      {s.type === CHILD_TYPE ? 'Детская' : 'Спортивная'} • {s.area_m2} м²
-                    </div>
-                    {isReviewerLike && (
+            {/* Кластеризация — при 3800+ площадках плоский список меток
+                делал карту нечитаемой и тяжёлой при отдалении. */}
+            <MarkerClusterGroup chunkedLoading maxClusterRadius={60} spiderfyOnMaxZoom>
+              {sites.filter((s) => !myInspOnly || !siteStatusMap[s.id] || siteStatusMap[s.id] !== 'completed').map((s) => {
+                const status = (user?.role === 'inspector' || isReviewerLike) ? siteStatusMap[s.id] : null
+                const icon = s.type === CHILD_TYPE ? childIcon(status) : sportIcon(status)
+                return <Marker key={s.id} position={[s.lat ?? 55.829, s.lon ?? 37.532]} icon={icon}>
+                  <Popup>
+                    <div className="min-w-[180px]">
+                      <div className="font-semibold text-sm">{s.courtyard?.name ?? 'Площадка'}</div>
+                      <div className="text-xs text-gray-500 mt-0.5">{s.district?.name}</div>
                       <div className="text-xs text-gray-400 mt-0.5">
-                        {s.assigned_inspector ? `Назначена: ${s.assigned_inspector.full_name}` : 'Не назначена'}
+                        {s.type === CHILD_TYPE ? 'Детская' : 'Спортивная'} • {s.area_m2} м²
                       </div>
-                    )}
-                    <button onClick={() => navigate(`/sites/${s.id}`)} className="mt-2 text-xs btn-primary py-1 px-3 w-full flex items-center justify-center gap-1">
-                      Открыть <ChevronRight className="w-3 h-3" />
-                    </button>
-                  </div>
-                </Popup>
-              </Marker>
-            })}
+                      {isReviewerLike && (
+                        <div className="text-xs text-gray-400 mt-0.5">
+                          {s.assigned_inspector ? `Назначена: ${s.assigned_inspector.full_name}` : 'Не назначена'}
+                        </div>
+                      )}
+                      <button onClick={() => navigate(`/sites/${s.id}`)} className="mt-2 text-xs btn-primary py-1 px-3 w-full flex items-center justify-center gap-1">
+                        Открыть <ChevronRight className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </Popup>
+                </Marker>
+              })}
+            </MarkerClusterGroup>
           </MapContainer>
         ) : (
           <div className="overflow-y-auto h-full p-3 space-y-2">

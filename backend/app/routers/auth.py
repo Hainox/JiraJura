@@ -12,7 +12,7 @@ from app.models import User, UserInvite
 from app.schemas import (
     LoginRequest, TokenResponse, UserOut, UserAdminOut, UserRoleUpdate, SelfUpdateRequest,
     PasswordResetOut, ChangePasswordRequest,
-    UserInviteCreate, UserInviteCreated, UserInvitePreview, InviteCompleteRequest,
+    UserInviteCreate, UserInviteCreated, UserInvitePending, UserInvitePreview, InviteCompleteRequest,
 )
 from app.services.auth import (
     verify_password, hash_password, create_access_token, get_current_user,
@@ -170,6 +170,26 @@ async def _get_valid_invite(token: str, db: AsyncSession) -> UserInvite:
     return invite
 
 
+@router.get("/invites/pending", response_model=list[UserInvitePending])
+async def list_pending_invites(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    """Незавершённые приглашения (не использованы, срок ещё не истёк) —
+    для админки и для bulk_invite.py, чтобы не плодить второе приглашение
+    под другим логином тому, кому уже отправляли (см. заведённые вручную
+    ChotchaevRB/ChotchaevRB1 и т.п. дубли)."""
+    rows = (await db.execute(
+        select(UserInvite).where(
+            UserInvite.used_at.is_(None),
+            UserInvite.expires_at >= datetime.now(timezone.utc),
+        ).order_by(UserInvite.created_at.desc())
+    )).scalars().all()
+    return [UserInvitePending.model_validate(i) for i in rows]
+
+
+# NB: должен идти ПОСЛЕ /invites/pending — иначе "pending" попал бы сюда
+# как значение {token} (FastAPI матчит по порядку регистрации роутов).
 @router.get("/invites/{token}", response_model=UserInvitePreview)
 async def preview_invite(token: str, db: AsyncSession = Depends(get_db)):
     invite = await _get_valid_invite(token, db)

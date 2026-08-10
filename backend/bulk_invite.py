@@ -167,6 +167,21 @@ def main():
         sys.exit(1)
     district_by_name = {d["name"].strip(): d["id"] for d in districts}
 
+    # Уже отправленные, ещё не завершённые приглашения — чтобы при повторном
+    # запуске (например, с исправленным логином в исходнике) не создавать
+    # ВТОРОЕ приглашение тому же человеку под другим логином вместо того,
+    # чтобы понять "ему уже отправляли, проверьте вручную". Именно так
+    # раньше набегали дубли вида ChotchaevRB/ChotchaevRB1 на один и тот же
+    # человек — сервер видел разные логины и не мог сам их сопоставить.
+    status, pending = api_call(args.base_url, "GET", "/auth/invites/pending", token=token)
+    if status != 200:
+        print(f"ОШИБКА получения списка приглашений: HTTP {status} {pending}", file=sys.stderr)
+        sys.exit(1)
+    pending_by_name = {
+        (inv["district_id"], inv["full_name"].strip().lower())
+        for inv in pending
+    }
+
     unknown_districts = sorted({r["district"] for r in rosters
                                  if r["district"] not in district_by_name})
     if unknown_districts:
@@ -181,6 +196,8 @@ def main():
             reason = row_status.get(id(person))
             if reason is None and dist_id is None:
                 reason = "район не найден в БД"
+            if reason is None and person["fio"] and (dist_id, person["fio"].strip().lower()) in pending_by_name:
+                reason = "уже есть неиспользованное приглашение под другим логином — проверьте вручную"
             if reason:
                 rows_out.append([r["district"], person["fio"], person["login"],
                                   person["role_ru"], person["phone"],

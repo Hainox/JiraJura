@@ -89,6 +89,21 @@ class UserInviteCreated(BaseModel):
     expires_at: datetime
 
 
+class UserInvitePending(BaseModel):
+    """Ещё не завершённое приглашение — для списка в админке и для
+    bulk_invite.py (проверка "этому человеку уже отправляли" перед
+    созданием нового приглашения под другим логином)."""
+    id: UUID
+    login: str
+    full_name: str
+    role: str
+    district_id: Optional[UUID] = None
+    created_at: datetime
+    expires_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class UserInvitePreview(BaseModel):
     """То, что видит приглашённый на странице регистрации по токену."""
     full_name: str

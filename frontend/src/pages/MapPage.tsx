@@ -8,8 +8,9 @@ import { sitesApi, districtsApi, reportsApi, inspectionsApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
 import { useMapViewStore } from '@/stores/mapView'
 import type { SiteOut, DistrictOut, InspectionOut } from '@/types'
-import { List, Map as MapIcon, LogOut, ChevronRight, Users, Download, ClipboardCheck, Clock, CheckCircle2, AlertTriangle, AlertCircle, UserCircle, BarChart3, Check, History } from 'lucide-react'
+import { List, Map as MapIcon, LogOut, ChevronRight, Users, Download, ClipboardCheck, AlertCircle, UserCircle, BarChart3, History } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
+import InspectionReviewList from '@/components/InspectionReviewList'
 import 'leaflet/dist/leaflet.css'
 import 'leaflet.markercluster/dist/MarkerCluster.css'
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
@@ -34,18 +35,6 @@ const sportIcon = (status?: string | null) => {
     html: `<div style="background:${base};color:white;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;box-shadow:0 2px 6px rgba(0,0,0,.3);border:2px solid white">${letter}</div>`,
     iconSize: [26, 26], iconAnchor: [13, 13],
   })
-}
-
-const STATUS_LABELS: Record<string, string> = {
-  planned: 'Запланирован', in_progress: 'В процессе', completed: 'Завершён',
-  issues_found: 'Есть нарушения', critical: 'Критический',
-}
-const STATUS_COLORS: Record<string, string> = {
-  in_progress: 'bg-blue-100 text-blue-800',
-  completed: 'bg-green-100 text-green-800',
-  issues_found: 'bg-orange-100 text-orange-800',
-  critical: 'bg-red-100 text-red-800',
-  planned: 'bg-gray-100 text-gray-600',
 }
 
 function FitBounds({ data }: { data: SiteOut[] | undefined }) {
@@ -100,6 +89,10 @@ export default function MapPage() {
 
   const isAdmin = user?.role === 'admin'
   const isReviewerLike = user?.role === 'reviewer' || isAdmin
+  // Приёмка обходов у админа переехала в отдельный /admin/reviews — админ
+  // больше не должен ощущать себя "проверяющим" на этой странице, вкладка
+  // "Проверка" здесь остаётся только для роли reviewer.
+  const showReviewTab = user?.role === 'reviewer'
 
   const { data: districts } = useQuery<DistrictOut[]>({
     queryKey: ['districts'],
@@ -132,7 +125,7 @@ export default function MapPage() {
   const { data: inspectionsData } = useQuery<{ total: number; items: InspectionOut[] }>({
     queryKey: ['inspections-review', effectiveDistrictFilter],
     queryFn: () => inspectionsApi.list({ district_id: effectiveDistrictFilter, page_size: 200 }),
-    enabled: viewMode === 'review' && isReviewerLike,
+    enabled: viewMode === 'review' && showReviewTab,
   })
 
   const sites = sitesData?.items ?? []
@@ -217,7 +210,10 @@ export default function MapPage() {
               <History className="w-5 h-5" />
             </button>
           )}
-          {user?.role !== 'inspector' && (
+          {/* Админ пользуется своими /admin/dashboard и /admin/issues через
+              иконку "Админ-панель" ниже — не должен попадать на reviewer-
+              роуты /dashboard и /issues (roles={['reviewer']} в App.tsx). */}
+          {user?.role === 'reviewer' && (
             <>
               <button onClick={() => navigate('/dashboard')} className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="Дашборд">
                 <BarChart3 className="w-5 h-5" />
@@ -339,7 +335,7 @@ export default function MapPage() {
         >
           <List className="w-4 h-4" /> Список
         </button>
-        {isReviewerLike && (
+        {showReviewTab && (
           <button
             onClick={() => setViewMode('review')}
             className={`flex-1 py-1.5 text-sm font-medium rounded-lg flex items-center justify-center gap-1.5 transition-colors ${
@@ -355,7 +351,7 @@ export default function MapPage() {
       </div>
 
       {/* Фильтр статусов для режима проверки */}
-      {viewMode === 'review' && isReviewerLike && (
+      {viewMode === 'review' && showReviewTab && (
         <div className="bg-white border-b px-4 py-2 shrink-0 flex gap-2 overflow-x-auto">
           {[
             { key: 'all', label: `Все (${allInspections.length})` },
@@ -402,89 +398,13 @@ export default function MapPage() {
               </button>
             </div>
           </div>
-        ) : viewMode === 'review' && isReviewerLike ? (
-          <div className="overflow-y-auto h-full p-3 space-y-2">
-            {filteredInspections.map((insp) => {
-              const okCount = insp.answers?.filter((a) => a.result === 'ok').length ?? 0
-              const defectCount = insp.answers?.filter((a) => a.result === 'defect').length ?? 0
-              const total = insp.answers?.length ?? 0
-              const isReviewed = !!insp.reviewed_by
-              const isGreen = insp.status === 'completed' && (insp.issues_count ?? 0) === 0
-
-              return (
-                <div
-                  key={insp.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => navigate(`/inspections/${insp.id}`)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/inspections/${insp.id}`) }}
-                  className="card w-full text-left hover:border-primary-300 transition-colors cursor-pointer"
-                >
-                  <div className="flex items-start gap-3">
-                    <div className={`shrink-0 mt-0.5 ${
-                      insp.status === 'critical' ? 'text-red-500' :
-                      insp.status === 'issues_found' ? 'text-orange-500' :
-                      insp.status === 'completed' ? 'text-green-500' : 'text-gray-400'
-                    }`}>
-                      {insp.status === 'completed' ? <CheckCircle2 className="w-5 h-5" /> :
-                       insp.status === 'critical' ? <AlertTriangle className="w-5 h-5" /> :
-                       <Clock className="w-5 h-5" />}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-semibold text-sm truncate">
-                          {insp.site?.courtyard?.name ?? 'Площадка'}
-                        </span>
-                        <span className={`badge text-xs ${STATUS_COLORS[insp.status] ?? 'bg-gray-100'}`}>
-                          {STATUS_LABELS[insp.status] ?? insp.status}
-                        </span>
-                        {isReviewed && (
-                          <span className="badge badge-ok text-xs">✓ Проверен</span>
-                        )}
-                      </div>
-                      <div className="text-xs text-gray-500 mt-0.5">
-                        {insp.site?.district?.name} • {insp.inspector?.full_name}
-                      </div>
-                      <div className="text-xs text-gray-400 mt-0.5">
-                        {new Date(insp.created_at).toLocaleDateString('ru')} — {new Date(insp.created_at).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })}
-                      </div>
-                      {total > 0 && (
-                        <div className="flex gap-3 mt-1.5 text-xs">
-                          <span className="text-green-600">✓ {okCount} ОК</span>
-                          {defectCount > 0 && <span className="text-red-600">✕ {defectCount} наруш.</span>}
-                          <span className="text-gray-400">{total - okCount - defectCount} не пров.</span>
-                          {insp.photos_count > 0 && <span className="text-gray-400">📷 {insp.photos_count}</span>}
-                          {insp.issues_count > 0 && <span className="text-orange-600">⚠ {insp.issues_count} замечаний</span>}
-                        </div>
-                      )}
-                      {insp.reviewed_by && (
-                        <div className="text-xs text-amber-600 mt-1">
-                          Проверил: {insp.reviewed_by.full_name}
-                          {insp.reviewed_at && `, ${new Date(insp.reviewed_at).toLocaleDateString('ru')}`}
-                        </div>
-                      )}
-                      {isGreen && !isReviewed && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); acceptInspectionMutation.mutate(insp.id) }}
-                          disabled={acceptInspectionMutation.isPending}
-                          className="mt-2 btn-primary text-xs py-1.5 px-3 flex items-center gap-1 disabled:opacity-50"
-                        >
-                          <Check className="w-3.5 h-3.5" />
-                          Принять
-                        </button>
-                      )}
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-gray-300 shrink-0 mt-3" />
-                  </div>
-                </div>
-              )
-            })}
-            {filteredInspections.length === 0 && (
-              <div className="text-center text-gray-400 py-12">
-                {reviewStatusFilter !== 'all' ? 'Нет обходов с этим статусом' : 'Нет обходов для проверки'}
-              </div>
-            )}
-          </div>
+        ) : viewMode === 'review' && showReviewTab ? (
+          <InspectionReviewList
+            inspections={filteredInspections}
+            emptyLabel={reviewStatusFilter !== 'all' ? 'Нет обходов с этим статусом' : 'Нет обходов для проверки'}
+            onAccept={(id) => acceptInspectionMutation.mutate(id)}
+            acceptPending={acceptInspectionMutation.isPending}
+          />
         ) : viewMode === 'map' ? (
           <MapContainer center={center} zoom={12} className="h-full w-full" attributionControl={false}>
             <AttributionControl prefix={false} />

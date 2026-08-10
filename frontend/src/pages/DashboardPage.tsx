@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { reportsApi, districtsApi } from '@/lib/api'
+import { useAuthStore } from '@/stores/auth'
 import type { DashboardOut, DistrictOut } from '@/types'
 import {
   ArrowLeft, RefreshCw, FileSpreadsheet, Building, ClipboardCheck,
@@ -11,6 +12,10 @@ import { notify as toast } from '@/lib/toast'
 
 export default function DashboardPage() {
   const navigate = useNavigate()
+  // Смонтирована на /dashboard (reviewer) и /admin/dashboard (admin) —
+  // см. тот же паттерн в IssuesPage.tsx.
+  const isAdmin = useAuthStore((s) => s.user?.role === 'admin')
+  const backTo = isAdmin ? '/admin' : '/'
 
   const today = new Date().toISOString().slice(0, 10)
   const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10)
@@ -50,7 +55,7 @@ export default function DashboardPage() {
     <div className="h-full flex flex-col bg-gray-50">
       {/* Header */}
       <div className="bg-primary-800 text-white px-4 py-3 flex items-center gap-3 shrink-0">
-        <button onClick={() => navigate('/')} className="p-1.5 rounded-lg hover:bg-primary-700">
+        <button onClick={() => navigate(backTo)} className="p-1.5 rounded-lg hover:bg-primary-700">
           <ArrowLeft className="w-5 h-5" />
         </button>
         <div className="flex-1">

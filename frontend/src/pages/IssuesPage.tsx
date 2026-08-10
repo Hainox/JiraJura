@@ -48,6 +48,10 @@ export default function IssuesPage() {
   const queryClient = useQueryClient()
   const user = useAuthStore((s) => s.user)
   const isAdmin = user?.role === 'admin'
+  // Эта страница смонтирована на двух роутах: /issues (reviewer) и
+  // /admin/issues (admin) — префикс переключает "назад" и переходы на
+  // карточку замечания так, чтобы админ никогда не попадал в reviewer-роут.
+  const basePath = isAdmin ? '/admin' : ''
 
   // Фильтры/страница — в сторе (useIssuesViewStore), а не в useState: см.
   // тот же паттерн и обоснование в MapPage.tsx/stores/mapView.ts.
@@ -149,7 +153,7 @@ export default function IssuesPage() {
       {/* Header */}
       <div className="bg-primary-800 text-white px-4 py-3 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate('/')} className="p-1.5 rounded-lg hover:bg-primary-700 transition-colors">
+          <button onClick={() => navigate(basePath || '/')} className="p-1.5 rounded-lg hover:bg-primary-700 transition-colors">
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
@@ -274,7 +278,7 @@ export default function IssuesPage() {
                       {(user?.role === 'reviewer' || isAdmin) && (
                         <>
                           <button
-                            onClick={() => navigate(`/issues/${issue.id}`)}
+                            onClick={() => navigate(`${basePath}/issues/${issue.id}`)}
                             className="p-1.5 rounded-lg hover:bg-green-100 transition-colors text-green-600 hover:text-green-700"
                             title="Зафиксировать исправление"
                           >

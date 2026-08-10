@@ -7,6 +7,7 @@ import L from 'leaflet'
 import { sitesApi, districtsApi, reportsApi, inspectionsApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
 import { useMapViewStore } from '@/stores/mapView'
+import { guardDemoAction } from '@/stores/demoMode'
 import type { SiteOut, DistrictOut, InspectionOut } from '@/types'
 import { List, Map as MapIcon, LogOut, ChevronRight, Users, Download, ClipboardCheck, AlertCircle, UserCircle, BarChart3, History } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
@@ -402,7 +403,7 @@ export default function MapPage() {
           <InspectionReviewList
             inspections={filteredInspections}
             emptyLabel={reviewStatusFilter !== 'all' ? 'Нет обходов с этим статусом' : 'Нет обходов для проверки'}
-            onAccept={(id) => acceptInspectionMutation.mutate(id)}
+            onAccept={(id) => guardDemoAction(() => acceptInspectionMutation.mutate(id))}
             acceptPending={acceptInspectionMutation.isPending}
           />
         ) : viewMode === 'map' ? (

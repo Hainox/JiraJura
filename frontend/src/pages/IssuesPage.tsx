@@ -7,6 +7,7 @@ import { useIssuesViewStore } from '@/stores/issuesView'
 import type { IssueOut, DistrictOut, UserAdminOut } from '@/types'
 import { ArrowLeft, Search, Filter, RefreshCw, UserPlus, Calendar, Clock, AlertTriangle, CheckCircle2, XCircle, Wrench, ExternalLink, Camera } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
+import { guardDemoAction } from '@/stores/demoMode'
 
 const STATUS_LABELS: Record<string, string> = {
   open: 'Открыто', assigned: 'Назначено', in_work: 'В работе',
@@ -349,7 +350,7 @@ export default function IssuesPage() {
                           Отмена
                         </button>
                         <button
-                          onClick={() => saveChanges(issue.id)}
+                          onClick={() => guardDemoAction(() => saveChanges(issue.id))}
                           disabled={updateMutation.isPending}
                           className="px-3 py-1.5 text-sm rounded-lg bg-primary-700 text-white hover:bg-primary-800 disabled:opacity-50"
                         >

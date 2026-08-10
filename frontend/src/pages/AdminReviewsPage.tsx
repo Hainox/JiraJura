@@ -6,6 +6,7 @@ import type { DistrictOut, InspectionOut } from '@/types'
 import { ArrowLeft, RefreshCw } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
 import InspectionReviewList from '@/components/InspectionReviewList'
+import { guardDemoAction } from '@/stores/demoMode'
 
 const STATUS_FILTERS = [
   { key: 'all', label: 'Все' },
@@ -94,7 +95,7 @@ export default function AdminReviewsPage() {
           <InspectionReviewList
             inspections={filteredInspections}
             emptyLabel={statusFilter !== 'all' ? 'Нет обходов с этим статусом' : 'Нет обходов для проверки'}
-            onAccept={(id) => acceptMutation.mutate(id)}
+            onAccept={(id) => guardDemoAction(() => acceptMutation.mutate(id))}
             acceptPending={acceptMutation.isPending}
           />
         )}

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
 import BeforeAfterSlider from '@/components/BeforeAfterSlider'
+import { guardDemoAction } from '@/stores/demoMode'
 
 const STATUS_LABELS: Record<string, string> = {
   open: 'Открыто', assigned: 'Назначено', in_work: 'В работе',
@@ -179,7 +180,7 @@ export default function IssueFixPage() {
               <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
               <div><div className="font-medium mb-0.5">Перед фиксацией проверьте:</div><ul className="list-disc list-inside space-y-0.5"><li>Фото исправления загружены</li><li>Нарушение действительно устранено</li><li>Описание исправления заполнено</li></ul></div>
             </div>
-            <button onClick={() => markFixedMutation.mutate()} disabled={markFixedMutation.isPending || fixPhotos.length === 0} className="btn-primary w-full py-3 flex items-center justify-center gap-2 disabled:opacity-50">
+            <button onClick={() => guardDemoAction(() => markFixedMutation.mutate())} disabled={markFixedMutation.isPending || fixPhotos.length === 0} className="btn-primary w-full py-3 flex items-center justify-center gap-2 disabled:opacity-50">
               {markFixedMutation.isPending ? <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
               Зафиксировать исправление
             </button>
@@ -194,11 +195,11 @@ export default function IssueFixPage() {
             {issue.fix_comment && <div className="bg-green-50 rounded-lg p-3 text-sm text-green-800"><div className="font-medium text-xs text-green-600 mb-0.5">Описание от проверяющего:</div>{issue.fix_comment}</div>}
             <textarea className="input-field text-sm" rows={2} placeholder="Комментарий (необязательно при приёмке, обязательно при возврате)..." value={reviewerComment} onChange={(e) => setReviewerComment(e.target.value)} />
             <div className="flex gap-2">
-              <button onClick={() => acceptMutation.mutate()} disabled={acceptMutation.isPending} className="btn-primary flex-1 py-3 flex items-center justify-center gap-2">
+              <button onClick={() => guardDemoAction(() => acceptMutation.mutate())} disabled={acceptMutation.isPending} className="btn-primary flex-1 py-3 flex items-center justify-center gap-2">
                 {acceptMutation.isPending ? <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}Принять
               </button>
               <button
-                onClick={() => rejectMutation.mutate()}
+                onClick={() => guardDemoAction(() => rejectMutation.mutate())}
                 disabled={rejectMutation.isPending || !reviewerComment.trim()}
                 title={!reviewerComment.trim() ? 'Укажите, что нужно доработать' : undefined}
                 className="btn-danger flex-1 py-3 flex items-center justify-center gap-2 disabled:opacity-50"

@@ -5,6 +5,7 @@ import { authApi, districtsApi } from '@/lib/api'
 import { ROLES, ROLE_LABELS } from '@/lib/roles'
 import type { Role, UserAdminOut, UserInviteCreated } from '@/types'
 import { notify as toast } from '@/lib/toast'
+import { guardDemoAction } from '@/stores/demoMode'
 import {
   ArrowLeft, UserPlus, Copy, Check, Trash2, Key, Edit3, X, Search
 } from 'lucide-react'
@@ -287,7 +288,7 @@ export default function AdminUsersPage() {
                   </td>
                   <td className="px-4 py-2">
                     <button
-                      onClick={() => toggleActiveMutation.mutate({ id: u.id, is_active: !u.is_active })}
+                      onClick={() => guardDemoAction(() => toggleActiveMutation.mutate({ id: u.id, is_active: !u.is_active }))}
                       className={`badge text-xs ${u.is_active ? 'badge-ok' : 'badge-nok'}`}
                     >
                       {u.is_active ? 'активен' : 'отключён'}
@@ -348,7 +349,7 @@ export default function AdminUsersPage() {
                 Отмена
               </button>
               <button
-                onClick={() => deleteMutation.mutate(deleteConfirm)}
+                onClick={() => guardDemoAction(() => deleteMutation.mutate(deleteConfirm))}
                 disabled={deleteMutation.isPending}
                 className="flex-1 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700"
               >
@@ -375,7 +376,7 @@ export default function AdminUsersPage() {
                 Отмена
               </button>
               <button
-                onClick={() => resetPasswordMutation.mutate(resetPasswordId)}
+                onClick={() => guardDemoAction(() => resetPasswordMutation.mutate(resetPasswordId))}
                 disabled={resetPasswordMutation.isPending}
                 className="flex-1 py-2 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700"
               >
@@ -447,7 +448,7 @@ export default function AdminUsersPage() {
                 </div>
               )}
               <button
-                onClick={() => saveEditMutation.mutate()}
+                onClick={() => guardDemoAction(() => saveEditMutation.mutate())}
                 disabled={saveEditMutation.isPending}
                 className="btn-primary w-full py-2"
               >

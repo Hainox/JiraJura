@@ -81,11 +81,17 @@ async def create_issue(
     # мог бы подложить туда фиктивное замечание.
     from app.models import Inspection
     insp = (await db.execute(
-        select(Inspection).where(Inspection.id == data.inspection_id)
+        select(Inspection).where(Inspection.id == data.inspection_id).options(
+            selectinload(Inspection.site).selectinload(Site.courtyard),
+        )
     )).scalar_one_or_none()
     if not insp:
         raise HTTPException(404, "Обход не найден")
     check_own_or_role(current_user, insp.inspector_id, "reviewer", "admin")
+    if current_user.role == "reviewer":
+        district_id = insp.site.courtyard.district_id if insp.site and insp.site.courtyard else None
+        if not in_district_scope(current_user, district_id):
+            raise HTTPException(403, "Обход вне вашего района")
 
     issue = Issue(
         inspection_id=data.inspection_id,
@@ -265,7 +271,7 @@ async def update_issue(
     # класс бага, что уже был исправлен для UserRoleUpdate.district_id).
     if "assigned_to" in data.model_fields_set:
         issue.assigned_to = data.assigned_to
-    if data.due_date is not None:
+    if "due_date" in data.model_fields_set:
         issue.due_date = data.due_date
     if data.fix_comment is not None:
         issue.fix_comment = data.fix_comment

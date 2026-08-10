@@ -54,7 +54,7 @@ export interface UserRoleUpdate {
   district_id?: string | null
   is_active?: boolean
   full_name?: string
-  phone?: string
+  phone?: string | null
 }
 
 export interface SelfUpdateRequest {

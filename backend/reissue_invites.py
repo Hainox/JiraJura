@@ -72,15 +72,19 @@ async def main(apply: bool, out_path: str):
 
         # дубли по ФИО среди чистых: оставляем самую свежую запись (первая
         # после ORDER BY full_name, created_at DESC), остальные — в список
-        # на ручное удаление
+        # на ручное удаление. Дедуп по (district_id, ФИО), а не по одному
+        # ФИО — иначе два РАЗНЫХ человека с одинаковым именем в разных
+        # районах считались бы дублями друг друга, и один из них молча не
+        # получал бы перевыпущенную ссылку вообще.
         seen_names = set()
         to_reissue = []
         duplicates = []
         for r in clean:
-            if r.full_name in seen_names:
+            key = (r.district_id, r.full_name)
+            if key in seen_names:
                 duplicates.append(r)
             else:
-                seen_names.add(r.full_name)
+                seen_names.add(key)
                 to_reissue.append(r)
 
         if malformed:

@@ -163,7 +163,36 @@ async def list_inspections(
     q = base.offset(offset).limit(page_size)
     rows = (await db.execute(q)).scalars().all()
 
-    items = [await _inspection_to_out(i, db) for i in rows]
+    # Пакетно вместо по 2 запроса на строку (см. комментарий в
+    # _inspection_to_out) — иначе MapPage/MyInspectionsPage с page_size
+    # 500-1000 превращаются в тысячи последовательных запросов.
+    ids = [r.id for r in rows]
+    issues_counts: dict = {}
+    photos_by_inspection: dict = {}
+    if ids:
+        for insp_id, cnt in (await db.execute(
+            select(Issue.inspection_id, func.count())
+            .where(Issue.inspection_id.in_(ids))
+            .group_by(Issue.inspection_id)
+        )).all():
+            issues_counts[insp_id] = cnt
+
+        for p in (await db.execute(
+            select(Photo).where(
+                Photo.inspection_id.in_(ids),
+                Photo.target_type.in_(["inspection", "checklist_answer"]),
+            ).order_by(Photo.created_at.asc())
+        )).scalars().all():
+            photos_by_inspection.setdefault(p.inspection_id, []).append(p)
+
+    items = [
+        await _inspection_to_out(
+            i, db,
+            _issues_count=issues_counts.get(i.id, 0),
+            _photos=photos_by_inspection.get(i.id, []),
+        )
+        for i in rows
+    ]
     return InspectionListOut(total=total, items=items)
 
 
@@ -324,13 +353,19 @@ async def upload_inspection_photo(
 ):
     """Загрузить фото для обхода или конкретного пункта чек-листа."""
     obj = (await db.execute(
-        select(Inspection).where(Inspection.id == inspection_id)
+        select(Inspection).where(Inspection.id == inspection_id).options(
+            selectinload(Inspection.site).selectinload(Site.courtyard),
+        )
     )).scalar_one_or_none()
     if not obj:
         raise HTTPException(404, "Обход не найден")
 
     # Проверяем права
     check_own_or_role(current_user, obj.inspector_id, "reviewer", "admin")
+    if current_user.role == "reviewer":
+        district_id = obj.site.courtyard.district_id if obj.site and obj.site.courtyard else None
+        if not in_district_scope(current_user, district_id):
+            raise HTTPException(403, "Обход вне вашего района")
 
     target_type = "checklist_answer" if checklist_answer_id else "inspection"
 
@@ -397,16 +432,31 @@ async def list_inspection_photos(
     return [_photo_to_out(p) for p in rows]
 
 
-async def _inspection_to_out(i: Inspection, db: AsyncSession) -> InspectionOut:
-    issues_count = (await db.execute(
-        select(func.count()).select_from(Issue).where(Issue.inspection_id == i.id)
-    )).scalar_one() or 0
+async def _inspection_to_out(
+    i: Inspection, db: AsyncSession,
+    _issues_count: Optional[int] = None, _photos: Optional[list] = None,
+) -> InspectionOut:
+    # _issues_count/_photos — предзагруженные значения для списков (см.
+    # list_inspections): без них список из page_size=1000 (карта грузит
+    # именно столько на каждого инспектора/район) делал бы 2 доп. запроса
+    # НА КАЖДУЮ строку — до ~2000 последовательных запросов на один заход
+    # на карту. Одиночные вызовы (get/create/update одного обхода) как и
+    # раньше считают на месте.
+    if _issues_count is not None:
+        issues_count = _issues_count
+    else:
+        issues_count = (await db.execute(
+            select(func.count()).select_from(Issue).where(Issue.inspection_id == i.id)
+        )).scalar_one() or 0
 
-    photos_q = select(Photo).where(
-        Photo.inspection_id == i.id,
-        Photo.target_type.in_(["inspection", "checklist_answer"]),
-    ).order_by(Photo.created_at.asc())
-    photos = (await db.execute(photos_q)).scalars().all()
+    if _photos is not None:
+        photos = _photos
+    else:
+        photos_q = select(Photo).where(
+            Photo.inspection_id == i.id,
+            Photo.target_type.in_(["inspection", "checklist_answer"]),
+        ).order_by(Photo.created_at.asc())
+        photos = (await db.execute(photos_q)).scalars().all()
 
     reviewer = UserOut.model_validate(i.reviewed_by_user) if i.reviewed_by_user else None
 

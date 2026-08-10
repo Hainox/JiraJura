@@ -101,7 +101,10 @@ export default function AdminUsersPage() {
       if (!editUser) return Promise.reject()
       return authApi.updateUser(editUser.id, {
         full_name: editFullName || undefined,
-        phone: editPhone || undefined,
+        // null, а не undefined — та же причина, что у district_id ниже:
+        // иначе снять уже сохранённый телефон нельзя, поле просто пропадёт
+        // из JSON и бэкенд не отличит это от "не меняем".
+        phone: editPhone || null,
         role: editRole,
         // всегда явно (не undefined — иначе поле пропадёт из JSON и бэкенд
         // не сможет отличить "не меняем район" от "снимаем район" при

@@ -234,9 +234,10 @@ async def admin_dashboard(
             select(func.count()).select_from(Issue).where(Issue.site_id.in_(site_sub), Issue.status == "fixed"),
             Issue.created_at,
         ))).scalar_one() or 0
-        issues_revision_needed = (await db.execute(
-            select(func.count()).select_from(Issue).where(Issue.site_id.in_(site_sub), Issue.status == "revision_needed")
-        )).scalar_one() or 0
+        issues_revision_needed = (await db.execute(period(
+            select(func.count()).select_from(Issue).where(Issue.site_id.in_(site_sub), Issue.status == "revision_needed"),
+            Issue.created_at,
+        ))).scalar_one() or 0
         issues_closed = (await db.execute(period(
             select(func.count()).select_from(Issue).where(Issue.site_id.in_(site_sub), Issue.status == "closed"),
             Issue.created_at,

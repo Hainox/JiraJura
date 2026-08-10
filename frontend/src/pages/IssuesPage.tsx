@@ -86,7 +86,7 @@ export default function IssuesPage() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, ...data }: { id: string; status?: string; assigned_to?: string | null; due_date?: string; comment?: string }) =>
+    mutationFn: ({ id, ...data }: { id: string; status?: string; assigned_to?: string | null; due_date?: string | null; comment?: string }) =>
       issuesApi.update(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['issues'] })
@@ -129,8 +129,10 @@ export default function IssuesPage() {
       assigned_to: editAssigned || null,
       // due_date на бэкенде — DATE, не datetime; input[type=date] уже даёт
       // "YYYY-MM-DD" — .toISOString() только добавлял риск сдвига на день
-      // и был причиной 500 на любое сохранение с указанным сроком
-      due_date: editDueDate || undefined,
+      // и был причиной 500 на любое сохранение с указанным сроком.
+      // null, а не undefined — та же причина, что у assigned_to выше:
+      // иначе снять уже выставленный срок через это поле нельзя.
+      due_date: editDueDate || null,
     })
   }
 
@@ -308,7 +310,12 @@ export default function IssuesPage() {
                             onChange={(e) => setEditAssigned(e.target.value)}
                           >
                             <option value="">Не назначен</option>
-                            {usersData?.map((u) => (
+                            {/* Только reviewer/admin — инспекторам /issues вообще
+                                недоступен (роут закрыт в App.tsx), и список замечаний
+                                фильтруется им по created_by, а не assigned_to, так что
+                                назначенное инспектору замечание никто и никогда не
+                                увидит и не сможет по нему ничего сделать. */}
+                            {usersData?.filter((u) => u.role === 'reviewer' || u.role === 'admin').map((u) => (
                               <option key={u.id} value={u.id}>{u.full_name}</option>
                             ))}
                           </select>

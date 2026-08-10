@@ -9,7 +9,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useMapViewStore } from '@/stores/mapView'
 import { guardDemoAction } from '@/stores/demoMode'
 import type { SiteOut, DistrictOut, InspectionOut } from '@/types'
-import { List, Map as MapIcon, LogOut, ChevronRight, Users, Download, ClipboardCheck, AlertCircle, UserCircle, BarChart3, History } from 'lucide-react'
+import { List, Map as MapIcon, LogOut, ChevronRight, Users, Download, ClipboardCheck, AlertCircle, UserCircle, BarChart3, History, CheckCheck } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
 import InspectionReviewList from '@/components/InspectionReviewList'
 import 'leaflet/dist/leaflet.css'
@@ -158,6 +158,15 @@ export default function MapPage() {
     onError: () => toast.error('Не удалось принять обход'),
   })
 
+  const bulkAcceptMutation = useMutation({
+    mutationFn: (ids: string[]) => inspectionsApi.bulkAccept(ids),
+    onSuccess: ({ accepted, skipped }) => {
+      toast.success(skipped > 0 ? `Принято обходов: ${accepted} (пропущено: ${skipped})` : `Принято обходов: ${accepted}`)
+      queryClient.invalidateQueries({ queryKey: ['inspections-review'] })
+    },
+    onError: () => toast.error('Не удалось принять обходы'),
+  })
+
   // Обходы для раскраски меток: инспектору — свои (бэкенд сам их так и
   // скопит), проверяющему/админу — по выбранному району, иначе на карте
   // всегда были только синие "необойдённые" точки независимо от реального
@@ -191,6 +200,9 @@ export default function MapPage() {
     if (reviewStatusFilter === 'pending') return insp.status !== 'completed'
     return insp.status === reviewStatusFilter
   })
+  const bulkAcceptableIds = filteredInspections
+    .filter((i) => !i.reviewed_by && i.status === 'completed' && (i.issues_count ?? 0) === 0)
+    .map((i) => i.id)
 
   const center: L.LatLngExpression = [55.829, 37.532]
 
@@ -353,26 +365,42 @@ export default function MapPage() {
 
       {/* Фильтр статусов для режима проверки */}
       {viewMode === 'review' && showReviewTab && (
-        <div className="bg-white border-b px-4 py-2 shrink-0 flex gap-2 overflow-x-auto">
-          {[
-            { key: 'all', label: `Все (${allInspections.length})` },
-            { key: 'pending', label: 'На проверку' },
-            { key: 'completed', label: 'Принятые' },
-            { key: 'issues_found', label: 'С нарушениями' },
-            { key: 'critical', label: 'Критические' },
-          ].map((f) => (
+        <div className="bg-white border-b px-4 py-2 shrink-0 space-y-2">
+          <div className="flex gap-2 overflow-x-auto">
+            {[
+              { key: 'all', label: `Все (${allInspections.length})` },
+              { key: 'pending', label: 'На проверку' },
+              { key: 'completed', label: 'Принятые' },
+              { key: 'issues_found', label: 'С нарушениями' },
+              { key: 'critical', label: 'Критические' },
+            ].map((f) => (
+              <button
+                key={f.key}
+                onClick={() => setReviewStatusFilter(f.key)}
+                className={`shrink-0 px-3 py-1 text-xs rounded-full font-medium transition-colors ${
+                  reviewStatusFilter === f.key
+                    ? 'bg-primary-700 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+          {reviewStatusFilter === 'completed' && bulkAcceptableIds.length > 0 && (
             <button
-              key={f.key}
-              onClick={() => setReviewStatusFilter(f.key)}
-              className={`shrink-0 px-3 py-1 text-xs rounded-full font-medium transition-colors ${
-                reviewStatusFilter === f.key
-                  ? 'bg-primary-700 text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
+              onClick={() => {
+                if (confirm(`Принять сразу ${bulkAcceptableIds.length} обходов без замечаний?`)) {
+                  guardDemoAction(() => bulkAcceptMutation.mutate(bulkAcceptableIds))
+                }
+              }}
+              disabled={bulkAcceptMutation.isPending}
+              className="w-full btn-primary text-sm py-2 flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              {f.label}
+              <CheckCheck className="w-4 h-4" />
+              {bulkAcceptMutation.isPending ? 'Принимаем...' : `Принять все (${bulkAcceptableIds.length})`}
             </button>
-          ))}
+          )}
         </div>
       )}
 

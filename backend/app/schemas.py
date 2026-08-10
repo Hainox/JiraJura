@@ -314,6 +314,15 @@ class InspectionListOut(BaseModel):
     items: list[InspectionOut]
 
 
+class InspectionBulkAcceptRequest(BaseModel):
+    ids: list[UUID] = Field(min_length=1, max_length=500)
+
+
+class InspectionBulkAcceptOut(BaseModel):
+    accepted: int
+    skipped: int
+
+
 # ── Замечания ──────────────────────────────────────────────────
 
 class IssueCreate(BaseModel):

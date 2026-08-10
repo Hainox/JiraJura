@@ -196,14 +196,9 @@ export default function MapPage() {
             </>
           )}
           {user?.role === 'admin' && (
-            <>
-              <button onClick={() => navigate('/admin/audit')} className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="Аудит">
-                <Clock className="w-5 h-5" />
-              </button>
-              <button onClick={() => navigate('/admin/users')} className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="Пользователи">
-                <Users className="w-5 h-5" />
-              </button>
-            </>
+            <button onClick={() => navigate('/admin')} className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="Админ-панель">
+              <Users className="w-5 h-5" />
+            </button>
           )}
           {user?.role !== 'inspector' && (
             <button onClick={() => toast.promise(reportsApi.exportXlsx({ district_id: districtFilter }), {

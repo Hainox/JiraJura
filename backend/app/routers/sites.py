@@ -7,7 +7,7 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models import Site, Courtyard, District, User
-from app.schemas import SiteOut, SiteListOut, DistrictOut, CourtyardOut, ChecklistTemplateOut, UserOut, SiteAssignUpdate
+from app.schemas import SiteOut, SiteListOut, DistrictOut, CourtyardOut, ChecklistTemplateOut, UserOut, SiteAssignUpdate, SiteAdminUpdate
 from app.services.auth import get_current_user
 from app.services.permissions import require_role, in_district_scope
 from app.services.audit import log_action
@@ -18,9 +18,11 @@ router = APIRouter()
 @router.get("/", response_model=SiteListOut)
 async def list_sites(
     district_id: Optional[str] = Query(None),
+    courtyard_id: Optional[str] = Query(None),
     type: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
     assigned_to_me: bool = Query(False),
+    include_inactive: bool = Query(False),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=5000),
     db: AsyncSession = Depends(get_db),
@@ -33,13 +35,17 @@ async def list_sites(
         select(Site, centroid_lat, centroid_lon)
         .join(Courtyard, Site.courtyard_id == Courtyard.id)
         .join(District, Courtyard.district_id == District.id)
-        .where(Site.is_active)
         .options(
             selectinload(Site.courtyard).selectinload(Courtyard.district),
             selectinload(Site.courtyard),
             selectinload(Site.assigned_inspector),
         )
     )
+    # include_inactive — только для управления площадками в админ-панели;
+    # всем остальным (карта/список для обходов) неактивные площадки
+    # по-прежнему не показываются, даже если параметр передан.
+    if not (include_inactive and current_user.role == "admin"):
+        base = base.where(Site.is_active)
 
     # Не-админы: инспектор видит только площадки своего района (без района —
     # ничего, это неполная настройка аккаунта). Проверяющий с district_id=NULL
@@ -56,6 +62,8 @@ async def list_sites(
         # Дополнительно: если не-админ передал чужой district_id — игнорируем,
         # потому что ограничение по своему району уже применено выше
         base = base.where(District.id == district_id)
+    if courtyard_id:
+        base = base.where(Site.courtyard_id == courtyard_id)
     if type:
         base = base.where(Site.type == type)
     if search:
@@ -116,6 +124,45 @@ async def get_site(
     return _site_to_out(row.Site, row.centroid_lat, row.centroid_lon)
 
 
+@router.patch("/{site_id}", response_model=SiteOut)
+async def update_site(
+    site_id: str,
+    data: SiteAdminUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    """Редактирование метаданных площадки (тип/площадь/двор/активность) —
+    геометрию тут не трогаем, для неё есть import_kml.py."""
+    site = (await db.execute(select(Site).where(Site.id == site_id))).scalar_one_or_none()
+    if not site:
+        raise HTTPException(404, "Площадка не найдена")
+
+    if data.courtyard_id is not None:
+        courtyard = (await db.execute(select(Courtyard).where(Courtyard.id == data.courtyard_id))).scalar_one_or_none()
+        if not courtyard:
+            raise HTTPException(400, "Указанный двор не найден")
+        site.courtyard_id = data.courtyard_id
+    if data.type is not None:
+        site.type = data.type
+    if data.area_m2 is not None:
+        site.area_m2 = data.area_m2
+    if data.cleaning_type is not None:
+        site.cleaning_type = data.cleaning_type
+    if data.is_active is not None:
+        site.is_active = data.is_active
+
+    await log_action(db, str(current_user.id), "site_update", "site", site_id, data.model_dump(exclude_unset=True, mode="json"))
+    await db.commit()
+
+    q = (
+        select(Site, func.ST_Y(func.ST_Centroid(Site.geometry)), func.ST_X(func.ST_Centroid(Site.geometry)))
+        .where(Site.id == site_id)
+        .options(selectinload(Site.courtyard).selectinload(Courtyard.district), selectinload(Site.assigned_inspector))
+    )
+    row = (await db.execute(q)).one()
+    return _site_to_out(row[0], row[1], row[2])
+
+
 @router.patch("/{site_id}/assign", response_model=SiteOut)
 async def assign_site_inspector(
     site_id: str,
@@ -174,11 +221,25 @@ async def list_checklist_templates(
     db: AsyncSession = Depends(get_db),
 ):
     from app.models import ChecklistTemplate, ChecklistItem
+    from app.schemas import ChecklistItemOut
+
     q = select(ChecklistTemplate).options(selectinload(ChecklistTemplate.items))
     if site_type:
         q = q.where(ChecklistTemplate.site_type == site_type)
     templates = (await db.execute(q)).scalars().all()
-    return [ChecklistTemplateOut.model_validate(t) for t in templates]
+    # Пункты, отключённые админом (is_active=False), не показываем в новых
+    # обходах — только в самой админ-панели (GET /checklists/templates).
+    return [
+        ChecklistTemplateOut(
+            id=t.id, name=t.name, site_type=t.site_type,
+            items=[
+                ChecklistItemOut.model_validate(i)
+                for i in sorted(t.items, key=lambda x: x.sort_order)
+                if i.is_active
+            ],
+        )
+        for t in templates
+    ]
 
 
 def _site_to_out(s: Site, lat: float | None = None, lon: float | None = None) -> SiteOut:

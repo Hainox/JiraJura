@@ -106,6 +106,24 @@ class DistrictOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class DistrictAdminOut(BaseModel):
+    id: UUID
+    name: str
+    courtyards_count: int
+    sites_count: int
+
+
+class DistrictUpdate(BaseModel):
+    name: str
+
+
+class DistrictMergeRequest(BaseModel):
+    # Переносит все дворы из текущего района в этот и удаляет текущий
+    # (становится пустым) — способ убрать задвоенные/битые районы вроде
+    # "Бескудниковский;Восточное Дегунино" через UI, не руками в БД.
+    into_district_id: UUID
+
+
 # ── Дворы ──────────────────────────────────────────────────────
 
 class CourtyardOut(BaseModel):
@@ -114,6 +132,16 @@ class CourtyardOut(BaseModel):
     district_id: UUID
 
     model_config = {"from_attributes": True}
+
+
+class CourtyardAdminOut(CourtyardOut):
+    district_name: str
+    sites_count: int
+
+
+class CourtyardUpdate(BaseModel):
+    name: Optional[str] = None
+    district_id: Optional[UUID] = None
 
 
 # ── Площадки ───────────────────────────────────────────────────
@@ -139,6 +167,14 @@ class SiteAssignUpdate(BaseModel):
     inspector_id: Optional[UUID] = None
 
 
+class SiteAdminUpdate(BaseModel):
+    type: Optional[str] = None
+    area_m2: Optional[Decimal] = None
+    cleaning_type: Optional[str] = None
+    is_active: Optional[bool] = None
+    courtyard_id: Optional[UUID] = None
+
+
 class SiteListOut(BaseModel):
     total: int
     items: list[SiteOut]
@@ -153,6 +189,7 @@ class ChecklistItemOut(BaseModel):
     sort_order: int
     is_critical: bool
     requires_photo: bool
+    is_active: bool = True
 
     model_config = {"from_attributes": True}
 
@@ -164,6 +201,24 @@ class ChecklistTemplateOut(BaseModel):
     items: list[ChecklistItemOut]
 
     model_config = {"from_attributes": True}
+
+
+class ChecklistItemCreate(BaseModel):
+    template_id: UUID
+    category: Optional[str] = None
+    question: str
+    sort_order: int = 0
+    is_critical: bool = False
+    requires_photo: bool = False
+
+
+class ChecklistItemUpdate(BaseModel):
+    category: Optional[str] = None
+    question: Optional[str] = None
+    sort_order: Optional[int] = None
+    is_critical: Optional[bool] = None
+    requires_photo: Optional[bool] = None
+    is_active: Optional[bool] = None
 
 
 # ── Обходы ─────────────────────────────────────────────────────

@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings, DEV_SECRET_KEY
-from app.routers import auth, districts, sites, inspections, issues, reports, audit, pdf_report
+from app.routers import auth, districts, sites, inspections, issues, reports, audit, pdf_report, courtyards, checklists
 
 if settings.APP_ENV == "production" and settings.SECRET_KEY == DEV_SECRET_KEY:
     raise RuntimeError(
@@ -31,7 +31,9 @@ app.add_middleware(
 # Роутеры
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(districts.router, prefix="/api/v1/districts", tags=["districts"])
+app.include_router(courtyards.router, prefix="/api/v1/courtyards", tags=["courtyards"])
 app.include_router(sites.router, prefix="/api/v1/sites", tags=["sites"])
+app.include_router(checklists.router, prefix="/api/v1/checklists", tags=["checklists"])
 app.include_router(inspections.router, prefix="/api/v1/inspections", tags=["inspections"])
 app.include_router(issues.router, prefix="/api/v1/issues", tags=["issues"])
 app.include_router(reports.router, prefix="/api/v1/reports", tags=["reports"])

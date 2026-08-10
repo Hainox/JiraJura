@@ -1,9 +1,10 @@
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery, useMutation } from '@tanstack/react-query'
-import { sitesApi, inspectionsApi, checklistsApi } from '@/lib/api'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { sitesApi, inspectionsApi, checklistsApi, authApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
-import type { SiteOut, ChecklistTemplateOut, InspectionOut } from '@/types'
-import { ArrowLeft, Play, Eye, Clock } from 'lucide-react'
+import type { SiteOut, ChecklistTemplateOut, InspectionOut, UserAdminOut } from '@/types'
+import { ArrowLeft, Play, Eye, Clock, UserCog } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
 
 const STATUS_LABELS: Record<string, string> = {
@@ -21,6 +22,7 @@ const STATUS_COLORS: Record<string, string> = {
 export default function SiteDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const siteId = id!
   const user = useAuthStore((s) => s.user)
 
@@ -53,6 +55,32 @@ export default function SiteDetailPage() {
 
   const isReviewerOrAdmin = user?.role === 'reviewer' || user?.role === 'admin'
   const inspections = inspectionsData?.items ?? []
+
+  // Назначение площадки инспектору — ориентир для распределения обходов
+  // внутри района, не хард-ограничение (см. комментарий у
+  // Site.assigned_inspector_id в backend/app/models.py): любой инспектор
+  // района по-прежнему может начать обход любой площадки.
+  const { data: usersData } = useQuery<UserAdminOut[]>({
+    queryKey: ['users'],
+    queryFn: authApi.listUsers,
+    enabled: isReviewerOrAdmin,
+  })
+  const districtInspectors = (usersData ?? []).filter(
+    (u) => u.role === 'inspector' && u.district_id === site?.district?.id
+  )
+  const [selectedInspectorId, setSelectedInspectorId] = useState('')
+  useEffect(() => {
+    setSelectedInspectorId(site?.assigned_inspector?.id ?? '')
+  }, [site?.assigned_inspector?.id])
+
+  const assignMutation = useMutation({
+    mutationFn: (inspectorId: string | null) => sitesApi.assign(siteId, inspectorId),
+    onSuccess: () => {
+      toast.success('Назначение обновлено')
+      queryClient.invalidateQueries({ queryKey: ['site', siteId] })
+    },
+    onError: () => toast.error('Не удалось обновить назначение'),
+  })
 
   if (isLoading) {
     return (
@@ -99,8 +127,46 @@ export default function SiteDetailPage() {
               <div className="text-gray-400 text-xs">Район</div>
               <div className="font-medium mt-0.5">{site.district?.name}</div>
             </div>
+            {!isReviewerOrAdmin && (
+              <div className="col-span-2">
+                <div className="text-gray-400 text-xs">Назначена</div>
+                <div className="font-medium mt-0.5">{site.assigned_inspector?.full_name ?? 'Не назначена'}</div>
+              </div>
+            )}
           </div>
         </div>
+
+        {/* Назначение инспектора — только для проверяющего/админа */}
+        {isReviewerOrAdmin && (
+          <div className="card">
+            <h2 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+              <UserCog className="w-4 h-4 text-gray-400" />
+              Назначенный инспектор
+            </h2>
+            <div className="flex gap-2">
+              <select
+                className="input-field text-sm flex-1"
+                value={selectedInspectorId}
+                onChange={(e) => setSelectedInspectorId(e.target.value)}
+              >
+                <option value="">Не назначен</option>
+                {districtInspectors.map((u) => (
+                  <option key={u.id} value={u.id}>{u.full_name}</option>
+                ))}
+              </select>
+              <button
+                onClick={() => assignMutation.mutate(selectedInspectorId || null)}
+                disabled={assignMutation.isPending || selectedInspectorId === (site.assigned_inspector?.id ?? '')}
+                className="btn-primary text-sm px-4 disabled:opacity-40"
+              >
+                Сохранить
+              </button>
+            </div>
+            {districtInspectors.length === 0 && (
+              <p className="text-xs text-gray-400 mt-2">В этом районе пока нет зарегистрированных инспекторов.</p>
+            )}
+          </div>
+        )}
 
         {/* Чек-лист предпросмотр */}
         {checklists && checklists.length > 0 && (

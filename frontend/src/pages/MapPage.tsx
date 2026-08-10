@@ -73,6 +73,7 @@ export default function MapPage() {
   const [showFilters, setShowFilters] = useState(false)
   const [reviewStatusFilter, setReviewStatusFilter] = useState<string>('all')
   const [myInspOnly, setMyInspOnly] = useState(false)
+  const [myAssignedOnly, setMyAssignedOnly] = useState(false)
   const [showLegend, setShowLegend] = useState(false)
 
   const isAdmin = user?.role === 'admin'
@@ -86,8 +87,11 @@ export default function MapPage() {
   const effectiveDistrictFilter = isAdmin ? districtFilter : (user?.district_id ?? districtFilter)
 
   const { data: sitesData } = useQuery({
-    queryKey: ['sites', effectiveDistrictFilter, typeFilter],
-    queryFn: () => sitesApi.list({ district_id: effectiveDistrictFilter, type: typeFilter, page_size: 5000 }),
+    queryKey: ['sites', effectiveDistrictFilter, typeFilter, myAssignedOnly],
+    queryFn: () => sitesApi.list({
+      district_id: effectiveDistrictFilter, type: typeFilter, page_size: 5000,
+      assigned_to_me: user?.role === 'inspector' && myAssignedOnly || undefined,
+    }),
     // Админ без выбранного района не загружает все площадки — слишком долго
     enabled: !isAdmin || !!districtFilter,
   })
@@ -241,6 +245,18 @@ export default function MapPage() {
               <option value={SPORT_TYPE}>Спортивные</option>
             </select>
           </div>
+          {user?.role === 'inspector' && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setMyAssignedOnly((v) => !v)}
+                className={`text-xs px-3 py-1 rounded-full font-medium transition-colors ${
+                  myAssignedOnly ? 'bg-primary-700 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                Мои площадки
+              </button>
+            </div>
+          )}
           {(user?.role === 'inspector' || isReviewerLike) && myInspections.length > 0 && (
             <div className="flex items-center gap-2">
               {user?.role === 'inspector' && (
@@ -459,6 +475,11 @@ export default function MapPage() {
                     <div className="text-xs text-gray-400 mt-0.5">
                       {s.type === CHILD_TYPE ? 'Детская' : 'Спортивная'} • {s.area_m2} м²
                     </div>
+                    {isReviewerLike && (
+                      <div className="text-xs text-gray-400 mt-0.5">
+                        {s.assigned_inspector ? `Назначена: ${s.assigned_inspector.full_name}` : 'Не назначена'}
+                      </div>
+                    )}
                     <button onClick={() => navigate(`/sites/${s.id}`)} className="mt-2 text-xs btn-primary py-1 px-3 w-full flex items-center justify-center gap-1">
                       Открыть <ChevronRight className="w-3 h-3" />
                     </button>
@@ -479,6 +500,11 @@ export default function MapPage() {
                     <div className="font-semibold text-sm truncate">{s.courtyard?.name ?? 'Площадка'}</div>
                     <div className="text-xs text-gray-500 mt-0.5">{s.district?.name}</div>
                     <div className="text-xs text-gray-400 mt-0.5">{s.type}{' • '}{s.area_m2} м²</div>
+                    {isReviewerLike && (
+                      <div className="text-xs text-gray-400 mt-0.5">
+                        {s.assigned_inspector ? `Назначена: ${s.assigned_inspector.full_name}` : 'Не назначена'}
+                      </div>
+                    )}
                   </div>
                   <ChevronRight className="w-4 h-4 text-gray-300 shrink-0 mt-3" />
                 </div>

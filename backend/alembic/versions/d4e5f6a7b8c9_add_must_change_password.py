@@ -15,7 +15,13 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column('users', sa.Column('must_change_password', sa.Boolean(), nullable=False, server_default='false'))
+    # IF NOT EXISTS — schema.sql (свежие инсталляции) теперь тоже содержит
+    # эту колонку, upgrade head на такой БД проходит эту ревизию повторно
+    # поверх уже применённого schema.sql.
+    op.execute(
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password "
+        "BOOLEAN NOT NULL DEFAULT false"
+    )
 
 
 def downgrade() -> None:

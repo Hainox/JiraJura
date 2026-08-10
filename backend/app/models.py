@@ -107,6 +107,13 @@ class Site(Base):
     geometry = Column(Geometry("POLYGON", srid=4326), nullable=False)
     kml_original_id = Column(String(200))
     is_active = Column(Boolean, default=True)
+    # Инспектор, за которым сейчас закреплена площадка — назначает
+    # проверяющий/админ (см. routers/sites.py assign_site_inspector).
+    # Не блокирует обход площадки другими инспекторами (маршруты в реальной
+    # жизни пересекаются и меняются на ходу, см. комментарий про
+    # ENABLE_DAILY_INSPECTION_LIMIT в inspections.py) — это только
+    # ориентир "чья это площадка сегодня", не хард-ограничение.
+    assigned_inspector_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), default=_utcnow)
     updated_at = Column(DateTime(timezone=True), onupdate=_utcnow)
 
@@ -114,6 +121,7 @@ class Site(Base):
     equipment = relationship("Equipment", back_populates="site")
     inspections = relationship("Inspection", back_populates="site")
     issues = relationship("Issue", back_populates="site_ref")
+    assigned_inspector = relationship("User", foreign_keys=[assigned_inspector_id])
 
 
 class Equipment(Base):

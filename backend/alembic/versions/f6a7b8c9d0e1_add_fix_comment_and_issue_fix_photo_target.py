@@ -25,7 +25,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column('issues', sa.Column('fix_comment', sa.Text(), nullable=True))
+    # IF NOT EXISTS — schema.sql (свежие инсталляции) теперь тоже содержит
+    # эту колонку и значение enum, upgrade head на такой БД проходит эту
+    # ревизию повторно поверх уже применённого schema.sql.
+    op.execute("ALTER TABLE issues ADD COLUMN IF NOT EXISTS fix_comment TEXT")
     # ALTER TYPE ... ADD VALUE нельзя выполнить внутри транзакции
     op.execute("COMMIT")
     op.execute("ALTER TYPE photo_target ADD VALUE IF NOT EXISTS 'issue_fix'")

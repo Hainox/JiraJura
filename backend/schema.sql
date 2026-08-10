@@ -45,6 +45,7 @@ CREATE TABLE sites (
         GENERATED ALWAYS AS (ST_Centroid(geometry)) STORED,
     kml_original_id VARCHAR(200),                       -- для обратной трассировки
     is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+    assigned_inspector_id UUID,                          -- FK на users добавляется ниже (users объявлена позже)
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ
 );
@@ -95,6 +96,7 @@ CREATE TABLE users (
     district_id    UUID REFERENCES districts(id),     -- для inspector и reviewer; NULL у reviewer = весь округ
     phone          VARCHAR(20),
     is_active      BOOLEAN DEFAULT TRUE,
+    must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -205,7 +207,7 @@ CREATE INDEX idx_checklist_answers_inspection ON checklist_answers(inspection_id
 -- 8. ФОТОГРАФИИ
 -- ============================================================
 
-CREATE TYPE photo_target AS ENUM ('inspection', 'issue', 'equipment', 'checklist_answer');
+CREATE TYPE photo_target AS ENUM ('inspection', 'issue', 'equipment', 'checklist_answer', 'issue_fix');
 
 CREATE TABLE photos (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -237,7 +239,8 @@ CREATE TYPE issue_status AS ENUM (
     'fixed',           -- устранено
     'control',         -- на контроле
     'closed',          -- закрыто
-    'overdue'          -- просрочено
+    'overdue',         -- просрочено
+    'revision_needed'  -- возвращено на доработку проверяющим
 );
 
 CREATE TABLE issues (
@@ -251,6 +254,8 @@ CREATE TABLE issues (
     assigned_to     UUID REFERENCES users(id),
     due_date        DATE,                                 -- срок устранения
     fixed_at        TIMESTAMPTZ,
+    reviewer_comment TEXT,                                -- комментарий проверяющего (напр. причина возврата на доработку)
+    fix_comment     TEXT,                                 -- описание исправления от того, кто устранял
     created_by      UUID NOT NULL REFERENCES users(id),
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ
@@ -265,6 +270,11 @@ CREATE INDEX idx_issues_assigned ON issues(assigned_to);
 -- FK для photos.issue_id
 ALTER TABLE photos ADD CONSTRAINT fk_photos_issue
     FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE SET NULL;
+
+-- FK для sites.assigned_inspector_id
+ALTER TABLE sites ADD CONSTRAINT fk_sites_assigned_inspector
+    FOREIGN KEY (assigned_inspector_id) REFERENCES users(id) ON DELETE SET NULL;
+CREATE INDEX idx_sites_assigned_inspector ON sites(assigned_inspector_id);
 
 -- ============================================================
 -- 10. ИСТОРИЯ СТАТУСОВ ЗАМЕЧАНИЙ
@@ -283,7 +293,21 @@ CREATE TABLE issue_status_history (
 CREATE INDEX idx_issue_history_issue ON issue_status_history(issue_id);
 
 -- ============================================================
--- 11. ЗАПОЛНЕНИЕ СПРАВОЧНИКА РАЙОНОВ
+-- 11. ЖУРНАЛ АУДИТА
+-- ============================================================
+
+CREATE TABLE audit_log (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id     UUID REFERENCES users(id) ON DELETE SET NULL,
+    action      VARCHAR(50) NOT NULL,
+    entity_type VARCHAR(50) NOT NULL,
+    entity_id   VARCHAR(100),
+    details     TEXT,
+    created_at  TIMESTAMPTZ DEFAULT now()
+);
+
+-- ============================================================
+-- 12. ЗАПОЛНЕНИЕ СПРАВОЧНИКА РАЙОНОВ
 -- ============================================================
 
 INSERT INTO districts (name, code) VALUES
@@ -306,7 +330,7 @@ INSERT INTO districts (name, code) VALUES
     ('Неизвестный район', 'unknown');   -- для 425 объектов без района
 
 -- ============================================================
--- 12. СТАНДАРТНЫЙ ЧЕК-ЛИСТ (MVP)
+-- 13. СТАНДАРТНЫЙ ЧЕК-ЛИСТ (MVP)
 -- ============================================================
 
 INSERT INTO checklist_templates (id, name, site_type) VALUES

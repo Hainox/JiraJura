@@ -16,16 +16,20 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.create_table(
-        'audit_log',
-        sa.Column('id', UUID(as_uuid=True), primary_key=True, server_default=sa.text('gen_random_uuid()')),
-        sa.Column('user_id', UUID(as_uuid=True), sa.ForeignKey('users.id', ondelete='SET NULL'), nullable=True),
-        sa.Column('action', sa.String(50), nullable=False),
-        sa.Column('entity_type', sa.String(50), nullable=False),
-        sa.Column('entity_id', sa.String(100), nullable=True),
-        sa.Column('details', sa.Text(), nullable=True),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()')),
-    )
+    # IF NOT EXISTS — schema.sql (свежие инсталляции) теперь тоже создаёт
+    # эту таблицу, upgrade head на такой БД проходит эту ревизию повторно
+    # поверх уже применённого schema.sql.
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id     UUID REFERENCES users(id) ON DELETE SET NULL,
+            action      VARCHAR(50) NOT NULL,
+            entity_type VARCHAR(50) NOT NULL,
+            entity_id   VARCHAR(100),
+            details     TEXT,
+            created_at  TIMESTAMPTZ DEFAULT now()
+        )
+    """)
 
 
 def downgrade() -> None:

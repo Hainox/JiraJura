@@ -100,10 +100,15 @@ export const districtsApi = {
 export const sitesApi = {
   // параметр фильтра по типу в API называется `type` и принимает значение
   // enum'а site_type как есть: «Детская площадка» / «Спортивная площадка»
-  list: (params?: { district_id?: string; type?: string; page_size?: number }) =>
+  list: (params?: { district_id?: string; type?: string; page_size?: number; assigned_to_me?: boolean }) =>
     api.get<SiteListOut>('/sites/', { params }).then((r) => r.data),
 
   get: (id: string) => api.get<SiteOut>(`/sites/${id}`).then((r) => r.data),
+
+  // inspector_id: null снимает назначение — явно, не "не менять" (см.
+  // комментарий у SiteAssignUpdate в backend/app/schemas.py)
+  assign: (siteId: string, inspectorId: string | null) =>
+    api.patch<SiteOut>(`/sites/${siteId}/assign`, { inspector_id: inspectorId }).then((r) => r.data),
 }
 
 // ── Checklists ──

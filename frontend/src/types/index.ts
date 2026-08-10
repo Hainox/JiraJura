@@ -89,6 +89,7 @@ export interface SiteOut {
   is_active: boolean
   lat?: number | null
   lon?: number | null
+  assigned_inspector?: UserOut | null
 }
 
 export interface SiteListOut {

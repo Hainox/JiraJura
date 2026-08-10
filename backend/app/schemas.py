@@ -127,8 +127,16 @@ class SiteOut(BaseModel):
     is_active: bool
     lat: Optional[float] = None
     lon: Optional[float] = None
+    assigned_inspector: Optional[UserOut] = None
 
     model_config = {"from_attributes": True}
+
+
+class SiteAssignUpdate(BaseModel):
+    # null снимает назначение — не Optional-как-"не менять", а реальное
+    # целевое состояние, поэтому в роутере проверяется наличие поля, а
+    # не его значение (та же логика, что для issues due_date/assigned_to).
+    inspector_id: Optional[UUID] = None
 
 
 class SiteListOut(BaseModel):

@@ -185,7 +185,7 @@ export const issuesApi = {
     api.get<IssueListOut>('/issues/', { params }).then((r) => r.data),
 
   update: (id: string, data: {
-    status?: string; assigned_to?: string | null; due_date?: string; comment?: string; fix_comment?: string; reviewer_comment?: string
+    status?: string; assigned_to?: string | null; due_date?: string | null; comment?: string; fix_comment?: string; reviewer_comment?: string
   }) =>
     api.put<IssueOut>(`/issues/${id}`, data).then((r) => r.data),
 

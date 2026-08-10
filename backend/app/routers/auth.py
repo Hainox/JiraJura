@@ -253,7 +253,10 @@ async def update_user(
         user.is_active = data.is_active
     if data.full_name is not None:
         user.full_name = data.full_name
-    if data.phone is not None:
+    # Как и district_id выше — model_fields_set, а не is not None, иначе
+    # снять уже сохранённый телефон (очистить поле) через это форму
+    # невозможно: явный null неотличим от "поле не прислали".
+    if "phone" in data.model_fields_set:
         user.phone = data.phone
 
     # exclude_unset (не exclude_none!) — иначе явно переданный district_id=null

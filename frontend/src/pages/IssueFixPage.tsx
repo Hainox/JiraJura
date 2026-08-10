@@ -192,7 +192,7 @@ export default function IssueFixPage() {
         {isAdmin && issue.status === 'fixed' && (
           <div className="card space-y-3 bg-white border-2 border-primary-200">
             <h3 className="font-semibold text-gray-800 flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4 text-primary-600" />Приёмка исправления</h3>
-            {issue.fix_comment && <div className="bg-green-50 rounded-lg p-3 text-sm text-green-800"><div className="font-medium text-xs text-green-600 mb-0.5">Описание от проверяющего:</div>{issue.fix_comment}</div>}
+            {issue.fix_comment && <div className="bg-green-50 rounded-lg p-3 text-sm text-green-800"><div className="font-medium text-xs text-green-600 mb-0.5">Описание исправления:</div>{issue.fix_comment}</div>}
             <textarea className="input-field text-sm" rows={2} placeholder="Комментарий (необязательно при приёмке, обязательно при возврате)..." value={reviewerComment} onChange={(e) => setReviewerComment(e.target.value)} />
             <div className="flex gap-2">
               <button onClick={() => guardDemoAction(() => acceptMutation.mutate())} disabled={acceptMutation.isPending} className="btn-primary flex-1 py-3 flex items-center justify-center gap-2">

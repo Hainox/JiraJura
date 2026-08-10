@@ -605,6 +605,25 @@ export default function InspectionPage() {
                     </button>
                   </div>
                 )}
+                {/* requires_photo обязателен независимо от результата — этот
+                    пункт нужен отдельно от кнопки выше, потому что «Фото
+                    общего вида площадки» (единственный requires_photo пункт
+                    в шаблонах) естественно отмечается «ОК», а не «Не ОК», и
+                    без этой кнопки прикрепить обязательное фото было вообще
+                    негде — обход блокировался на завершении без возможности
+                    выполнить требование. */}
+                {!isReadOnly && item.requires_photo && answers[item.id]?.result === 'ok' && (
+                  <div className="mt-2">
+                    <button
+                      onClick={() => triggerItemUpload(item.id)}
+                      disabled={uploadItemPhotoMutation.isPending && uploadingForItemId === item.id}
+                      className="w-full py-2.5 rounded-lg font-medium text-sm bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 flex items-center justify-center gap-2 disabled:opacity-60"
+                    >
+                      <Camera className="w-4 h-4" />
+                      {uploadItemPhotoMutation.isPending && uploadingForItemId === item.id ? 'Загрузка...' : 'Добавить фото (обязательно)'}
+                    </button>
+                  </div>
+                )}
               </div>
               {!isReadOnly && <ChevronRight className="w-4 h-4 text-gray-300 shrink-0 mt-1" />}
             </div>

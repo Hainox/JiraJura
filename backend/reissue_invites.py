@@ -27,6 +27,11 @@ token_hash (sha256), сам токен отдаётся один раз в от�
   docker compose -f docker-compose.prod.yml exec api python reissue_invites.py
   docker compose -f docker-compose.prod.yml exec api python reissue_invites.py --apply --out /app/uploads/reissued.csv
   # скачать файл с сервера, разослать ссылки, затем удалить файл с сервера
+
+  # перевыпустить ссылки только по одному району (например, если после
+  # рассылки выяснилось, что именно в этом районе ссылки уже не работают —
+  # 72 часа с исходной выдачи истекли раньше, чем их успели раздать людям):
+  docker compose -f docker-compose.prod.yml exec api python reissue_invites.py --district "Левобережный" --apply --out /app/uploads/reissued_levoberezhny.csv
 """
 import argparse
 import asyncio
@@ -51,17 +56,34 @@ def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-async def main(apply: bool, out_path: str):
+async def main(apply: bool, out_path: str, district: str | None):
     engine = create_async_engine(DATABASE_URL, echo=False)
     Session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with Session() as db:
-        rows = (await db.execute(text(
-            "SELECT id, login, full_name, role, district_id, expires_at "
-            "FROM user_invites WHERE used_at IS NULL ORDER BY full_name, created_at DESC"
-        ))).fetchall()
+        query = (
+            "SELECT ui.id, ui.login, ui.full_name, ui.role, ui.district_id, "
+            "ui.expires_at, d.name AS district_name "
+            "FROM user_invites ui LEFT JOIN districts d ON d.id = ui.district_id "
+            "WHERE ui.used_at IS NULL"
+        )
+        params = {}
+        if district:
+            # ILIKE — совпадение без учёта регистра, чтобы не размышлять
+            # над точным написанием района на вводе в консоль
+            query += " AND d.name ILIKE :district"
+            params["district"] = district
+        query += " ORDER BY ui.full_name, ui.created_at DESC"
+        rows = (await db.execute(text(query), params)).fetchall()
 
-        print(f"Приглашений без завершённой регистрации: {len(rows)}\n")
+        if district and not rows:
+            print(f"Ничего не найдено для района {district!r} — проверьте точное "
+                  f"написание названия района (см. раздел «Районы» в админке).")
+            await engine.dispose()
+            return
+
+        label = f" (район: {district})" if district else ""
+        print(f"Приглашений без завершённой регистрации{label}: {len(rows)}\n")
         if not rows:
             await engine.dispose()
             return
@@ -116,12 +138,12 @@ async def main(apply: bool, out_path: str):
                 "WHERE id = :id"
             ), {"hash": _hash_token(token), "expires_at": new_expires_at, "id": r.id})
             link = f"{SITE_URL.rstrip('/')}/register/{token}"
-            out_rows.append([r.login, r.full_name, r.role, link])
+            out_rows.append([r.login, r.full_name, r.role, r.district_name or "", link])
         await db.commit()
 
         with open(out_path, "w", newline="", encoding="utf-8-sig") as f:
             w = csv.writer(f, delimiter=";")
-            w.writerow(["Логин", "ФИО", "Роль", "Ссылка"])
+            w.writerow(["Логин", "ФИО", "Роль", "Район", "Ссылка"])
             w.writerows(out_rows)
 
         print(f"\n[DONE] Перевыпущено: {len(out_rows)}. Ссылки действуют {REISSUE_HOURS // 24} дней.")
@@ -135,5 +157,6 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Переиздание просроченных приглашений на регистрацию")
     p.add_argument("--apply", action="store_true", help="перевыпустить токены (иначе только отчёт)")
     p.add_argument("--out", default="reissued_invites.csv", help="куда сохранить CSV со ссылками")
+    p.add_argument("--district", default=None, help="перевыпустить только для одного района (по названию, без учёта регистра)")
     args = p.parse_args()
-    asyncio.run(main(args.apply, args.out))
+    asyncio.run(main(args.apply, args.out, args.district))

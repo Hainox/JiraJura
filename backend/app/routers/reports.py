@@ -378,6 +378,55 @@ async def export_xlsx(
             insp.comment or "",
         ))
 
+    # ── Задания (снимок "сейчас", а не журнал за период) ──
+    # Проверяющие просили именно это отдельно от "Обходы" выше: та вкладка —
+    # хронологический лог за выбранный период, а тут — по каждой активной
+    # площадке в зоне видимости: кто за неё отвечает и когда там были в
+    # последний раз (независимо от периода отчёта), чтобы сразу видеть, где
+    # давно не было обхода или он вообще не назначен. district_id/scope тот
+    # же, что и у остальных листов этой выгрузки — период (dt_from/dt_to)
+    # тут намеренно не применяется, это не история, а текущее состояние.
+    assign_q = (
+        select(Site, Courtyard.name, District.name, User.full_name, User.phone)
+        .join(Courtyard, Site.courtyard_id == Courtyard.id)
+        .join(District, Courtyard.district_id == District.id)
+        .outerjoin(User, Site.assigned_inspector_id == User.id)
+        .where(Site.is_active)
+    )
+    if district_id:
+        assign_q = assign_q.where(District.id == district_id)
+    site_rows = (await db.execute(assign_q)).all()
+
+    site_ids = [site.id for site, *_ in site_rows]
+    last_by_site: dict = {}
+    if site_ids:
+        last_sub = (
+            select(Inspection.site_id, func.max(Inspection.created_at).label("last_dt"))
+            .where(Inspection.site_id.in_(site_ids))
+            .group_by(Inspection.site_id)
+            .subquery()
+        )
+        last_rows = (await db.execute(
+            select(Inspection.site_id, Inspection.created_at, Inspection.status)
+            .join(last_sub, (Inspection.site_id == last_sub.c.site_id) & (Inspection.created_at == last_sub.c.last_dt))
+        )).all()
+        last_by_site = {row.site_id: (row.created_at, row.status) for row in last_rows}
+
+    assignment_rows = []
+    for site, court_name, dist_name, insp_name, insp_phone in site_rows:
+        last = last_by_site.get(site.id)
+        assignment_rows.append((
+            last[0] if last else None,  # ключ сортировки, вырежем перед записью в лист
+            dist_name, court_name, site.type,
+            insp_name or "Не назначена", insp_phone or "",
+            _fmt_dt(last[0]) if last else "Обхода ещё не было",
+            INSPECTION_STATUS_RU.get(last[1], last[1]) if last else "",
+        ))
+    # Сначала то, что реально требует внимания: без единого обхода — выше
+    # всего, дальше по возрастанию давности последнего визита.
+    assignment_rows.sort(key=lambda r: (r[0] is not None, r[0]))
+    assignment_data = [row[1:] for row in assignment_rows]
+
     # ── Замечания ──
     Assignee = aliased(User)
     iss_q = (
@@ -534,6 +583,11 @@ async def export_xlsx(
     wb = Workbook()
     wb.remove(wb.active)
 
+    # Первым листом — снимок "кто чем занят прямо сейчас", не история за
+    # период: это то, что проверяющему нужно открыть первым делом.
+    _sheet(wb, "Задания",
+        ["Район", "Двор", "Тип площадки", "Назначенный инспектор", "Телефон", "Последний обход", "Статус последнего обхода"],
+        assignment_data, [24, 40, 20, 26, 16, 18, 22])
     _sheet(wb, "Сводка по районам",
         ["Район", "Всего площадок", "Обходов за период", "Замечаний создано", "Закрыто", "Открыто сейчас", "Просрочено"],
         summary_data, [24, 15, 17, 17, 10, 14, 12])

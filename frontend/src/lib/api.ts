@@ -174,6 +174,9 @@ export const inspectionsApi = {
   update: (id: string, data: Record<string, unknown>) =>
     api.patch<InspectionOut>(`/inspections/${id}`, data).then((r) => r.data),
 
+  bulkAccept: (ids: string[]) =>
+    api.post<{ accepted: number; skipped: number }>('/inspections/bulk-accept', { ids }).then((r) => r.data),
+
   uploadPhoto: (id: string, file: File, checklistAnswerId?: string) => {
     const form = new FormData()
     form.append('file', file)

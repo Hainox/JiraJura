@@ -21,6 +21,7 @@ from app.schemas import (
     InspectionCreate, InspectionUpdate, InspectionOut,
     InspectionListOut, ChecklistAnswerOut, SiteOut, UserOut,
     DistrictOut, CourtyardOut, PhotoOut,
+    InspectionBulkAcceptRequest, InspectionBulkAcceptOut,
 )
 from app.services.auth import get_current_user
 from app.services.audit import log_action
@@ -194,6 +195,60 @@ async def list_inspections(
         for i in rows
     ]
     return InspectionListOut(total=total, items=items)
+
+
+@router.post("/bulk-accept", response_model=InspectionBulkAcceptOut)
+async def bulk_accept_inspections(
+    data: InspectionBulkAcceptRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Массово принять обходы без единого замечания и без своей проверки —
+    чтобы не нажимать «Принять» по одному на каждой из сотен «зелёных»
+    площадок. Список id от клиента не считается доверенным: каждый обход
+    здесь перепроверяется на сервере (статус/район/уже проверен кем-то),
+    те, что не проходят проверку, просто пропускаются, а не валят весь
+    запрос."""
+    if current_user.role not in ("reviewer", "admin"):
+        raise HTTPException(403, "Недостаточно прав")
+
+    ids = [str(i) for i in data.ids]
+    rows = (await db.execute(
+        select(Inspection).where(Inspection.id.in_(ids)).options(
+            selectinload(Inspection.site).selectinload(Site.courtyard),
+        )
+    )).scalars().all()
+
+    issue_counts = dict((await db.execute(
+        select(Issue.inspection_id, func.count())
+        .where(Issue.inspection_id.in_(ids))
+        .group_by(Issue.inspection_id)
+    )).all())
+
+    now = datetime.now(timezone.utc)
+    accepted = 0
+    skipped = len(ids) - len(rows)  # id, которых вообще не нашли в базе
+    for obj in rows:
+        district_id = obj.site.courtyard.district_id if obj.site and obj.site.courtyard else None
+        eligible = (
+            obj.status == "completed"
+            and obj.reviewed_by is None
+            and issue_counts.get(obj.id, 0) == 0
+            and in_district_scope(current_user, district_id)
+        )
+        if not eligible:
+            skipped += 1
+            continue
+        obj.reviewed_by = current_user.id
+        obj.reviewed_at = now
+        accepted += 1
+
+    if accepted:
+        await log_action(db, str(current_user.id), "inspection_bulk_accept", "inspection", None, {
+            "accepted": accepted, "skipped": skipped,
+        })
+    await db.commit()
+    return InspectionBulkAcceptOut(accepted=accepted, skipped=skipped)
 
 
 @router.get("/{inspection_id}", response_model=InspectionOut)

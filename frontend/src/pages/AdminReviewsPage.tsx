@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { districtsApi, inspectionsApi } from '@/lib/api'
 import type { DistrictOut, InspectionOut } from '@/types'
-import { ArrowLeft, RefreshCw } from 'lucide-react'
+import { ArrowLeft, RefreshCw, CheckCheck } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
 import InspectionReviewList from '@/components/InspectionReviewList'
 import { guardDemoAction } from '@/stores/demoMode'
@@ -45,6 +45,15 @@ export default function AdminReviewsPage() {
     onError: () => toast.error('Не удалось принять обход'),
   })
 
+  const bulkAcceptMutation = useMutation({
+    mutationFn: (ids: string[]) => inspectionsApi.bulkAccept(ids),
+    onSuccess: ({ accepted, skipped }) => {
+      toast.success(skipped > 0 ? `Принято обходов: ${accepted} (пропущено: ${skipped})` : `Принято обходов: ${accepted}`)
+      queryClient.invalidateQueries({ queryKey: ['inspections-admin-review'] })
+    },
+    onError: () => toast.error('Не удалось принять обходы'),
+  })
+
   const allInspections = data?.items ?? []
   // Та же семантика фильтра, что и во вкладке "Проверка" на MapPage.tsx
   const filteredInspections = allInspections.filter((insp) => {
@@ -52,6 +61,12 @@ export default function AdminReviewsPage() {
     if (statusFilter === 'pending') return insp.status !== 'completed'
     return insp.status === statusFilter
   })
+  // Кандидаты на массовую приёмку — без замечаний и ещё не проверенные
+  // кем-то (те, что уже приняты, просто показывают бейдж "Проверен" в
+  // списке без кнопки). Сервер всё равно перепроверяет каждый id.
+  const bulkAcceptableIds = filteredInspections
+    .filter((i) => !i.reviewed_by && i.status === 'completed' && (i.issues_count ?? 0) === 0)
+    .map((i) => i.id)
 
   return (
     <div className="h-full flex flex-col bg-gray-50">
@@ -86,6 +101,20 @@ export default function AdminReviewsPage() {
             </button>
           ))}
         </div>
+        {statusFilter === 'completed' && bulkAcceptableIds.length > 0 && (
+          <button
+            onClick={() => {
+              if (confirm(`Принять сразу ${bulkAcceptableIds.length} обходов без замечаний?`)) {
+                guardDemoAction(() => bulkAcceptMutation.mutate(bulkAcceptableIds))
+              }
+            }}
+            disabled={bulkAcceptMutation.isPending}
+            className="w-full btn-primary text-sm py-2 flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            <CheckCheck className="w-4 h-4" />
+            {bulkAcceptMutation.isPending ? 'Принимаем...' : `Принять все (${bulkAcceptableIds.length})`}
+          </button>
+        )}
       </div>
 
       <div className="flex-1 min-h-0">

@@ -1,7 +1,7 @@
 """PDF-отчёт по одному обходу — возвращает HTML для печати."""
 import html as _html
 
-from fastapi import APIRouter, Depends, HTTPException, Response, Request
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -32,7 +32,6 @@ def _e(text) -> str:
 @router.get("/{inspection_id}")
 async def pdf_report(
     inspection_id: str,
-    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -76,9 +75,6 @@ async def pdf_report(
     site_str = _e(insp.site.courtyard.name if insp.site.courtyard else "Площадка")
     district_str = _e(insp.site.courtyard.district.name if insp.site.courtyard and insp.site.courtyard.district else "")
     inspector_name = _e(insp.inspector.full_name)
-
-    # Абсолютный базовый URL для фото (чтобы работали при печати/скачивании)
-    base_url = f"{request.url.scheme}://{request.url.netloc}"
 
     html = f"""<!DOCTYPE html>
 <html lang="ru">
@@ -126,16 +122,23 @@ async def pdf_report(
 
     html += "</table></div>"
 
+    # Относительный путь, не абсолютный URL с request.url.netloc — за
+    # nginx-прокси FastAPI видит запрос как пришедший на внутренний
+    # docker-хост api:8000, недоступный из браузера вообще, поэтому все
+    # фото молча не грузились (битые иконки). Отчёт открывается как
+    # blob: URL (см. openPdfReport в frontend/src/lib/api.ts) — относительные
+    # пути в нём резолвятся к origin страницы, создавшей blob, как и на
+    # обычной странице того же источника.
     if general_photos:
         html += '<div class="section"><h2>Общие фото</h2><div class="photos">'
         for p in general_photos:
-            html += f'<img src="{_e(base_url)}/uploads/{_e(p.storage_path)}" />'
+            html += f'<img src="/uploads/{_e(p.storage_path)}" />'
         html += "</div></div>"
 
     if defect_photos:
         html += '<div class="section"><h2>Фото дефектов</h2><div class="photos">'
         for p in defect_photos:
-            html += f'<img src="{_e(base_url)}/uploads/{_e(p.storage_path)}" />'
+            html += f'<img src="/uploads/{_e(p.storage_path)}" />'
         html += "</div></div>"
 
     if insp.comment:

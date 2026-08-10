@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { issuesApi, districtsApi, authApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
+import { useIssuesViewStore } from '@/stores/issuesView'
 import type { IssueOut, DistrictOut, UserAdminOut } from '@/types'
 import { ArrowLeft, Search, Filter, RefreshCw, UserPlus, Calendar, Clock, AlertTriangle, CheckCircle2, XCircle, Wrench, ExternalLink, Camera } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
@@ -48,11 +49,18 @@ export default function IssuesPage() {
   const user = useAuthStore((s) => s.user)
   const isAdmin = user?.role === 'admin'
 
-  const [statusFilter, setStatusFilter] = useState<string>('')
-  const [criticalityFilter, setCriticalityFilter] = useState<string>('')
-  const [districtFilter, setDistrictFilter] = useState<string>('')
-  const [searchTerm, setSearchTerm] = useState('')
-  const [page, setPage] = useState(1)
+  // Фильтры/страница — в сторе (useIssuesViewStore), а не в useState: см.
+  // тот же паттерн и обоснование в MapPage.tsx/stores/mapView.ts.
+  const statusFilter = useIssuesViewStore((s) => s.statusFilter)
+  const setStatusFilter = useIssuesViewStore((s) => s.setStatusFilter)
+  const criticalityFilter = useIssuesViewStore((s) => s.criticalityFilter)
+  const setCriticalityFilter = useIssuesViewStore((s) => s.setCriticalityFilter)
+  const districtFilter = useIssuesViewStore((s) => s.districtFilter)
+  const setDistrictFilter = useIssuesViewStore((s) => s.setDistrictFilter)
+  const searchTerm = useIssuesViewStore((s) => s.searchTerm)
+  const setSearchTerm = useIssuesViewStore((s) => s.setSearchTerm)
+  const page = useIssuesViewStore((s) => s.page)
+  const setPage = useIssuesViewStore((s) => s.setPage)
 
   const [editingIssue, setEditingIssue] = useState<string | null>(null)
   const [editStatus, setEditStatus] = useState('')

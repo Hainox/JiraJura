@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 import type { UserOut } from '@/types'
+import { useMapViewStore } from '@/stores/mapView'
+import { useIssuesViewStore } from '@/stores/issuesView'
 
 interface AuthState {
   token: string | null
@@ -51,6 +53,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     // следующему, кто залогинится, — даже если его собственный пароль
     // менять не нужно.
     localStorage.removeItem('force_pw_change')
+    useMapViewStore.getState().reset()
+    useIssuesViewStore.getState().reset()
     set({ token: null, user: null, isAuthenticated: false })
   },
 

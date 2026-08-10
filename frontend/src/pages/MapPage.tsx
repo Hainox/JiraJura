@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { MapContainer, TileLayer, Marker, Popup, useMap, AttributionControl } from 'react-leaflet'
@@ -6,6 +6,7 @@ import MarkerClusterGroup from 'react-leaflet-cluster'
 import L from 'leaflet'
 import { sitesApi, districtsApi, reportsApi, inspectionsApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
+import { useMapViewStore } from '@/stores/mapView'
 import type { SiteOut, DistrictOut, InspectionOut } from '@/types'
 import { List, Map as MapIcon, LogOut, ChevronRight, Users, Download, ClipboardCheck, Clock, CheckCircle2, AlertTriangle, AlertCircle, UserCircle, BarChart3, Check, History } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
@@ -70,13 +71,31 @@ export default function MapPage() {
   const queryClient = useQueryClient()
   const user = useAuthStore((s) => s.user)
   const logoutStore = useAuthStore((s) => s.logout)
-  const [viewMode, setViewMode] = useState<'map' | 'list' | 'review'>('map')
-  const [districtFilter, setDistrictFilter] = useState<string | undefined>()
-  const [typeFilter, setTypeFilter] = useState<string | undefined>()
+  // Фильтры/вкладка/скролл — в сторе (useMapViewStore), а не в useState:
+  // раньше при возврате на карту из площадки/списка обходов (кнопка
+  // "назад" или переход по ссылке) страница монтировалась заново и все
+  // фильтры/выбранная вкладка слетали на дефолт. Стор живёт вне дерева
+  // компонентов и переживает размонтирование страницы.
+  const viewMode = useMapViewStore((s) => s.viewMode)
+  const setViewMode = useMapViewStore((s) => s.setViewMode)
+  const districtFilter = useMapViewStore((s) => s.districtFilter)
+  const setDistrictFilter = useMapViewStore((s) => s.setDistrictFilter)
+  const typeFilter = useMapViewStore((s) => s.typeFilter)
+  const setTypeFilter = useMapViewStore((s) => s.setTypeFilter)
+  const reviewStatusFilter = useMapViewStore((s) => s.reviewStatusFilter)
+  const setReviewStatusFilter = useMapViewStore((s) => s.setReviewStatusFilter)
+  const myInspOnly = useMapViewStore((s) => s.myInspOnly)
+  const setMyInspOnly = useMapViewStore((s) => s.setMyInspOnly)
+  const myAssignedOnly = useMapViewStore((s) => s.myAssignedOnly)
+  const setMyAssignedOnly = useMapViewStore((s) => s.setMyAssignedOnly)
+  // Не подписываемся на listScrollTop через селектор — иначе каждый пиксель
+  // скролла ре-рендерил бы всю страницу (setter вызывается на каждый onScroll).
+  // Читаем/пишем через getState() напрямую, см. эффект восстановления ниже.
+  const setListScrollTop = useMapViewStore((s) => s.setListScrollTop)
+  const listRef = useRef<HTMLDivElement>(null)
+  // Панели-раскрывашки — не "контекст", просто текущее состояние UI,
+  // можно оставить локальными
   const [showFilters, setShowFilters] = useState(false)
-  const [reviewStatusFilter, setReviewStatusFilter] = useState<string>('all')
-  const [myInspOnly, setMyInspOnly] = useState(false)
-  const [myAssignedOnly, setMyAssignedOnly] = useState(false)
   const [showLegend, setShowLegend] = useState(false)
 
   const isAdmin = user?.role === 'admin'
@@ -119,6 +138,19 @@ export default function MapPage() {
   const sites = sitesData?.items ?? []
   const totalCount = sitesData?.total ?? sites.length
   const allInspections = inspectionsData?.items ?? []
+
+  // Восстанавливаем позицию скролла списка площадок при возврате на вкладку
+  // "Список" (напр. открыл площадку из середины списка, нажал "назад" —
+  // раньше список всегда прыгал обратно наверх).
+  useEffect(() => {
+    if (viewMode === 'list' && listRef.current) {
+      listRef.current.scrollTop = useMapViewStore.getState().listScrollTop
+    }
+  }, [viewMode, sites.length])
+
+  const handleListScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    setListScrollTop(e.currentTarget.scrollTop)
+  }
 
   // Проверяющий принимает "зелёный" (без замечаний) обход одним нажатием,
   // не открывая его — статус не меняется (уже completed), но фиксируется
@@ -246,7 +278,7 @@ export default function MapPage() {
           {user?.role === 'inspector' && (
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setMyAssignedOnly((v) => !v)}
+                onClick={() => setMyAssignedOnly(!myAssignedOnly)}
                 className={`text-xs px-3 py-1 rounded-full font-medium transition-colors ${
                   myAssignedOnly ? 'bg-primary-700 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
@@ -259,7 +291,7 @@ export default function MapPage() {
             <div className="flex items-center gap-2">
               {user?.role === 'inspector' && (
                 <button
-                  onClick={() => setMyInspOnly((v) => !v)}
+                  onClick={() => setMyInspOnly(!myInspOnly)}
                   className={`text-xs px-3 py-1 rounded-full font-medium transition-colors ${
                     myInspOnly ? 'bg-primary-700 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
@@ -491,7 +523,7 @@ export default function MapPage() {
             </MarkerClusterGroup>
           </MapContainer>
         ) : (
-          <div className="overflow-y-auto h-full p-3 space-y-2">
+          <div ref={listRef} onScroll={handleListScroll} className="overflow-y-auto h-full p-3 space-y-2">
             {sites.map((s) => (
               <button key={s.id} onClick={() => navigate(`/sites/${s.id}`)} className="card w-full text-left hover:border-primary-300 transition-colors">
                 <div className="flex items-start gap-3">

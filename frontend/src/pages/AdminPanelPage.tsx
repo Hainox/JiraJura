@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Users, Clock, MapPinned, ClipboardList, AlertCircle, ClipboardCheck, BarChart3 } from 'lucide-react'
+import { ArrowLeft, Users, Clock, MapPinned, ClipboardList, AlertCircle, ClipboardCheck, BarChart3, Clapperboard } from 'lucide-react'
+import { useDemoModeStore } from '@/stores/demoMode'
 
 const REVIEW_SECTIONS = [
   { to: '/admin/reviews', icon: ClipboardCheck, title: 'Приёмка обходов', desc: 'Обходы, ожидающие проверки и приёмки' },
@@ -16,6 +17,8 @@ const SECTIONS = [
 
 export default function AdminPanelPage() {
   const navigate = useNavigate()
+  const demoMode = useDemoModeStore((s) => s.enabled)
+  const toggleDemoMode = useDemoModeStore((s) => s.toggle)
 
   return (
     <div className="h-full flex flex-col bg-gray-50">
@@ -30,6 +33,20 @@ export default function AdminPanelPage() {
       </div>
 
       <div className="overflow-y-auto flex-1 p-4 space-y-5">
+        <button
+          onClick={toggleDemoMode}
+          className={`w-full flex items-center gap-3 rounded-xl px-4 py-3 text-left transition-colors ${
+            demoMode ? 'bg-amber-500 text-amber-950' : 'bg-white border border-gray-200 text-gray-700 hover:border-amber-300'
+          }`}
+        >
+          <Clapperboard className="w-5 h-5 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <div className="font-semibold">Демо-режим {demoMode ? 'включён' : 'выключен'}</div>
+            <div className={`text-xs mt-0.5 ${demoMode ? 'text-amber-900' : 'text-gray-500'}`}>
+              Для показа руководству — принятие обходов и изменение статусов замечаний не сохраняются
+            </div>
+          </div>
+        </button>
         <div>
           <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 px-1">Замечания и приёмка</h2>
           <div className="space-y-3">

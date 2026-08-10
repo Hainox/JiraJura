@@ -13,6 +13,7 @@ export interface UserOut {
   role: string
   district_id?: string
   phone?: string
+  is_developer?: boolean
 }
 
 export interface LoginResponse {
@@ -55,6 +56,7 @@ export interface UserRoleUpdate {
   is_active?: boolean
   full_name?: string
   phone?: string | null
+  is_developer?: boolean
 }
 
 export interface SelfUpdateRequest {

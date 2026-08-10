@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '@/stores/auth'
+import { useDemoModeStore } from '@/stores/demoMode'
 import { authApi } from '@/lib/api'
 import type { Role } from '@/types'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
@@ -60,9 +61,15 @@ function useSyncUserFromServer() {
 
 export default function App() {
   useSyncUserFromServer()
+  const demoMode = useDemoModeStore((s) => s.enabled)
   return (
     <ErrorBoundary>
       <div className="h-full flex flex-col bg-gray-50">
+        {demoMode && (
+          <div className="bg-amber-500 text-amber-950 text-xs font-semibold text-center py-1 shrink-0">
+            🎬 Демо-режим — изменения не сохраняются
+          </div>
+        )}
         <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register/:token" element={<RegisterPage />} />

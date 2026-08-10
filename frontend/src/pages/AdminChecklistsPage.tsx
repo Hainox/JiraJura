@@ -5,6 +5,7 @@ import { checklistsApi } from '@/lib/api'
 import type { ChecklistTemplateOut, ChecklistItemOut } from '@/types'
 import { ArrowLeft, Pencil, Plus, RotateCcw, EyeOff } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
+import { guardDemoAction } from '@/stores/demoMode'
 
 export default function AdminChecklistsPage() {
   const navigate = useNavigate()
@@ -88,7 +89,7 @@ export default function AdminChecklistsPage() {
                 </div>
                 <div className="flex gap-2">
                   <button
-                    onClick={() => updateMutation.mutate({ id: item.id, data: form })}
+                    onClick={() => guardDemoAction(() => updateMutation.mutate({ id: item.id, data: form }))}
                     disabled={!form.question.trim() || updateMutation.isPending}
                     className="btn-primary text-sm px-3 flex-1"
                   >
@@ -114,14 +115,14 @@ export default function AdminChecklistsPage() {
                   </button>
                   {item.is_active ? (
                     <button
-                      onClick={() => { if (confirm(`Отключить пункт «${item.question}»? Он перестанет появляться в новых обходах, но сохранится в истории.`)) updateMutation.mutate({ id: item.id, data: { is_active: false } }) }}
+                      onClick={() => { if (confirm(`Отключить пункт «${item.question}»? Он перестанет появляться в новых обходах, но сохранится в истории.`)) guardDemoAction(() => updateMutation.mutate({ id: item.id, data: { is_active: false } })) }}
                       className="p-2 rounded-lg hover:bg-gray-100"
                       title="Отключить"
                     >
                       <EyeOff className="w-4 h-4 text-gray-500" />
                     </button>
                   ) : (
-                    <button onClick={() => updateMutation.mutate({ id: item.id, data: { is_active: true } })} className="p-2 rounded-lg hover:bg-gray-100" title="Включить обратно">
+                    <button onClick={() => guardDemoAction(() => updateMutation.mutate({ id: item.id, data: { is_active: true } }))} className="p-2 rounded-lg hover:bg-gray-100" title="Включить обратно">
                       <RotateCcw className="w-4 h-4 text-gray-500" />
                     </button>
                   )}

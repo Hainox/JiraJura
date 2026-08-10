@@ -5,6 +5,7 @@ import { districtsApi, courtyardsApi, sitesApi } from '@/lib/api'
 import type { DistrictAdminOut, CourtyardAdminOut, SiteOut } from '@/types'
 import { ArrowLeft, Merge, Pencil, Search } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
+import { guardDemoAction } from '@/stores/demoMode'
 
 const CHILD_TYPE = 'Детская площадка'
 const SPORT_TYPE = 'Спортивная площадка'
@@ -84,7 +85,7 @@ function DistrictsTab() {
           {renaming === d.id ? (
             <div className="flex gap-2">
               <input className="input-field text-sm flex-1" value={renameValue} onChange={(e) => setRenameValue(e.target.value)} autoFocus />
-              <button onClick={() => renameMutation.mutate({ id: d.id, name: renameValue })} disabled={!renameValue.trim() || renameMutation.isPending} className="btn-primary text-sm px-3">Сохранить</button>
+              <button onClick={() => guardDemoAction(() => renameMutation.mutate({ id: d.id, name: renameValue }))} disabled={!renameValue.trim() || renameMutation.isPending} className="btn-primary text-sm px-3">Сохранить</button>
               <button onClick={() => setRenaming(null)} className="btn-outline text-sm px-3">Отмена</button>
             </div>
           ) : merging === d.id ? (
@@ -96,7 +97,7 @@ function DistrictsTab() {
                 ))}
               </select>
               <button
-                onClick={() => { if (confirm(`Перенести все дворы/площадки из «${d.name}» в выбранный район и удалить «${d.name}»?`)) mergeMutation.mutate({ id: d.id, into: mergeTarget }) }}
+                onClick={() => { if (confirm(`Перенести все дворы/площадки из «${d.name}» в выбранный район и удалить «${d.name}»?`)) guardDemoAction(() => mergeMutation.mutate({ id: d.id, into: mergeTarget })) }}
                 disabled={!mergeTarget || mergeMutation.isPending}
                 className="btn-primary text-sm px-3"
               >
@@ -171,7 +172,7 @@ function CourtyardsTab() {
                 {districts?.map((d) => (<option key={d.id} value={d.id}>{d.name}</option>))}
               </select>
               <div className="flex gap-2">
-                <button onClick={() => updateMutation.mutate({ id: c.id, name: editName, district_id: editDistrict })} disabled={!editName.trim() || updateMutation.isPending} className="btn-primary text-sm px-3 flex-1">Сохранить</button>
+                <button onClick={() => guardDemoAction(() => updateMutation.mutate({ id: c.id, name: editName, district_id: editDistrict }))} disabled={!editName.trim() || updateMutation.isPending} className="btn-primary text-sm px-3 flex-1">Сохранить</button>
                 <button onClick={() => setEditing(null)} className="btn-outline text-sm px-3 flex-1">Отмена</button>
               </div>
             </div>
@@ -247,7 +248,7 @@ function SitesTab() {
               </label>
               <div className="flex gap-2">
                 <button
-                  onClick={() => updateMutation.mutate({ id: s.id, type: editType, area_m2: parseFloat(editArea), is_active: editActive })}
+                  onClick={() => guardDemoAction(() => updateMutation.mutate({ id: s.id, type: editType, area_m2: parseFloat(editArea), is_active: editActive }))}
                   disabled={!editArea || updateMutation.isPending}
                   className="btn-primary text-sm px-3 flex-1"
                 >

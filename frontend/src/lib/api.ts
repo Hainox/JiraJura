@@ -24,6 +24,7 @@ import type {
   SelfUpdateRequest,
   PasswordResetOut,
   DashboardOut,
+  SystemStatsOut,
 } from '@/types'
 
 export const api = axios.create({
@@ -256,4 +257,9 @@ export const issuesApi = {
       })
       .then((r) => r.data)
   },
+}
+
+// ── Разработчик (эксплуатационная сводка) ──
+export const systemApi = {
+  stats: () => api.get<SystemStatsOut>('/system/stats').then((r) => r.data),
 }

@@ -258,6 +258,8 @@ async def update_user(
     # невозможно: явный null неотличим от "поле не прислали".
     if "phone" in data.model_fields_set:
         user.phone = data.phone
+    if data.is_developer is not None:
+        user.is_developer = data.is_developer
 
     # exclude_unset (не exclude_none!) — иначе явно переданный district_id=null
     # (снятие района) вырезается из лога вместе с полями, которых вовсе не было

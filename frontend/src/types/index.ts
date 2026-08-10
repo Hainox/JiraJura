@@ -257,3 +257,12 @@ export interface DashboardOut {
   districts: DashboardDistrictRow[]
   totals: DashboardDistrictRow
 }
+
+// ── Эксплуатационная сводка ("Разработчик") ──
+export interface SystemStatsOut {
+  app_env: string
+  db_ok: boolean
+  uptime_seconds: number
+  counts: Record<string, number>
+  uploads_size_mb: number
+}

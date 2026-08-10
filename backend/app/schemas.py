@@ -28,6 +28,7 @@ class UserOut(BaseModel):
     role: str
     district_id: Optional[UUID] = None
     phone: Optional[str] = None
+    is_developer: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -45,6 +46,7 @@ class UserRoleUpdate(BaseModel):
     is_active: Optional[bool] = None
     full_name: Optional[str] = None
     phone: Optional[str] = None
+    is_developer: Optional[bool] = None
 
 
 class SelfUpdateRequest(BaseModel):

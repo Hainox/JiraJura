@@ -86,6 +86,15 @@ async def client():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
+    # app.database.engine — процесс-глобальный синглтон, его пул соединений
+    # asyncpg привязывается к event loop'у первого теста, что его использовал.
+    # pytest-asyncio даёт каждому тесту свой loop (function-scope по
+    # умолчанию), поэтому без явного dispose второй тест в файле падает с
+    # "attached to a different loop" — пул закрывшегося loop'а не переживает
+    # переход к следующему. Закрываем здесь, чтобы следующий тест открыл
+    # соединения заново, уже в своём loop'е.
+    from app.database import engine
+    await engine.dispose()
 
 
 @pytest_asyncio.fixture

@@ -24,6 +24,7 @@ import AdminPanelPage from '@/pages/AdminPanelPage'
 import AdminSitesPage from '@/pages/AdminSitesPage'
 import AdminChecklistsPage from '@/pages/AdminChecklistsPage'
 import AdminReviewsPage from '@/pages/AdminReviewsPage'
+import AdminSystemPage from '@/pages/AdminSystemPage'
 
 function ProtectedRoute({ children, roles }: { children: React.ReactNode; roles?: Role[] }) {
   const isAuth = useAuthStore((s) => s.isAuthenticated)
@@ -146,6 +147,14 @@ export default function App() {
           element={
             <ProtectedRoute roles={['admin']}>
               <AdminReviewsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/system"
+          element={
+            <ProtectedRoute roles={['admin']}>
+              <AdminSystemPage />
             </ProtectedRoute>
           }
         />

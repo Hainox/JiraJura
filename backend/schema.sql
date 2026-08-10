@@ -97,6 +97,7 @@ CREATE TABLE users (
     phone          VARCHAR(20),
     is_active      BOOLEAN DEFAULT TRUE,
     must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
+    is_developer   BOOLEAN NOT NULL DEFAULT FALSE,  -- доп. меню "Разработчик" в админ-панели
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

@@ -29,6 +29,7 @@ export default function AdminUsersPage() {
   const [editPhone, setEditPhone] = useState('')
   const [editRole, setEditRole] = useState<Role>('inspector')
   const [editDistrictId, setEditDistrictId] = useState('')
+  const [editIsDeveloper, setEditIsDeveloper] = useState(false)
 
   // Подтверждение удаления
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
@@ -111,6 +112,7 @@ export default function AdminUsersPage() {
         // не сможет отличить "не меняем район" от "снимаем район" при
         // переводе проверяющего на "весь округ")
         district_id: editRole !== 'admin' ? (editDistrictId || null) : null,
+        is_developer: editRole === 'admin' ? editIsDeveloper : false,
       })
     },
     onSuccess: () => {
@@ -127,6 +129,7 @@ export default function AdminUsersPage() {
     setEditPhone(u.phone ?? '')
     setEditRole(u.role as Role)
     setEditDistrictId(u.district_id ?? '')
+    setEditIsDeveloper(u.is_developer ?? false)
   }
 
   const inviteLink = lastInvite ? `${window.location.origin}/register/${lastInvite.token}` : null
@@ -446,6 +449,16 @@ export default function AdminUsersPage() {
                     ))}
                   </select>
                 </div>
+              )}
+              {editRole === 'admin' && (
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={editIsDeveloper}
+                    onChange={(e) => setEditIsDeveloper(e.target.checked)}
+                  />
+                  Доступ к разделу «Разработчик» (эксплуатационная сводка)
+                </label>
               )}
               <button
                 onClick={() => guardDemoAction(() => saveEditMutation.mutate())}

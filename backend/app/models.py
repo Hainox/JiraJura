@@ -148,6 +148,10 @@ class User(Base):
     phone = Column(String(20))
     is_active = Column(Boolean, default=True)
     must_change_password = Column(Boolean, default=False)
+    # Доп. пункт меню "Разработчик" в админ-панели (эксплуатационные
+    # инструменты) — не отдельная роль, просто флаг на конкретном admin-
+    # аккаунте, чтобы не захламлять меню остальным админам.
+    is_developer = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime(timezone=True), default=_utcnow)
 
     district_ref = relationship("District", back_populates="users")

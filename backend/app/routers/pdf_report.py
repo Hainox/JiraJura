@@ -1,5 +1,8 @@
 """PDF-отчёт по одному обходу — возвращает HTML для печати."""
+import base64
 import html as _html
+import mimetypes
+import os
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select
@@ -12,6 +15,8 @@ from app.services.auth import get_current_user
 from app.services.permissions import check_own_or_role, in_district_scope
 
 router = APIRouter()
+
+UPLOAD_DIR = os.environ.get("UPLOAD_DIR", "uploads")
 
 STATUS_RU = {
     "planned": "Запланирован", "in_progress": "В процессе",
@@ -27,6 +32,24 @@ def _e(text) -> str:
     вида <img onerror=...> крадёт токен из localStorage у любого
     reviewer/admin, кто откроет отчёт по этому обходу (обычное действие)."""
     return _html.escape(str(text)) if text is not None else ""
+
+
+def _photo_data_uri(storage_path: str) -> str | None:
+    """Инлайним фото как data:-URI прямо в HTML. Отчёт открывается как
+    blob: URL (см. openPdfReport в frontend/src/lib/api.ts) — относительный
+    src вида "/uploads/..." там НЕ резолвится к origin страницы (blob: не
+    "особая" схема в URL-стандарте, при резолве относительных ссылок с
+    ведущим "/" её authority/host теряется), из-за чего все фото оставались
+    пустыми рамками что в блобе, что в PDF, распечатанном из него. Base64
+    убирает саму необходимость в сетевом запросе."""
+    abs_path = os.path.join(UPLOAD_DIR, storage_path)
+    try:
+        with open(abs_path, "rb") as f:
+            data = f.read()
+    except OSError:
+        return None
+    mime = mimetypes.guess_type(storage_path)[0] or "image/jpeg"
+    return f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
 
 
 @router.get("/{inspection_id}")
@@ -122,23 +145,24 @@ async def pdf_report(
 
     html += "</table></div>"
 
-    # Относительный путь, не абсолютный URL с request.url.netloc — за
-    # nginx-прокси FastAPI видит запрос как пришедший на внутренний
-    # docker-хост api:8000, недоступный из браузера вообще, поэтому все
-    # фото молча не грузились (битые иконки). Отчёт открывается как
-    # blob: URL (см. openPdfReport в frontend/src/lib/api.ts) — относительные
-    # пути в нём резолвятся к origin страницы, создавшей blob, как и на
-    # обычной странице того же источника.
+    # Фото инлайнятся как data:-URI, см. _photo_data_uri выше — попытка
+    # отдать их относительным /uploads/-путём (более ранняя версия этого
+    # фикса) не работала: blob:-документ не резолвит ведущий "/" к origin
+    # страницы, породившей blob.
     if general_photos:
         html += '<div class="section"><h2>Общие фото</h2><div class="photos">'
         for p in general_photos:
-            html += f'<img src="/uploads/{_e(p.storage_path)}" />'
+            uri = _photo_data_uri(p.storage_path)
+            if uri:
+                html += f'<img src="{uri}" />'
         html += "</div></div>"
 
     if defect_photos:
         html += '<div class="section"><h2>Фото дефектов</h2><div class="photos">'
         for p in defect_photos:
-            html += f'<img src="/uploads/{_e(p.storage_path)}" />'
+            uri = _photo_data_uri(p.storage_path)
+            if uri:
+                html += f'<img src="{uri}" />'
         html += "</div></div>"
 
     if insp.comment:

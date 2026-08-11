@@ -26,6 +26,7 @@ import AdminPanelPage from '@/pages/AdminPanelPage'
 import AdminSitesPage from '@/pages/AdminSitesPage'
 import AdminChecklistsPage from '@/pages/AdminChecklistsPage'
 import AdminReviewsPage from '@/pages/AdminReviewsPage'
+import AdminIssueControlPage from '@/pages/AdminIssueControlPage'
 import AdminSystemPage from '@/pages/AdminSystemPage'
 
 function ProtectedRoute({ children, roles }: { children: React.ReactNode; roles?: Role[] }) {
@@ -158,6 +159,14 @@ export default function App() {
           element={
             <ProtectedRoute roles={['admin']}>
               <AdminReviewsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/control"
+          element={
+            <ProtectedRoute roles={['admin']}>
+              <AdminIssueControlPage />
             </ProtectedRoute>
           }
         />

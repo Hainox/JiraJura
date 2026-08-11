@@ -78,11 +78,11 @@ export default function BeforeAfterSlider({
         <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full ${beforeUrl ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
           {label}
         </span>
-        <a href={url} target="_blank" rel="noreferrer">
+        <a href={url} target="_blank" rel="noreferrer" className={`block w-full h-72 bg-gray-900 rounded-xl border-2 ${borderColor} overflow-hidden hover:opacity-90 transition-opacity`}>
           <img
             src={url}
             alt={label}
-            className={`w-full h-56 object-cover rounded-xl border-2 ${borderColor} hover:opacity-90 transition-opacity`}
+            className="w-full h-full object-contain"
           />
         </a>
         {!beforeUrl && (
@@ -98,13 +98,16 @@ export default function BeforeAfterSlider({
   return (
     <div
       ref={containerRef}
-      className="relative w-full h-56 select-none rounded-xl overflow-hidden cursor-col-resize"
+      className="relative w-full h-72 bg-gray-900 select-none rounded-xl overflow-hidden cursor-col-resize"
       onMouseDown={onMouseDown}
       onTouchStart={onTouchStart}
     >
-      {/* Левая сторона — ДО */}
+      {/* Левая сторона — ДО. object-contain (не cover) — иначе телефонные
+          фото произвольных пропорций обрезаются в фиксированную коробку,
+          и на сравнении ДО/ПОСЛЕ часто пропадает как раз то место, где
+          видно нарушение/исправление. */}
       <div className="absolute inset-0 overflow-hidden" style={{ clipPath: `inset(0 ${100 - position}% 0 0)` }}>
-        <img src={beforeUrl} alt="ДО" className="w-full h-full object-cover" />
+        <img src={beforeUrl} alt="ДО" className="w-full h-full object-contain" />
         <span className="absolute top-2 left-2 bg-blue-600 text-white text-xs font-bold px-2 py-0.5 rounded-full shadow">
           {beforeLabel}
         </span>
@@ -112,7 +115,7 @@ export default function BeforeAfterSlider({
 
       {/* Правая сторона — ПОСЛЕ */}
       <div className="absolute inset-0 overflow-hidden" style={{ clipPath: `inset(0 0 0 ${position}%)` }}>
-        <img src={afterUrl} alt="ПОСЛЕ" className="w-full h-full object-cover" />
+        <img src={afterUrl} alt="ПОСЛЕ" className="w-full h-full object-contain" />
         <span className="absolute top-2 right-2 bg-green-600 text-white text-xs font-bold px-2 py-0.5 rounded-full shadow">
           {afterLabel}
         </span>

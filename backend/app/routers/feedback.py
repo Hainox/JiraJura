@@ -3,12 +3,13 @@
 models.py — сознательно отдельная сущность от Issue: это жалоба
 гражданина/сотрудника, а не находка инспектора при обходе.
 """
+import io
 import os
 import uuid as _uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile, File
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -23,6 +24,9 @@ from app.schemas import (
 from app.services.permissions import require_role
 
 router = APIRouter()
+
+TYPE_LABELS_RU = {"site": "Площадка", "app": "Приложение", "other": "Другое"}
+STATUS_LABELS_RU = {"new": "Новое", "in_review": "В работе", "resolved": "Решено", "dismissed": "Отклонено"}
 
 _STATUSES = ("new", "in_review", "resolved", "dismissed")
 _REPORT_TYPES = ("site", "app", "other")
@@ -161,6 +165,74 @@ async def list_feedback(
         .order_by(FeedbackReport.status == "new", FeedbackReport.created_at.desc())
     )).scalars().unique().all()
     return FeedbackReportListOut(total=total, items=[_report_to_out(r) for r in rows])
+
+
+@router.get("/export.xlsx")
+async def export_feedback_xlsx(
+    status: Optional[str] = Query(None),
+    report_type: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("reviewer", "admin")),
+):
+    """Выгрузка обращений в Excel — для админа/разработчика, покрывает и
+    жалобы на площадки, и технические проблемы (report_type='app'), и
+    прочее, одним листом с колонкой типа/статуса.
+    """
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+    from openpyxl.utils import get_column_letter
+
+    filters = []
+    if status:
+        filters.append(FeedbackReport.status == status)
+    if report_type:
+        filters.append(FeedbackReport.report_type == report_type)
+
+    rows = (await db.execute(
+        select(FeedbackReport).options(selectinload(FeedbackReport.attachments))
+        .where(*filters)
+        .order_by(FeedbackReport.created_at.desc())
+    )).scalars().unique().all()
+
+    def _fmt_dt(value):
+        return value.strftime("%d.%m.%Y %H:%M") if value else ""
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Обращения"
+    headers = [
+        "Дата", "Тип", "Статус", "ФИО", "Телефон", "Место / где возникло",
+        "Сообщение", "Комментарий администратора", "Вложений", "Дата решения",
+    ]
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+    for r in rows:
+        ws.append([
+            _fmt_dt(r.created_at),
+            TYPE_LABELS_RU.get(r.report_type, r.report_type),
+            STATUS_LABELS_RU.get(r.status, r.status),
+            r.full_name or "Аноним",
+            r.phone or "",
+            r.location_text or "",
+            r.message,
+            r.admin_comment or "",
+            len(r.attachments or []),
+            _fmt_dt(r.resolved_at),
+        ])
+    widths = [16, 14, 12, 24, 16, 30, 50, 40, 10, 16]
+    for i, w in enumerate(widths, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+    ws.freeze_panes = "A2"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="feedback_export_{stamp}.xlsx"'},
+    )
 
 
 @router.patch("/{report_id}", response_model=FeedbackReportOut)

@@ -277,6 +277,9 @@ class Issue(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     inspection_id = Column(UUID(as_uuid=True), ForeignKey("inspections.id"), nullable=False)
     site_id = Column(UUID(as_uuid=True), ForeignKey("sites.id"), nullable=False)
+    # Пункт чек-листа, из-за которого замечание создано автоматически —
+    # NULL для замечаний, заведённых вручную не по конкретному пункту.
+    checklist_answer_id = Column(UUID(as_uuid=True), ForeignKey("checklist_answers.id", ondelete="SET NULL"), nullable=True)
     title = Column(String(300), nullable=False)
     description = Column(Text)
     criticality = Column(ISSUE_CRITICALITY_ENUM, nullable=False, default="medium")

@@ -341,22 +341,71 @@ async def update_inspection(
         })
 
     if data.answers:
+        answer_by_item: dict[str, ChecklistAnswer] = {}
         for ans in data.answers:
+            item_id = str(ans.checklist_item_id)
             existing = (await db.execute(
                 select(ChecklistAnswer).where(
                     ChecklistAnswer.inspection_id == inspection_id,
-                    ChecklistAnswer.checklist_item_id == str(ans.checklist_item_id),
+                    ChecklistAnswer.checklist_item_id == item_id,
                 )
             )).scalar_one_or_none()
             if existing:
                 existing.result = ans.result
                 existing.comment = ans.comment
+                answer_by_item[item_id] = existing
             else:
-                db.add(ChecklistAnswer(
+                new_answer = ChecklistAnswer(
                     inspection_id=inspection_id,
-                    checklist_item_id=str(ans.checklist_item_id),
+                    checklist_item_id=item_id,
                     result=ans.result,
                     comment=ans.comment,
+                )
+                db.add(new_answer)
+                answer_by_item[item_id] = new_answer
+
+        # Автосоздание замечания по каждому пункту, отмеченному "Не ОК" —
+        # раньше это был отдельный необязательный ручной шаг («Создать
+        # замечание»), и множество реальных дефектов из чек-листа никогда
+        # не попадали дальше в работу/отчётность (см. аудит статистики
+        # районов — «Замечаний создано» массово расходилось с фактическим
+        # числом найденных нарушений). Теперь дефект в чек-листе всегда
+        # порождает отслеживаемое замечание без лишних действий инспектора;
+        # кнопка «Создать замечание» остаётся для наблюдений вне чек-листа.
+        # UNIQUE-индекс на checklist_answer_id (см. миграцию d1e2f3a4b5c6)
+        # и проверка ниже не дают задвоить замечание при повторном
+        # сохранении/редактировании того же ответа.
+        defect_item_ids = [iid for iid, a in answer_by_item.items() if a.result == "defect"]
+        if defect_item_ids:
+            await db.flush()  # проставляет .id новым ChecklistAnswer
+
+            defect_answer_ids = [answer_by_item[iid].id for iid in defect_item_ids]
+            items_by_id = {
+                str(i.id): i for i in (await db.execute(
+                    select(ChecklistItem).where(ChecklistItem.id.in_(defect_item_ids))
+                )).scalars().all()
+            }
+            already_issued = {
+                str(row) for row in (await db.execute(
+                    select(Issue.checklist_answer_id).where(Issue.checklist_answer_id.in_(defect_answer_ids))
+                )).scalars().all()
+            }
+            for item_id in defect_item_ids:
+                answer = answer_by_item[item_id]
+                if str(answer.id) in already_issued:
+                    continue
+                item = items_by_id.get(item_id)
+                if not item:
+                    continue
+                db.add(Issue(
+                    inspection_id=inspection_id,
+                    site_id=obj.site_id,
+                    checklist_answer_id=answer.id,
+                    title=item.question,
+                    description=answer.comment,
+                    criticality="high" if item.is_critical else "medium",
+                    status="open",
+                    created_by=current_user.id,
                 ))
 
     # Пункты чек-листа с requires_photo=TRUE (например «Фото общего вида

@@ -249,6 +249,7 @@ CREATE TABLE issues (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     inspection_id   UUID NOT NULL REFERENCES inspections(id),
     site_id         UUID NOT NULL REFERENCES sites(id),
+    checklist_answer_id UUID REFERENCES checklist_answers(id) ON DELETE SET NULL, -- пункт чек-листа, породивший замечание автоматически (NULL — заведено вручную)
     title           VARCHAR(300) NOT NULL,
     description     TEXT,
     criticality     issue_criticality NOT NULL DEFAULT 'medium',
@@ -266,6 +267,7 @@ CREATE TABLE issues (
 CREATE INDEX idx_issues_inspection ON issues(inspection_id);
 CREATE INDEX idx_issues_site ON issues(site_id);
 CREATE INDEX idx_issues_status ON issues(status);
+CREATE UNIQUE INDEX ux_issues_checklist_answer_id ON issues(checklist_answer_id) WHERE checklist_answer_id IS NOT NULL;
 CREATE INDEX idx_issues_criticality ON issues(criticality);
 CREATE INDEX idx_issues_assigned ON issues(assigned_to);
 

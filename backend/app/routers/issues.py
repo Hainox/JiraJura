@@ -122,6 +122,7 @@ async def create_issue(
 @router.get("/", response_model=IssueListOut)
 async def list_issues(
     site_id: Optional[str] = Query(None),
+    inspection_id: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     criticality: Optional[str] = Query(None),
     district_id: Optional[str] = Query(None),
@@ -141,6 +142,8 @@ async def list_issues(
 
     if site_id:
         base = base.where(Issue.site_id == site_id)
+    if inspection_id:
+        base = base.where(Issue.inspection_id == inspection_id)
     if status:
         base = base.where(Issue.status == status)
     if criticality:

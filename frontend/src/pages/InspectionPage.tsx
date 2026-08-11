@@ -3,7 +3,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { inspectionsApi, checklistsApi, issuesApi, reportsApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
-import type { InspectionOut, ChecklistTemplateOut, ChecklistItemOut, PhotoOut } from '@/types'
+import type { InspectionOut, ChecklistTemplateOut, ChecklistItemOut, PhotoOut, IssueOut } from '@/types'
 import {
   ArrowLeft, Send, X, AlertTriangle, CheckCircle, Eye,
   CheckCircle2, HelpCircle, ChevronRight, Plus, Camera,
@@ -16,6 +16,25 @@ type AnswerResult = 'ok' | 'defect' | 'pending'
 const STATUS_LABELS: Record<string, string> = {
   planned: 'Запланирован', in_progress: 'В процессе',
   completed: 'Завершён', issues_found: 'Есть нарушения', critical: 'Критический',
+}
+
+const ISSUE_CRIT_LABELS: Record<string, string> = {
+  low: 'Низкая', medium: 'Средняя', high: 'Высокая', critical: 'Критическая',
+}
+const ISSUE_CRIT_COLORS: Record<string, string> = {
+  low: 'bg-gray-100 text-gray-600', medium: 'bg-blue-100 text-blue-700',
+  high: 'bg-orange-100 text-orange-800', critical: 'bg-red-100 text-red-900 font-bold',
+}
+const ISSUE_STATUS_LABELS: Record<string, string> = {
+  open: 'Открыто', assigned: 'Назначено', in_work: 'В работе',
+  fixed: 'Исправлено', control: 'На контроле', closed: 'Закрыто',
+  overdue: 'Просрочено', revision_needed: 'На доработке',
+}
+const ISSUE_STATUS_COLORS: Record<string, string> = {
+  open: 'bg-red-100 text-red-800', assigned: 'bg-blue-100 text-blue-800', in_work: 'bg-yellow-100 text-yellow-800',
+  fixed: 'bg-green-100 text-green-800', control: 'bg-purple-100 text-purple-800',
+  closed: 'bg-gray-100 text-gray-600', overdue: 'bg-red-200 text-red-900',
+  revision_needed: 'bg-orange-100 text-orange-800',
 }
 
 export default function InspectionPage() {
@@ -77,6 +96,16 @@ export default function InspectionPage() {
     queryKey: ['checklist-template', inspection?.site?.type],
     queryFn: () => checklistsApi.template({ site_type: inspection!.site.type }),
     enabled: !!inspection?.site?.type,
+  })
+
+  // Замечания, уже созданные по этому обходу — раньше карточка обхода их
+  // никак не показывала (только форму создания нового), из-за чего бейдж
+  // "N замечаний" в списках был не подтверждаем: открыв сам обход, ни
+  // проверяющий, ни инспектор не видели, что это вообще за замечание.
+  const { data: existingIssues } = useQuery<IssueOut[]>({
+    queryKey: ['issues', inspectionId],
+    queryFn: () => issuesApi.list({ inspection_id: inspectionId }).then((r) => r.items),
+    enabled: !!inspectionId,
   })
 
   const allItems: ChecklistItemOut[] = useMemo(
@@ -415,6 +444,50 @@ export default function InspectionPage() {
           <CheckCircle className="w-3.5 h-3.5" />
           Проверено: {inspection.reviewed_by.full_name}
           {inspection.reviewed_at && `, ${new Date(inspection.reviewed_at).toLocaleDateString('ru')}`}
+        </div>
+      )}
+
+      {/* Замечания по этому обходу */}
+      {existingIssues && existingIssues.length > 0 && (
+        <div className="bg-white border-b p-3 shrink-0 space-y-2">
+          <div className="text-xs font-semibold text-gray-500 uppercase">
+            Замечания по обходу ({existingIssues.length})
+          </div>
+          {existingIssues.map((issue) => {
+            const detailPath = isAdmin ? `/admin/issues/${issue.id}` : `/issues/${issue.id}`
+            const canOpen = isReviewer
+            return (
+              <div
+                key={issue.id}
+                role={canOpen ? 'button' : undefined}
+                tabIndex={canOpen ? 0 : undefined}
+                onClick={canOpen ? () => navigate(detailPath) : undefined}
+                className={`rounded-lg border border-gray-200 p-2.5 ${canOpen ? 'cursor-pointer hover:border-primary-300' : ''}`}
+              >
+                <div className="flex items-center gap-2 flex-wrap mb-1">
+                  <span className={`badge text-[10px] ${ISSUE_CRIT_COLORS[issue.criticality] ?? 'bg-gray-100'}`}>
+                    {ISSUE_CRIT_LABELS[issue.criticality] ?? issue.criticality}
+                  </span>
+                  <span className={`badge text-[10px] ${ISSUE_STATUS_COLORS[issue.status] ?? 'bg-gray-100'}`}>
+                    {ISSUE_STATUS_LABELS[issue.status] ?? issue.status}
+                  </span>
+                </div>
+                <div className="text-sm font-medium text-gray-800">{issue.title}</div>
+                {issue.description && (
+                  <div className="text-xs text-gray-500 mt-0.5">{issue.description}</div>
+                )}
+                {(issue.photos?.length ?? 0) > 0 && (
+                  <div className="flex gap-1.5 mt-1.5">
+                    {issue.photos!.map((p) => (
+                      <a key={p.id} href={p.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
+                        <img src={p.thumbnail_url ?? p.url} alt="" className="w-10 h-10 object-cover rounded border" />
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
 

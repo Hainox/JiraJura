@@ -11,7 +11,7 @@ import {
   ChevronLeft, ChevronRight,
 } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
-import BeforeAfterSlider from '@/components/BeforeAfterSlider'
+import BeforeAfterCompare from '@/components/BeforeAfterCompare'
 import { guardDemoAction } from '@/stores/demoMode'
 
 const STATUS_LABELS: Record<string, string> = {
@@ -251,7 +251,7 @@ function IssuePhotoComparison({
           <span className="bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">ПОСЛЕ: {fixPhotos.length}</span>
         </div>
       </div>
-      <BeforeAfterSlider beforeUrl={beforeUrl} afterUrl={afterUrl} />
+      <BeforeAfterCompare beforeUrl={beforeUrl} afterUrl={afterUrl} />
       {totalPairs > 1 && (
         <>
           <div className="flex items-center justify-center gap-2">

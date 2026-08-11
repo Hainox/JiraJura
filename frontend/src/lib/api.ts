@@ -231,7 +231,7 @@ export const issuesApi = {
   get: (id: string) => api.get<IssueOut>(`/issues/${id}`).then((r) => r.data),
 
   list: (params?: {
-    site_id?: string; status?: string; criticality?: string;
+    site_id?: string; inspection_id?: string; status?: string; criticality?: string;
     district_id?: string; assigned_to?: string; page?: number; page_size?: number
   }) =>
     api.get<IssueListOut>('/issues/', { params }).then((r) => r.data),

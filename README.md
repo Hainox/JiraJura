@@ -14,23 +14,33 @@ PWA-приложение для учёта обходов детских и сп
 .
 ├── backend/            FastAPI-приложение
 │   ├── app/
-│   │   ├── routers/    auth, districts, sites, inspections, issues, reports
-│   │   ├── services/   бизнес-логика (auth и т.д.)
+│   │   ├── routers/    auth, districts, sites, courtyards, inspections, issues,
+│   │   │               checklists, reports, pdf_report, audit, system
+│   │   ├── services/   бизнес-логика (auth, permissions, audit, timezone и т.д.)
 │   │   ├── models.py   SQLAlchemy ORM-модели
 │   │   ├── schemas.py  Pydantic-схемы
 │   │   └── main.py     точка входа FastAPI
 │   ├── schema.sql       DDL: районы, площадки, оборудование, обходы, замечания...
 │   ├── seed.sql         тестовый пользователь для локальной разработки
 │   ├── import_kml.py    импорт геометрии площадок из KML в PostGIS
+│   ├── bulk_invite.py, reissue_invites.py, split_invites_by_district.py,
+│   │   roster_district_status.py, verify_invite_links.py, diagnose_logins.py,
+│   │   fix_passwords.py, reset_shared_passwords.py, production_status_report.py,
+│   │   generate_summary_report.py, apply_titul.py   разовые эксплуатационные
+│   │                                                  скрипты, см. деплой-README
 │   └── docker-compose.yml
 ├── frontend/            PWA-клиент (Vite + React)
 │   └── src/
-│       ├── pages/       Login, Register, Map, SiteDetail, Inspection, Summary, AdminUsers
-│       ├── stores/      Zustand: auth, офлайн-очередь
+│       ├── pages/       Login, Register, ChangePassword, Map, SiteDetail, Inspection,
+│       │               Summary, Profile, MyInspections, Dashboard, Issues, IssueFix,
+│       │               Audit, AdminPanel, AdminUsers, AdminSites, AdminChecklists,
+│       │               AdminReviews, AdminSystem
+│       ├── stores/      Zustand: auth, демо-режим, вид карты
 │       └── lib/api.ts   HTTP-клиент (axios + JWT-интерсептор)
 ├── deploy/              Продакшн-деплой (docker-compose.prod.yml, nginx, certbot, бэкапы) — см. deploy/README.md
 └── docs/
     ├── ARCHITECTURE_RESEARCH.md                              обоснование выбора стека
+    ├── user-onboarding.md, video-instruction-*.md            инструкции для сотрудников
     └── Техническое_задание_Электронный_журнал_обхода.docx    ТЗ
 ```
 
@@ -93,6 +103,6 @@ npm run lint       # oxlint
 
 ## Статус проекта
 
-Реализовано: авторизация по JWT, приглашения и роли (инспектор/проверяющий/админ) со scoping по району, карта площадок, детальная карточка площадки, прохождение обхода по чек-листу с фото и созданием замечаний, сводка обхода, недельные/месячные отчёты, базовая офлайн-очередь действий, Alembic-миграции, production-деплой (Docker Compose + nginx/certbot).
+Развёрнуто и работает в проде (`journal.yuvibot2.xyz:8443`): авторизация по JWT (со сменой пароля/сбросом админом), приглашения и роли (инспектор/проверяющий/админ) со scoping по району, карта и список площадок, детальная карточка площадки, прохождение обхода по чек-листу с обязательными фото (общее + по отмеченным пунктам с requires_photo), полная линия замечаний «выявлено → в работе → устранено (с фото до/после) → принято/на доработку», приёмка обходов (в т.ч. массовая), сводные Excel/PDF-отчёты, аудит-лог действий, раздел «Разработчик» для админа, CRUD площадок/дворов/чек-листов через админ-панель, Alembic-миграции, CI (backend pytest + frontend lint/test/build), автотесты (Login/Register), production-деплой (Docker Compose + nginx/certbot + автобэкапы).
 
-В планах (см. `docs/ARCHITECTURE_RESEARCH.md`): перевод офлайн-очереди на IndexedDB (Dexie.js) для надёжного хранения фото до синхронизации (сегодня офлайн-очередь ещё нигде не подключена к UI), генерация превью фото, кластеризация меток на карте, push-уведомления, офлайн-кэш тайлов карты, CRUD площадок/оборудования/чек-листов через API (сейчас площадки заводятся только через `import_kml.py`), автотесты и CI.
+В планах (см. `docs/ARCHITECTURE_RESEARCH.md`): перевод офлайн-очереди на IndexedDB (Dexie.js) для надёжного хранения фото до синхронизации, кластеризация меток на карте, push-уведомления, офлайн-кэш тайлов карты.

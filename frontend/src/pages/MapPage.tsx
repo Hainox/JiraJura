@@ -102,7 +102,7 @@ export default function MapPage() {
 
   const effectiveDistrictFilter = isAdmin ? districtFilter : (user?.district_id ?? districtFilter)
 
-  const { data: sitesData } = useQuery({
+  const { data: sitesData, isLoading: sitesLoading } = useQuery({
     queryKey: ['sites', effectiveDistrictFilter, typeFilter, myAssignedOnly],
     queryFn: () => sitesApi.list({
       district_id: effectiveDistrictFilter, type: typeFilter, page_size: 5000,
@@ -122,10 +122,15 @@ export default function MapPage() {
   })
   const allSitesTotal = allSitesCountData?.total ?? 0
 
-  // Загрузка обходов для режима проверки
+  // Загрузка обходов для режима проверки — page_size на максимуме, который
+  // разрешает бэкенд (le=1000 в list_inspections). При 200 старые обходы
+  // молча выпадали из очереди на проверку у активных/окружных проверяющих
+  // (реальная жалоба из поля — "не вижу обходы"), раз обходов по округу
+  // уже больше 2000. 1000 не решает проблему навсегда при дальнейшем росте,
+  // поэтому ниже отдельно показываем предупреждение, если even это не влезло.
   const { data: inspectionsData } = useQuery<{ total: number; items: InspectionOut[] }>({
     queryKey: ['inspections-review', effectiveDistrictFilter],
-    queryFn: () => inspectionsApi.list({ district_id: effectiveDistrictFilter, page_size: 200 }),
+    queryFn: () => inspectionsApi.list({ district_id: effectiveDistrictFilter, page_size: 1000 }),
     enabled: viewMode === 'review' && showReviewTab,
   })
 
@@ -366,6 +371,11 @@ export default function MapPage() {
       {/* Фильтр статусов для режима проверки */}
       {viewMode === 'review' && showReviewTab && (
         <div className="bg-white border-b px-4 py-2 shrink-0 space-y-2">
+          {inspectionsData && inspectionsData.total > allInspections.length && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
+              Показаны не все обходы: {allInspections.length} из {inspectionsData.total} — обходов стало больше, чем помещается за раз. Сообщите администратору.
+            </div>
+          )}
           <div className="flex gap-2 overflow-x-auto">
             {[
               { key: 'all', label: `Все (${allInspections.length})` },
@@ -420,6 +430,30 @@ export default function MapPage() {
               <p className="text-sm text-gray-500">
                 Вашему аккаунту не назначен район, поэтому площадки не отображаются. Обратитесь к администратору, чтобы он указал ваш район.
               </p>
+            </div>
+          </div>
+        ) : /* "Мои площадки" при нуле персональных назначений выглядит
+            неотличимо от "в районе вообще нет площадок" — реальный случай
+            из поля (инспектор с 0 assigned_inspector_id решил, что все
+            площадки пропали). Назначение площадок пока используется не
+            повсеместно, так что это не редкий край, а частый первый опыт
+            с этим фильтром. */
+        user?.role === 'inspector' && myAssignedOnly && !sitesLoading && sites.length === 0 && viewMode !== 'review' ? (
+          <div className="h-full flex items-center justify-center">
+            <div className="text-center max-w-sm px-4">
+              <div className="inline-flex items-center justify-center w-16 h-16 bg-amber-100 rounded-2xl mb-4">
+                <AlertCircle className="w-8 h-8 text-amber-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-700 mb-2">Нет персонально назначенных площадок</h3>
+              <p className="text-sm text-gray-500">
+                Включён фильтр «Мои площадки», а за вами пока не закреплено ни одной конкретной площадки. Отключите фильтр, чтобы увидеть все площадки района.
+              </p>
+              <button
+                onClick={() => setMyAssignedOnly(false)}
+                className="btn-primary mt-4"
+              >
+                Отключить «Мои площадки»
+              </button>
             </div>
           </div>
         ) : /* Админ без выбранного района — показываем плейсхолдер (кроме вкладки

@@ -315,15 +315,15 @@ async def fetch_all(db: AsyncSession) -> dict:
 
 
 def _sheet(wb, title, headers, rows, widths):
-    from openpyxl.styles import Font
     from openpyxl.utils import get_column_letter
+    from app.services.xlsx_style import style_header_row, style_data_row
 
     ws = wb.create_sheet(title)
     ws.append(headers)
-    for cell in ws[1]:
-        cell.font = Font(bold=True)
+    style_header_row(ws, 1, len(headers))
     for row in rows:
         ws.append(row)
+        style_data_row(ws, ws.max_row, len(headers))
     for i, w in enumerate(widths, start=1):
         ws.column_dimensions[get_column_letter(i)].width = w
     ws.freeze_panes = "A2"
@@ -335,6 +335,9 @@ def build_workbook(data: dict):
     from openpyxl.styles import Font, PatternFill
     from openpyxl.chart import BarChart, PieChart, Reference
     from openpyxl.chart.label import DataLabelList
+    from app.services.xlsx_style import (
+        style_header_row, style_data_row, style_header_cell, style_data_cell, CENTER_WRAP,
+    )
 
     RED = PatternFill("solid", fgColor="FFC7CE")
     YELLOW = PatternFill("solid", fgColor="FFEB9C")
@@ -369,49 +372,57 @@ def build_workbook(data: dict):
     ov.title = "Обзор"
     now_str = datetime.now(MSK).strftime("%d.%m.%Y %H:%M")
 
-    def row(*vals):
-        ov.append(list(vals))
+    def row(*vals, style=None):
+        ov.append(list(vals) if vals else [None])
+        r = ov.max_row
+        if not vals:
+            return
+        if style == "header":
+            style_header_cell(ov.cell(r, 1))
+            if len(vals) == 1:
+                ov.merge_cells(start_row=r, start_column=1, end_row=r, end_column=2)
+        elif style == "data":
+            for i in range(1, len(vals) + 1):
+                style_data_cell(ov.cell(r, i))
 
     row("Сводный отчёт по проекту «Журнал обхода площадок» — САО г. Москвы")
     ov["A1"].font = Font(bold=True, size=14)
+    ov["A1"].alignment = CENTER_WRAP
     row(f"Снимок на {now_str} (МСК)")
+    ov[f"A{ov.max_row}"].alignment = CENTER_WRAP
     row()
-    row("Ключевые цифры")
-    ov[f"A{ov.max_row}"].font = BOLD
-    row("Регистрация по округу", f"{data['total_reg']} / {data['total_all_invited']} ({data['overall_reg_pct']:.0%})")
-    row("Площадок в системе", data["total_sites"])
-    row("Обходов всего / завершено", f"{data['total_insp']} / {data['total_insp_done']} (в процессе: {data['total_insp'] - data['total_insp_done']})")
-    row("Нарушений создано / открыто сейчас", f"{data['total_iss']} / {data['total_iss'] - data['total_iss_closed']} (закрыто: {data['total_iss_closed']})")
+    row("Ключевые цифры", style="header")
+    row("Регистрация по округу", f"{data['total_reg']} / {data['total_all_invited']} ({data['overall_reg_pct']:.0%})", style="data")
+    row("Площадок в системе", data["total_sites"], style="data")
+    row("Обходов всего / завершено", f"{data['total_insp']} / {data['total_insp_done']} (в процессе: {data['total_insp'] - data['total_insp_done']})", style="data")
+    row("Нарушений создано / открыто сейчас", f"{data['total_iss']} / {data['total_iss'] - data['total_iss_closed']} (закрыто: {data['total_iss_closed']})", style="data")
     row()
-    row("Требуют внимания в первую очередь")
-    ov[f"A{ov.max_row}"].font = BOLD
+    row("Требуют внимания в первую очередь", style="header")
 
     low_reg = [x for x in data["reg_stats"] if x["pct"] < 0.5 and x["total"] > 0]
     if low_reg:
         names = ", ".join(f"{x['name']} ({x['pct']:.0%})" for x in low_reg)
-        row(f"• Регистрация < 50%: {names} — стоит выяснить, не мешает ли что-то войти в систему.")
+        row(f"• Регистрация < 50%: {names} — стоит выяснить, не мешает ли что-то войти в систему.", style="data")
 
     not_registered_admins = data["pending_admins"] + data["pending_okrug_reviewers"]
     if not_registered_admins:
         names = ", ".join(r.full_name for r in not_registered_admins)
-        row(f"• Не зарегистрированы админы/окружные проверяющие ({len(not_registered_admins)}): {names} — у них административные права, стоит дожать в первую очередь.")
+        row(f"• Не зарегистрированы админы/окружные проверяющие ({len(not_registered_admins)}): {names} — у них административные права, стоит дожать в первую очередь.", style="data")
 
     if data["top_categories"]:
         cats = ", ".join(f"{r.cat} ({r.cnt})" for r in data["top_categories"])
-        row(f"• Систематические типы нарушений по округу: {cats}.")
+        row(f"• Систематические типы нарушений по округу: {cats}.", style="data")
 
     if data["odd_districts"]:
-        row(f"• Похоже на опечатку/задвоение района при заведении в систему: {', '.join(data['odd_districts'])} — не отдельный реальный район.")
+        row(f"• Похоже на опечатку/задвоение района при заведении в систему: {', '.join(data['odd_districts'])} — не отдельный реальный район.", style="data")
 
     row()
-    row("Лидеры дня по личной активности (обходов начато сегодня)")
-    ov[f"A{ov.max_row}"].font = BOLD
+    row("Лидеры дня по личной активности (обходов начато сегодня)", style="header")
     for r in data["leaders_today"]:
-        row(f"   {r.full_name}", r.cnt)
+        row(f"   {r.full_name}", r.cnt, style="data")
 
     row()
-    row("Состав отчёта")
-    ov[f"A{ov.max_row}"].font = BOLD
+    row("Состав отчёта", style="header")
     for name, desc in [
         ("Регистрация", "Кто зарегистрирован/нет по районам, поимённо, худшие районы сверху"),
         ("Сводка по районам", "Площадки/обходы/нарушения + % регистрации, в одной таблице"),
@@ -421,7 +432,7 @@ def build_workbook(data: dict):
         ("Просроченные замечания", "Замечания с истёкшим сроком устранения"),
         ("Динамика", "Активность каждого сотрудника по дням (число отмеченных пунктов чек-листа)"),
     ]:
-        row(name, desc)
+        row(name, desc, style="data")
 
     for col, w in zip("ABCDEF", (55, 30, 20, 15, 15, 15)):
         ov.column_dimensions[col].width = w
@@ -429,11 +440,19 @@ def build_workbook(data: dict):
     # Вспомогательные данные для диаграмм — в стороне от читаемого текста
     # (тот в колонках A-B), чтобы не мешать
     ov["H1"] = "Обходы"
+    style_header_cell(ov["H1"], fill=False)
+    ov.merge_cells("H1:I1")
     ov["H2"], ov["I2"] = "Завершено", data["total_insp_done"]
     ov["H3"], ov["I3"] = "В процессе", data["total_insp"] - data["total_insp_done"]
+    for cell in (ov["H2"], ov["I2"], ov["H3"], ov["I3"]):
+        style_data_cell(cell)
     ov["H5"] = "Замечания"
+    style_header_cell(ov["H5"], fill=False)
+    ov.merge_cells("H5:I5")
     ov["H6"], ov["I6"] = "Открыто", data["total_iss"] - data["total_iss_closed"]
     ov["H7"], ov["I7"] = "Закрыто", data["total_iss_closed"]
+    for cell in (ov["H6"], ov["I6"], ov["H7"], ov["I7"]):
+        style_data_cell(cell)
     if data["total_insp"] > 0:
         _pie(ov, "Обходы: завершено / в процессе",
              Reference(ov, min_col=8, min_row=2, max_row=3), Reference(ov, min_col=9, min_row=2, max_row=3), "K2")
@@ -444,45 +463,53 @@ def build_workbook(data: dict):
     # ── Регистрация ──
     reg_ws = wb.create_sheet("Регистрация")
     reg_ws.append(["Регистрация пользователей по районам"])
+    reg_ws["A1"].font = Font(bold=True, size=14)
+    reg_ws["A1"].alignment = CENTER_WRAP
     reg_ws.append([f"Снимок на {now_str} — user_invites + users, дедуп по ФИО"])
+    reg_ws[f"A{reg_ws.max_row}"].alignment = CENTER_WRAP
     reg_ws.append([])
     reg_ws.append(["Район", "Зарегистрировано", "Всего приглашено", "% регистрации"])
-    for cell in reg_ws[reg_ws.max_row]:
-        cell.font = BOLD
+    style_header_row(reg_ws, reg_ws.max_row, 4)
     for x in data["reg_stats"]:
         reg_ws.append([x["name"], x["registered"], x["total"], x["pct"]])
+        style_data_row(reg_ws, reg_ws.max_row, 4)
         fill = RED if x["pct"] < 0.5 else (YELLOW if x["pct"] < 0.8 else GREEN)
         reg_ws.cell(reg_ws.max_row, 4).fill = fill
         reg_ws.cell(reg_ws.max_row, 4).number_format = "0%"
     reg_ws.append(["ИТОГО ПО ОКРУГУ", data["total_reg"], data["total_all_invited"], data["overall_reg_pct"]])
-    for cell in reg_ws[reg_ws.max_row]:
-        cell.font = BOLD
+    style_header_row(reg_ws, reg_ws.max_row, 4)
     reg_ws.cell(reg_ws.max_row, 4).number_format = "0%"
 
+    def _reg_header(text):
+        reg_ws.append([text])
+        r = reg_ws.max_row
+        style_header_cell(reg_ws.cell(r, 1))
+        reg_ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=2)
+
+    def _reg_item(text):
+        reg_ws.append([text])
+        style_data_cell(reg_ws.cell(reg_ws.max_row, 1))
+
     reg_ws.append([])
-    reg_ws.append(["Не зарегистрированы поимённо (по районам, худшие сверху)"])
-    reg_ws[f"A{reg_ws.max_row}"].font = BOLD
+    _reg_header("Не зарегистрированы поимённо (по районам, худшие сверху)")
     for x in data["reg_stats"]:
         if not x["pending"]:
             continue
-        reg_ws.append([x["name"]])
-        reg_ws[f"A{reg_ws.max_row}"].font = BOLD
+        _reg_header(x["name"])
         for r in x["pending"]:
-            reg_ws.append([f"   {r.full_name}"])
+            _reg_item(f"   {r.full_name}")
 
     if data["pending_okrug_reviewers"]:
         reg_ws.append([])
-        reg_ws.append([f"Проверяющие без района (весь округ) — не зарегистрированы"])
-        reg_ws[f"A{reg_ws.max_row}"].font = BOLD
+        _reg_header("Проверяющие без района (весь округ) — не зарегистрированы")
         for r in data["pending_okrug_reviewers"]:
-            reg_ws.append([f"   {r.full_name}"])
+            _reg_item(f"   {r.full_name}")
 
     if data["pending_admins"]:
         reg_ws.append([])
-        reg_ws.append(["Админы — не зарегистрированы"])
-        reg_ws[f"A{reg_ws.max_row}"].font = BOLD
+        _reg_header("Админы — не зарегистрированы")
         for r in data["pending_admins"]:
-            reg_ws.append([f"   {r.full_name}"])
+            _reg_item(f"   {r.full_name}")
 
     if data["odd_districts"]:
         reg_ws.append([])
@@ -501,8 +528,7 @@ def build_workbook(data: dict):
     reg_pct_by_name = {x["name"]: x["pct"] for x in data["reg_stats"]}
     sum_ws = wb.create_sheet("Сводка по районам")
     sum_ws.append(["Район", "Площадок", "Обходов", "Заверш.", "Замечаний", "Закрыто", "Открыто сейчас", "% регистрации"])
-    for cell in sum_ws[1]:
-        cell.font = BOLD
+    style_header_row(sum_ws, 1, 8)
     leader_insp_done = max((x["insp_done"] for x in data["work_stats"]), default=0)
     for x in sorted(data["work_stats"], key=lambda x: x["name"]):
         sum_ws.append([
@@ -510,6 +536,7 @@ def build_workbook(data: dict):
             x["iss_closed"], x["iss_open"], reg_pct_by_name.get(x["name"], 0),
         ])
         r = sum_ws.max_row
+        style_data_row(sum_ws, r, 8)
         sum_ws.cell(r, 8).number_format = "0%"
         if x["insp_total"] == 0 and x["sites"] > 50:
             for c in range(1, 9):
@@ -520,8 +547,7 @@ def build_workbook(data: dict):
     sum_ws.append(["ИТОГО ПО ОКРУГУ", data["total_sites"], data["total_insp"], data["total_insp_done"],
                     data["total_iss"], data["total_iss_closed"], data["total_iss"] - data["total_iss_closed"],
                     data["overall_reg_pct"]])
-    for cell in sum_ws[sum_ws.max_row]:
-        cell.font = BOLD
+    style_header_row(sum_ws, sum_ws.max_row, 8)
     sum_ws.cell(sum_ws.max_row, 8).number_format = "0%"
     sum_ws.append(["Цвет строки: красный — 0 обходов при >50 площадках, зелёный — район-лидер по завершённым обходам."])
     for col, w in zip("ABCDEFGH", (24, 12, 10, 10, 12, 10, 14, 14)):
@@ -547,17 +573,25 @@ def build_workbook(data: dict):
     # таблицы (та занимает колонки A-K)
     if data["issues_by_criticality"]:
         iss_ws["N1"] = "Критичность"
+        style_header_cell(iss_ws["N1"], fill=False)
+        iss_ws.merge_cells("N1:O1")
         for i, (label, cnt) in enumerate(data["issues_by_criticality"].most_common(), start=2):
             iss_ws.cell(i, 14, label)
             iss_ws.cell(i, 15, cnt)
+            style_data_cell(iss_ws.cell(i, 14))
+            style_data_cell(iss_ws.cell(i, 15))
         last = 1 + len(data["issues_by_criticality"])
         _pie(iss_ws, "Замечания по критичности",
              Reference(iss_ws, min_col=14, min_row=2, max_row=last), Reference(iss_ws, min_col=15, min_row=2, max_row=last), "P1")
     if data["issues_by_status"]:
         iss_ws["N17"] = "Статус"
+        style_header_cell(iss_ws["N17"], fill=False)
+        iss_ws.merge_cells("N17:O17")
         for i, (label, cnt) in enumerate(data["issues_by_status"].most_common(), start=18):
             iss_ws.cell(i, 14, label)
             iss_ws.cell(i, 15, cnt)
+            style_data_cell(iss_ws.cell(i, 14))
+            style_data_cell(iss_ws.cell(i, 15))
         last = 17 + len(data["issues_by_status"])
         _pie(iss_ws, "Замечания по статусу",
              Reference(iss_ws, min_col=14, min_row=18, max_row=last), Reference(iss_ws, min_col=15, min_row=18, max_row=last), "P17")

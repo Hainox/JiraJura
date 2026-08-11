@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/auth'
 import { authApi } from '@/lib/api'
 import { notify as toast } from '@/lib/toast'
-import { Shield } from 'lucide-react'
+import { Shield, MessageSquareWarning } from 'lucide-react'
 
 export default function LoginPage() {
   const [loginValue, setLoginValue] = useState(() => sessionStorage.getItem('last_login') ?? '')
@@ -90,6 +90,17 @@ export default function LoginPage() {
             {loading ? 'Вход...' : 'Войти'}
           </button>
         </form>
+
+        {/* Тот же /feedback, что и в ProfilePage.tsx — нужен именно тут:
+            "не могу войти" (app-тип обращения) нельзя сообщить никаким
+            другим способом, если человек ещё не залогинен. */}
+        <button
+          onClick={() => navigate('/feedback')}
+          className="w-full mt-4 flex items-center justify-center gap-1.5 text-sm text-blue-200 hover:text-white transition-colors"
+        >
+          <MessageSquareWarning className="w-4 h-4" />
+          Не получается войти или другая проблема?
+        </button>
       </div>
     </div>
   )

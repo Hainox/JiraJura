@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { feedbackApi } from '@/lib/api'
 import type { FeedbackReportOut, FeedbackStatus, FeedbackReportType } from '@/types'
-import { ArrowLeft, RefreshCw, MessageSquareWarning, Phone, MapPin, User as UserIcon, Bug, HelpCircle, MapPinned, Paperclip } from 'lucide-react'
+import { ArrowLeft, RefreshCw, MessageSquareWarning, Phone, MapPin, User as UserIcon, Bug, HelpCircle, MapPinned, Paperclip, FileSpreadsheet } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
 
 const STATUS_LABELS: Record<FeedbackStatus, string> = {
@@ -68,6 +68,15 @@ export default function AdminFeedbackPage() {
           <h1 className="text-lg font-bold">Обращения</h1>
           <p className="text-blue-200 text-xs">Жалобы с публичной формы /feedback</p>
         </div>
+        <button
+          onClick={() => toast.promise(feedbackApi.exportXlsx({ status: statusFilter || undefined, report_type: typeFilter || undefined }), {
+            loading: 'Готовлю файл...', success: 'Файл скачан', error: 'Ошибка выгрузки',
+          })}
+          className="p-2 rounded-lg hover:bg-primary-700"
+          title="Выгрузка в Excel"
+        >
+          <FileSpreadsheet className="w-5 h-5" />
+        </button>
         <button onClick={() => refetch()} className="p-2 rounded-lg hover:bg-primary-700">
           <RefreshCw className="w-5 h-5" />
         </button>

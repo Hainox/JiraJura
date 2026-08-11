@@ -179,8 +179,8 @@ async def export_feedback_xlsx(
     прочее, одним листом с колонкой типа/статуса.
     """
     from openpyxl import Workbook
-    from openpyxl.styles import Font
     from openpyxl.utils import get_column_letter
+    from app.services.xlsx_style import style_header_row, style_data_row
 
     filters = []
     if status:
@@ -205,8 +205,7 @@ async def export_feedback_xlsx(
         "Сообщение", "Комментарий администратора", "Вложений", "Дата решения",
     ]
     ws.append(headers)
-    for cell in ws[1]:
-        cell.font = Font(bold=True)
+    style_header_row(ws, 1, len(headers))
     for r in rows:
         ws.append([
             _fmt_dt(r.created_at),
@@ -220,6 +219,7 @@ async def export_feedback_xlsx(
             len(r.attachments or []),
             _fmt_dt(r.resolved_at),
         ])
+        style_data_row(ws, ws.max_row, len(headers))
     widths = [16, 14, 12, 24, 16, 30, 50, 40, 10, 16]
     for i, w in enumerate(widths, start=1):
         ws.column_dimensions[get_column_letter(i)].width = w

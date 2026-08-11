@@ -304,15 +304,15 @@ def _fmt_dt(value) -> str:
 
 
 def _sheet(wb, title: str, headers: list[str], rows: list[tuple], widths: list[int]):
-    from openpyxl.styles import Font
     from openpyxl.utils import get_column_letter
+    from app.services.xlsx_style import style_header_row, style_data_row
 
     ws = wb.create_sheet(title)
     ws.append(headers)
-    for cell in ws[1]:
-        cell.font = Font(bold=True)
+    style_header_row(ws, 1, len(headers))
     for row in rows:
         ws.append(row)
+        style_data_row(ws, ws.max_row, len(headers))
     for i, w in enumerate(widths, start=1):
         ws.column_dimensions[get_column_letter(i)].width = w
     ws.freeze_panes = "A2"
@@ -336,6 +336,7 @@ async def export_xlsx(
     from openpyxl.styles import Font, PatternFill
     from openpyxl.chart import BarChart, PieChart, Reference
     from openpyxl.chart.label import DataLabelList
+    from app.services.xlsx_style import style_header_row, style_data_row, style_header_cell, style_data_cell, CENTER_WRAP
 
     if current_user.role == "reviewer" and current_user.district_id is not None:
         district_id = str(current_user.district_id)
@@ -736,51 +737,64 @@ async def export_xlsx(
     ov = wb.active
     ov.title = "Обзор"
 
-    def _row(*vals):
-        ov.append(list(vals))
+    def _row(*vals, style=None):
+        """style="header" — жирный+жёлтый+рамка (раздел-заголовок), только
+        для однозначных строк из одной ячейки — сливает A:B, как в эталоне.
+        style="data" — рамка+центр на всех переданных ячейках, без слияния
+        (используется, когда во второй ячейке реальные данные).
+        style=None — как раньше, без оформления (заголовок отчёта и т.п.)."""
+        ov.append(list(vals) if vals else [None])
+        r = ov.max_row
+        if not vals:
+            return
+        if style == "header":
+            style_header_cell(ov.cell(r, 1))
+            if len(vals) == 1:
+                ov.merge_cells(start_row=r, start_column=1, end_row=r, end_column=2)
+        elif style == "data":
+            for i in range(1, len(vals) + 1):
+                style_data_cell(ov.cell(r, i))
 
     _row("Сводный отчёт по проекту «Журнал обхода площадок» — САО г. Москвы")
     ov["A1"].font = Font(bold=True, size=14)
+    ov["A1"].alignment = CENTER_WRAP
     _row(f"Снимок на {now_str} (МСК)")
+    ov[f"A{ov.max_row}"].alignment = CENTER_WRAP
     _row()
-    _row("Ключевые цифры")
-    ov[f"A{ov.max_row}"].font = Font(bold=True)
-    _row("Регистрация", f"{total_reg} / {total_all_invited} ({overall_reg_pct:.0%})")
-    _row("Площадок в системе", total_sites_all)
-    _row("Обходов всего / завершено", f"{total_insp_all} / {total_insp_done_all} (в процессе: {total_insp_all - total_insp_done_all})")
-    _row("Найдено дефектов по чек-листу / замечаний оформлено", f"{total_checklist_defects_all} / {total_iss_all}")
-    _row("Замечаний открыто сейчас / закрыто", f"{total_iss_all - total_iss_closed_all} / {total_iss_closed_all}")
+    _row("Ключевые цифры", style="header")
+    _row("Регистрация", f"{total_reg} / {total_all_invited} ({overall_reg_pct:.0%})", style="data")
+    _row("Площадок в системе", total_sites_all, style="data")
+    _row("Обходов всего / завершено", f"{total_insp_all} / {total_insp_done_all} (в процессе: {total_insp_all - total_insp_done_all})", style="data")
+    _row("Найдено дефектов по чек-листу / замечаний оформлено", f"{total_checklist_defects_all} / {total_iss_all}", style="data")
+    _row("Замечаний открыто сейчас / закрыто", f"{total_iss_all - total_iss_closed_all} / {total_iss_closed_all}", style="data")
     _row("   Оформление замечания — отдельный шаг сверх чек-листа, не то же самое, что число найденных дефектов.")
     _row()
-    _row("Требуют внимания в первую очередь")
-    ov[f"A{ov.max_row}"].font = Font(bold=True)
+    _row("Требуют внимания в первую очередь", style="header")
 
     low_reg = [x for x in reg_stats if x["pct"] < 0.5 and x["total"] > 0]
     if low_reg:
         names = ", ".join(f"{x['name']} ({x['pct']:.0%})" for x in low_reg)
-        _row(f"• Регистрация < 50%: {names} — стоит выяснить, не мешает ли что-то войти в систему.")
+        _row(f"• Регистрация < 50%: {names} — стоит выяснить, не мешает ли что-то войти в систему.", style="data")
 
     not_registered_admins = pending_admins + pending_okrug_reviewers
     if not_registered_admins:
         names = ", ".join(r.full_name for r in not_registered_admins)
-        _row(f"• Не зарегистрированы админы/окружные проверяющие ({len(not_registered_admins)}): {names} — у них административные права, стоит дожать в первую очередь.")
+        _row(f"• Не зарегистрированы админы/окружные проверяющие ({len(not_registered_admins)}): {names} — у них административные права, стоит дожать в первую очередь.", style="data")
 
     if top_categories:
         cats = ", ".join(f"{cat} ({cnt})" for cat, cnt in top_categories)
-        _row(f"• Систематические типы нарушений: {cats}.")
+        _row(f"• Систематические типы нарушений: {cats}.", style="data")
 
     if odd_districts:
-        _row(f"• Похоже на опечатку/задвоение района при заведении в систему: {', '.join(odd_districts)} — не отдельный реальный район.")
+        _row(f"• Похоже на опечатку/задвоение района при заведении в систему: {', '.join(odd_districts)} — не отдельный реальный район.", style="data")
 
     _row()
-    _row("Лидеры дня по личной активности (обходов начато сегодня)")
-    ov[f"A{ov.max_row}"].font = Font(bold=True)
+    _row("Лидеры дня по личной активности (обходов начато сегодня)", style="header")
     for _id, full_name, cnt in leaders_today:
-        _row(f"   {full_name}", cnt)
+        _row(f"   {full_name}", cnt, style="data")
 
     _row()
-    _row("Состав отчёта")
-    ov[f"A{ov.max_row}"].font = Font(bold=True)
+    _row("Состав отчёта", style="header")
     for name, desc in [
         ("Регистрация", "Кто зарегистрирован/нет по районам, поимённо, худшие районы сверху"),
         ("Задания", "Снимок сейчас: кто отвечает за площадку и когда там были в последний раз"),
@@ -791,17 +805,25 @@ async def export_xlsx(
         ("Просроченные замечания", "Замечания с истёкшим сроком устранения"),
         ("Динамика", "Активность каждого сотрудника по дням (число отмеченных пунктов чек-листа)"),
     ]:
-        _row(name, desc)
+        _row(name, desc, style="data")
 
     for col, w in zip("ABCDEF", (55, 30, 20, 15, 15, 15)):
         ov.column_dimensions[col].width = w
 
     ov["H1"] = "Обходы"
+    style_header_cell(ov["H1"], fill=False)
+    ov.merge_cells("H1:I1")
     ov["H2"], ov["I2"] = "Завершено", total_insp_done_all
     ov["H3"], ov["I3"] = "В процессе", total_insp_all - total_insp_done_all
+    for cell in (ov["H2"], ov["I2"], ov["H3"], ov["I3"]):
+        style_data_cell(cell)
     ov["H5"] = "Замечания"
+    style_header_cell(ov["H5"], fill=False)
+    ov.merge_cells("H5:I5")
     ov["H6"], ov["I6"] = "Открыто", total_iss_all - total_iss_closed_all
     ov["H7"], ov["I7"] = "Закрыто", total_iss_closed_all
+    for cell in (ov["H6"], ov["I6"], ov["H7"], ov["I7"]):
+        style_data_cell(cell)
     if total_insp_all > 0:
         _pie(ov, "Обходы: завершено / в процессе",
              Reference(ov, min_col=8, min_row=2, max_row=3), Reference(ov, min_col=9, min_row=2, max_row=3), "K2")
@@ -812,45 +834,53 @@ async def export_xlsx(
     # ── Регистрация ──
     reg_ws = wb.create_sheet("Регистрация")
     reg_ws.append(["Регистрация пользователей по районам"])
+    reg_ws["A1"].font = Font(bold=True, size=14)
+    reg_ws["A1"].alignment = CENTER_WRAP
     reg_ws.append([f"Снимок на {now_str} — user_invites + users, дедуп по ФИО"])
+    reg_ws[f"A{reg_ws.max_row}"].alignment = CENTER_WRAP
     reg_ws.append([])
     reg_ws.append(["Район", "Зарегистрировано", "Всего приглашено", "% регистрации"])
-    for cell in reg_ws[reg_ws.max_row]:
-        cell.font = Font(bold=True)
+    style_header_row(reg_ws, reg_ws.max_row, 4)
     for x in reg_stats:
         reg_ws.append([x["name"], x["registered"], x["total"], x["pct"]])
+        style_data_row(reg_ws, reg_ws.max_row, 4)
         fill = RED if x["pct"] < 0.5 else (YELLOW if x["pct"] < 0.8 else GREEN)
         reg_ws.cell(reg_ws.max_row, 4).fill = fill
         reg_ws.cell(reg_ws.max_row, 4).number_format = "0%"
     reg_ws.append(["ИТОГО", total_reg, total_all_invited, overall_reg_pct])
-    for cell in reg_ws[reg_ws.max_row]:
-        cell.font = Font(bold=True)
+    style_header_row(reg_ws, reg_ws.max_row, 4)
     reg_ws.cell(reg_ws.max_row, 4).number_format = "0%"
 
+    def _reg_header(text):
+        reg_ws.append([text])
+        r = reg_ws.max_row
+        style_header_cell(reg_ws.cell(r, 1))
+        reg_ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=2)
+
+    def _reg_item(text):
+        reg_ws.append([text])
+        style_data_cell(reg_ws.cell(reg_ws.max_row, 1))
+
     reg_ws.append([])
-    reg_ws.append(["Не зарегистрированы поимённо (по районам, худшие сверху)"])
-    reg_ws[f"A{reg_ws.max_row}"].font = Font(bold=True)
+    _reg_header("Не зарегистрированы поимённо (по районам, худшие сверху)")
     for x in reg_stats:
         if not x["pending"]:
             continue
-        reg_ws.append([x["name"]])
-        reg_ws[f"A{reg_ws.max_row}"].font = Font(bold=True)
+        _reg_header(x["name"])
         for r in x["pending"]:
-            reg_ws.append([f"   {r.full_name}"])
+            _reg_item(f"   {r.full_name}")
 
     if not district_id and pending_okrug_reviewers:
         reg_ws.append([])
-        reg_ws.append(["Проверяющие без района (весь округ) — не зарегистрированы"])
-        reg_ws[f"A{reg_ws.max_row}"].font = Font(bold=True)
+        _reg_header("Проверяющие без района (весь округ) — не зарегистрированы")
         for r in pending_okrug_reviewers:
-            reg_ws.append([f"   {r.full_name}"])
+            _reg_item(f"   {r.full_name}")
 
     if not district_id and pending_admins:
         reg_ws.append([])
-        reg_ws.append(["Админы — не зарегистрированы"])
-        reg_ws[f"A{reg_ws.max_row}"].font = Font(bold=True)
+        _reg_header("Админы — не зарегистрированы")
         for r in pending_admins:
-            reg_ws.append([f"   {r.full_name}"])
+            _reg_item(f"   {r.full_name}")
 
     if odd_districts:
         reg_ws.append([])

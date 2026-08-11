@@ -33,6 +33,23 @@ export const api = axios.create({
   timeout: 30000, // 30 секунд — без этого запрос может висеть бесконечно
 })
 
+// Фото грузят в поле на мобильном интернете — 30с общего таймаута часто не
+// хватает (были жалобы на "Ошибка загрузки фото" именно в поле по LTE).
+export const PHOTO_UPLOAD_TIMEOUT_MS = 90000
+
+// Человекочитаемая причина неудачи загрузки — вместо одного безликого
+// тоста на все случаи (таймаут/сеть/413/500 звучали одинаково и не
+// давали понять, что чинить: ждать сигнал получше или искать баг на сервере).
+export function describeUploadError(error: unknown): string {
+  if (axios.isAxiosError(error)) {
+    if (error.code === 'ECONNABORTED') return 'Превышено время ожидания — проверьте связь и попробуйте ещё раз'
+    if (!error.response) return 'Нет соединения с сервером — проверьте интернет'
+    if (error.response.status === 413) return 'Файл слишком большой для сервера'
+    if (error.response.status === 401) return 'Сессия истекла — перезайдите в приложение'
+  }
+  return 'Ошибка загрузки фото'
+}
+
 // Авто-прокидывание токена
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('access_token')
@@ -184,6 +201,7 @@ export const inspectionsApi = {
     return api
       .post<PhotoOut>(`/inspections/${id}/photos${params}`, form, {
         headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: PHOTO_UPLOAD_TIMEOUT_MS,
       })
       .then((r) => r.data)
   },
@@ -247,6 +265,7 @@ export const issuesApi = {
     return api
       .post<PhotoOut>(`/issues/${issueId}/fix-photos`, form, {
         headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: PHOTO_UPLOAD_TIMEOUT_MS,
       })
       .then((r) => r.data)
   },
@@ -257,6 +276,7 @@ export const issuesApi = {
     return api
       .post<PhotoOut>(`/issues/${issueId}/photos`, form, {
         headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: PHOTO_UPLOAD_TIMEOUT_MS,
       })
       .then((r) => r.data)
   },

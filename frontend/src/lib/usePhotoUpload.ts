@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
 import { notify as toast } from '@/lib/toast'
+import { describeUploadError } from '@/lib/api'
 
 const MAX_SIZE_MB = 10
 const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024
@@ -32,8 +33,8 @@ export function usePhotoUpload(onUpload: (file: File) => Promise<unknown>) {
       setIsUploading(true)
       try {
         await onUpload(file)
-      } catch {
-        toast.error('Ошибка загрузки фото')
+      } catch (err) {
+        toast.error(describeUploadError(err))
       } finally {
         setIsUploading(false)
       }

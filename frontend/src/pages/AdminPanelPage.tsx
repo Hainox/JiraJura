@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Users, Clock, MapPinned, ClipboardList, AlertCircle, ClipboardCheck, BarChart3, Clapperboard, Wrench, MessageSquareWarning } from 'lucide-react'
+import { ArrowLeft, Users, Clock, MapPinned, ClipboardList, AlertCircle, ClipboardCheck, ShieldCheck, BarChart3, Clapperboard, Wrench, MessageSquareWarning } from 'lucide-react'
 import { useDemoModeStore } from '@/stores/demoMode'
 import { useAuthStore } from '@/stores/auth'
 
@@ -9,6 +9,7 @@ const DEV_SECTIONS = [
 
 const REVIEW_SECTIONS = [
   { to: '/admin/reviews', icon: ClipboardCheck, title: 'Приёмка обходов', desc: 'Обходы, ожидающие проверки и приёмки' },
+  { to: '/admin/control', icon: ShieldCheck, title: 'Финальный контроль', desc: 'Исправленные замечания: принять и закрыть или вернуть на доработку' },
   { to: '/admin/issues', icon: AlertCircle, title: 'Замечания', desc: 'Все замечания округа, назначение, приёмка исправлений' },
   { to: '/admin/dashboard', icon: BarChart3, title: 'Дашборд', desc: 'Сводка по округу, выгрузка в Excel' },
   { to: '/admin/feedback', icon: MessageSquareWarning, title: 'Обращения', desc: 'Жалобы с публичной формы /feedback — очередь на разбор' },

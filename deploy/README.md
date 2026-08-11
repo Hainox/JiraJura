@@ -163,6 +163,29 @@ docker compose -f docker-compose.prod.yml run --rm \
 rm -rf /opt/jirajura/rosters
 ```
 
+## 4.7. Переиздание просроченных приглашений и диагностика логинов
+
+Ссылка-приглашение действует 72 часа; если не успели раздать (или человек
+не смог зайти), не создавайте новое приглашение вручную под другим
+логином — переиздайте существующее (сохраняет логин/ФИО/роль/район,
+только новый токен, срок продлевается до 30 дней):
+```bash
+docker compose -f docker-compose.prod.yml exec api python reissue_invites.py                      # dry-run, отчёт
+docker compose -f docker-compose.prod.yml exec api python reissue_invites.py --apply --out /app/uploads/reissued.csv
+docker compose -f docker-compose.prod.yml exec api python reissue_invites.py --district "Сокол" --apply --out /app/uploads/reissued_sokol.csv
+# скачать CSV с сервера, разослать ссылки, затем удалить файл с сервера (ПДн)
+```
+
+Другие разовые скрипты в `backend/` для диагностики после массовой
+рассылки — каждый читает БД напрямую (`DATABASE_URL`), запускать так же
+через `docker compose ... exec api python <script>.py`:
+- `roster_district_status.py` — сверка списка по району с фактической регистрацией
+- `diagnose_logins.py` — почему конкретный логин не может зайти
+- `verify_invite_links.py` — проверка, что все выданные ссылки рабочие
+- `fix_passwords.py` / `reset_shared_passwords.py` — точечный/массовый сброс пароля
+- `production_status_report.py` / `generate_summary_report.py` — сводка по округу в консоль/xlsx
+- `split_invites_by_district.py` — разбивка результата рассылки по районам для раздачи файлов
+
 ## 5. Бэкапы
 
 ```bash
@@ -183,12 +206,14 @@ git pull origin main
 docker compose -f docker-compose.prod.yml build
 docker compose -f docker-compose.prod.yml up -d
 docker compose -f docker-compose.prod.yml run --rm api alembic upgrade head
-docker compose -f docker-compose.prod.yml restart proxy
 ```
 
-Последний шаг обязателен: при пересоздании контейнера api меняется его
-внутренний IP, а nginx в proxy резолвит имя `api` один раз при старте —
-без рестарта прокси сайт отвечает `502 Bad Gateway`.
+`deploy/nginx/proxy.conf.template` использует Docker DNS-резолвер
+(`resolver 127.0.0.11 valid=10s;` + `set $api_upstream`) — nginx сам
+переоткрывает соединение на актуальный IP `api`/`frontend` в течение ~10
+секунд после пересборки, отдельный `restart proxy` для этого больше не
+нужен. Перезапускать `proxy` вручную нужно, только если менялся сам
+`proxy.conf.template`/`http-only.conf.template`.
 
 ## Проверка, что бот не пострадал
 

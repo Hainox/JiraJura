@@ -361,3 +361,24 @@ INSERT INTO checklist_items (template_id, category, question, sort_order, is_cri
     ('c0000000-0000-0000-0000-000000000002', 'МАФ', 'Состояние скамеек', 5, FALSE, FALSE),
     ('c0000000-0000-0000-0000-000000000002', 'Ограждение', 'Целостность ограждения', 6, TRUE, FALSE),
     ('c0000000-0000-0000-0000-000000000002', 'Общий вид', 'Фото общего вида площадки', 7, FALSE, TRUE);
+
+-- ============================================================
+-- 14. ОБРАЩЕНИЯ ГРАЖДАН/СОТРУДНИКОВ (публичная веб-форма, без авторизации)
+-- ============================================================
+
+CREATE TYPE feedback_status AS ENUM ('new', 'in_review', 'resolved', 'dismissed');
+
+CREATE TABLE feedback_reports (
+    id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    full_name      VARCHAR(200),
+    phone          VARCHAR(20),
+    location_text  VARCHAR(500),          -- адрес/площадка со слов заявителя, свободный текст
+    message        TEXT NOT NULL,
+    status         feedback_status NOT NULL DEFAULT 'new',
+    admin_comment  TEXT,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    resolved_at    TIMESTAMPTZ
+);
+
+CREATE INDEX idx_feedback_reports_status ON feedback_reports(status);
+CREATE INDEX idx_feedback_reports_created ON feedback_reports(created_at);

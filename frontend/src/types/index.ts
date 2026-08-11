@@ -269,3 +269,23 @@ export interface SystemStatsOut {
   counts: Record<string, number>
   uploads_size_mb: number
 }
+
+// ── Обращения (публичная веб-форма) ──
+export type FeedbackStatus = 'new' | 'in_review' | 'resolved' | 'dismissed'
+
+export interface FeedbackReportOut {
+  id: string
+  full_name: string | null
+  phone: string | null
+  location_text: string | null
+  message: string
+  status: FeedbackStatus
+  admin_comment: string | null
+  created_at: string
+  resolved_at: string | null
+}
+
+export interface FeedbackReportListOut {
+  total: number
+  items: FeedbackReportOut[]
+}

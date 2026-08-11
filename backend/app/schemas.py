@@ -416,3 +416,36 @@ class DashboardDistrictRow(BaseModel):
 class DashboardOut(BaseModel):
     districts: list[DashboardDistrictRow]
     totals: DashboardDistrictRow
+
+
+# ── Обращения (публичная веб-форма) ──────────────────────────────
+
+class FeedbackReportCreate(BaseModel):
+    full_name: Optional[str] = Field(None, max_length=200)
+    phone: Optional[str] = Field(None, max_length=20)
+    location_text: Optional[str] = Field(None, max_length=500)
+    message: str = Field(..., min_length=5, max_length=3000)
+
+
+class FeedbackReportUpdate(BaseModel):
+    status: Optional[str] = None
+    admin_comment: Optional[str] = None
+
+
+class FeedbackReportOut(BaseModel):
+    id: UUID
+    full_name: Optional[str] = None
+    phone: Optional[str] = None
+    location_text: Optional[str] = None
+    message: str
+    status: str
+    admin_comment: Optional[str] = None
+    created_at: datetime
+    resolved_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class FeedbackReportListOut(BaseModel):
+    total: int
+    items: list[FeedbackReportOut]

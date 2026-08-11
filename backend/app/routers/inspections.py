@@ -301,22 +301,17 @@ async def update_inspection(
             raise HTTPException(403, "Обход вне вашего района")
 
     if data.status:
-        # Общее фото площадки обязательно при завершении обхода самим
-        # инспектором — фронтенд уже блокирует кнопки "Завершить" без него
-        # (см. generalPhotos в InspectionPage.tsx), но бэкенд эту проверку
-        # не дублировал, и прямой вызов PATCH мог завершить обход вообще
-        # без единого фото. Проверяем только когда статус меняет сам
-        # владелец-инспектор — у reviewer/admin (приём/возврат обхода) это
-        # не проверка завершения, а отдельное действие без такого UI-гейта.
-        if (data.status in ("completed", "issues_found", "critical")
-                and str(obj.inspector_id) == str(current_user.id)):
-            general_photo_count = (await db.execute(
-                select(func.count()).select_from(Photo).where(
-                    Photo.inspection_id == obj.id, Photo.target_type == "inspection",
-                )
-            )).scalar_one()
-            if general_photo_count == 0:
-                raise HTTPException(400, "Общее фото площадки обязательно перед завершением обхода")
+        # Фото общего вида площадки обязательно при завершении обхода самим
+        # инспектором — это чек-листовый пункт "Общий вид / Фото общего
+        # вида площадки" (requires_photo=TRUE), проверяется чуть ниже вместе
+        # с остальными requires_photo-пунктами (missing_photo_items). Раньше
+        # тут же стояла ОТДЕЛЬНАЯ проверка на фото с target_type='inspection'
+        # (кнопка "Добавить общее фото" в шапке) — тот же смысл, но другая
+        # загрузка, и инспекторы, приложившие фото к чек-листовому пункту,
+        # но не воспользовавшиеся отдельной кнопкой, не могли завершить
+        # обход с непонятной причины. Обе кнопки закрывали один и тот же
+        # пункт чек-листа для человека, поэтому дублирующий гейт убран —
+        # достаточно одного requires_photo-пункта.
         obj.status = data.status
         if data.status in ("completed", "issues_found", "critical"):
             obj.completed_at = datetime.now(timezone.utc)

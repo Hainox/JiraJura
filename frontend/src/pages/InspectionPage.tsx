@@ -407,7 +407,7 @@ export default function InspectionPage() {
         <button
           onClick={() => setShowPhotoPanel((v) => !v)}
           className={`text-xs px-3 py-1.5 rounded-lg relative ${
-            showPhotoPanel ? 'bg-white/30' : generalPhotos.length === 0 && isInspector ? 'bg-red-500/60 hover:bg-red-500/80' : 'bg-white/20 hover:bg-white/30'
+            showPhotoPanel ? 'bg-white/30' : 'bg-white/20 hover:bg-white/30'
           }`}
         >
           <Camera className="w-4 h-4 inline mr-1" />
@@ -507,15 +507,6 @@ export default function InspectionPage() {
             Проверено ✓{stats.ok} пунктов, выявлено ✕{stats.nok} нарушений.
             {stats.pending > 0 && ` Осталось ${stats.pending} непроверенных.`}
           </p>
-          {generalPhotos.length === 0 && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-700 flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-              <div>
-                <div className="font-medium">Нет общего фото объекта!</div>
-                <div className="text-red-600 mt-0.5">Общее фото площадки обязательно. Нажмите 📷 «Добавить общее фото» в панели выше.</div>
-              </div>
-            </div>
-          )}
           {missingRequiredPhotoItems.length > 0 && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-700 flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
@@ -536,7 +527,7 @@ export default function InspectionPage() {
             </button>
             <button
               onClick={() => completeMutation.mutate('completed')}
-              disabled={completeMutation.isPending || generalPhotos.length === 0 || missingRequiredPhotoItems.length > 0}
+              disabled={completeMutation.isPending || missingRequiredPhotoItems.length > 0}
               className="flex-1 py-2 text-sm bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-40"
             >
               ✓ Всё в порядке
@@ -544,7 +535,7 @@ export default function InspectionPage() {
             {stats.nok > 0 && (
               <button
                 onClick={() => completeMutation.mutate('issues_found')}
-                disabled={completeMutation.isPending || generalPhotos.length === 0 || missingRequiredPhotoItems.length > 0}
+                disabled={completeMutation.isPending || missingRequiredPhotoItems.length > 0}
                 className="flex-1 py-2 text-sm bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700 disabled:opacity-40"
               >
                 ⚠ Завершить с нарушениями

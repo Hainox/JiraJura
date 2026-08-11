@@ -246,6 +246,9 @@ export interface DashboardDistrictRow {
   inspections_total: number
   inspections_completed: number
   inspections_in_progress: number
+  // Реально выявлено при обходе (чек-лист, result='defect') — не зависит от
+  // того, оформлено ли отдельное замечание. См. issues_total ниже.
+  checklist_defects: number
   issues_total: number
   issues_open: number
   issues_fixed: number

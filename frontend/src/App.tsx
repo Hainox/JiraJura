@@ -8,6 +8,8 @@ import type { Role } from '@/types'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import LoginPage from '@/pages/LoginPage'
 import RegisterPage from '@/pages/RegisterPage'
+import FeedbackFormPage from '@/pages/FeedbackFormPage'
+import AdminFeedbackPage from '@/pages/AdminFeedbackPage'
 import ChangePasswordPage from '@/pages/ChangePasswordPage'
 import MapPage from '@/pages/MapPage'
 import SiteDetailPage from '@/pages/SiteDetailPage'
@@ -74,6 +76,15 @@ export default function App() {
         <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register/:token" element={<RegisterPage />} />
+        <Route path="/feedback" element={<FeedbackFormPage />} />
+        <Route
+          path="/admin/feedback"
+          element={
+            <ProtectedRoute roles={['admin']}>
+              <AdminFeedbackPage />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/change-password"
           element={

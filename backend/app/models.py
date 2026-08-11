@@ -68,6 +68,11 @@ ISSUE_STATUS_ENUM = Enum(
     name='issue_status', create_type=False,
 )
 
+FEEDBACK_STATUS_ENUM = Enum(
+    'new', 'in_review', 'resolved', 'dismissed',
+    name='feedback_status', create_type=False,
+)
+
 
 # ── Модели ──────────────────────────────────────────────────────
 
@@ -331,3 +336,21 @@ class AuditLog(Base):
     created_at = Column(DateTime(timezone=True), default=_utcnow)
 
     user = relationship("User", foreign_keys=[user_id])
+
+
+class FeedbackReport(Base):
+    """Обращение с публичной веб-формы (/feedback) — без авторизации,
+    заявитель может быть анонимным. Отдельная очередь для ручного разбора,
+    не путать с Issue: сюда попадают жалобы граждан/сотрудников, а не
+    находки инспектора при обходе.
+    """
+    __tablename__ = "feedback_reports"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    full_name = Column(String(200), nullable=True)
+    phone = Column(String(20), nullable=True)
+    location_text = Column(String(500), nullable=True)
+    message = Column(Text, nullable=False)
+    status = Column(FEEDBACK_STATUS_ENUM, nullable=False, default="new")
+    admin_comment = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    resolved_at = Column(DateTime(timezone=True), nullable=True)

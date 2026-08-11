@@ -25,6 +25,8 @@ import type {
   PasswordResetOut,
   DashboardOut,
   SystemStatsOut,
+  FeedbackReportOut,
+  FeedbackReportListOut,
 } from '@/types'
 
 export const api = axios.create({
@@ -285,4 +287,17 @@ export const issuesApi = {
 // ── Разработчик (эксплуатационная сводка) ──
 export const systemApi = {
   stats: () => api.get<SystemStatsOut>('/system/stats').then((r) => r.data),
+}
+
+// ── Обращения ──
+export const feedbackApi = {
+  // Публичный — без авторизации, вызывается с /feedback до логина
+  submit: (data: { full_name?: string; phone?: string; location_text?: string; message: string }) =>
+    api.post<FeedbackReportOut>('/feedback/', data).then((r) => r.data),
+
+  list: (params?: { status?: string }) =>
+    api.get<FeedbackReportListOut>('/feedback/', { params }).then((r) => r.data),
+
+  update: (id: string, data: { status?: string; admin_comment?: string }) =>
+    api.patch<FeedbackReportOut>(`/feedback/${id}`, data).then((r) => r.data),
 }

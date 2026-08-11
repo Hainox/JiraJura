@@ -8,22 +8,29 @@ server {
     listen 80;
     server_name ${DOMAIN};
 
+    # см. комментарий про resolver в proxy.conf.template — тот же приём,
+    # чтобы nginx не кэшировал IP api/frontend навсегда.
+    resolver 127.0.0.11 valid=10s;
+
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
     }
 
     location /api/v1/ {
-        proxy_pass http://api:8000/api/v1/;
+        set $api_upstream api:8000;
+        proxy_pass http://$api_upstream/api/v1/;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
     location /uploads/ {
-        proxy_pass http://api:8000/uploads/;
+        set $api_upstream api:8000;
+        proxy_pass http://$api_upstream/uploads/;
     }
 
     location / {
-        proxy_pass http://frontend:80;
+        set $frontend_upstream frontend:80;
+        proxy_pass http://$frontend_upstream;
         proxy_set_header Host $host;
     }
 }

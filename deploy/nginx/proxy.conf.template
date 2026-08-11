@@ -24,8 +24,18 @@ server {
     # Синхронно с MAX_PHOTO_SIZE_MB (20 МБ по умолчанию) + запас на заголовки.
     client_max_body_size 25m;
 
+    # 127.0.0.11 — встроенный DNS докер-сети. Без него proxy_pass с
+    # хардкодным хостом ("http://api:8000") резолвится ОДИН раз при
+    # старте/reload nginx и кэшируется навсегда — при пересборке api/
+    # frontend контейнер получает новый IP, а nginx продолжает стучаться
+    # в старый ("Connection refused" → 502), пока proxy вручную не
+    # перезапустят. С resolver + переменной в proxy_pass nginx резолвит
+    # хост заново на каждый запрос (не чаще, чем раз в valid=10s).
+    resolver 127.0.0.11 valid=10s;
+
     location /api/v1/ {
-        proxy_pass http://api:8000/api/v1/;
+        set $api_upstream api:8000;
+        proxy_pass http://$api_upstream/api/v1/;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -33,11 +43,13 @@ server {
     }
 
     location /uploads/ {
-        proxy_pass http://api:8000/uploads/;
+        set $api_upstream api:8000;
+        proxy_pass http://$api_upstream/uploads/;
     }
 
     location / {
-        proxy_pass http://frontend:80;
+        set $frontend_upstream frontend:80;
+        proxy_pass http://$frontend_upstream;
         proxy_set_header Host $host;
     }
 }

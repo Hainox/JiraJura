@@ -55,7 +55,8 @@ export default function IssueFixPage() {
   const fixPhotoUpload = useMutation({
     mutationFn: (file: File) => issuesApi.uploadFixPhoto(issueId, file),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['issue', issueId] }); toast.success('Фото исправления загружено') },
-    onError: () => toast.error('Ошибка загрузки фото'),
+    // Ошибку показывает usePhotoUpload ниже (mutateAsync прокидывает её
+    // дальше) — с более точной причиной, чем общий тост "Ошибка загрузки".
   })
 
   const { isUploading, handleFileInput } = usePhotoUpload((file) => fixPhotoUpload.mutateAsync(file))

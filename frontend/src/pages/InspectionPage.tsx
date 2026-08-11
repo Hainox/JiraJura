@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { inspectionsApi, checklistsApi, issuesApi, reportsApi } from '@/lib/api'
+import { inspectionsApi, checklistsApi, issuesApi, reportsApi, describeUploadError } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
 import type { InspectionOut, ChecklistTemplateOut, ChecklistItemOut, PhotoOut, IssueOut } from '@/types'
 import {
@@ -184,6 +184,10 @@ export default function InspectionPage() {
     onSuccess: () => {
       toast.success('Сохранено')
       queryClient.invalidateQueries({ queryKey: ['inspection', inspectionId] })
+      // Пункты чек-листа с "Не ОК" автосоздают замечание на сервере (см.
+      // update_inspection) — без этого блок "Замечания по обходу" ниже не
+      // узнаёт о нём до перезагрузки страницы.
+      queryClient.invalidateQueries({ queryKey: ['issues', inspectionId] })
     },
     onError: () => toast.error('Ошибка сохранения'),
   })
@@ -208,6 +212,7 @@ export default function InspectionPage() {
     onSuccess: () => {
       toast.success('Обход завершён')
       queryClient.invalidateQueries({ queryKey: ['inspection', inspectionId] })
+      queryClient.invalidateQueries({ queryKey: ['issues', inspectionId] })
       navigate(`/sites/${inspection!.site_id}`)
     },
     onError: () => toast.error('Ошибка завершения'),
@@ -254,7 +259,7 @@ export default function InspectionPage() {
       setIssuePhotoCount((c) => c + 1)
       toast.success('Фото замечания загружено')
     },
-    onError: () => toast.error('Ошибка загрузки фото замечания'),
+    onError: (err) => toast.error(describeUploadError(err)),
   })
 
   const finishIssuePhotos = () => {
@@ -269,7 +274,7 @@ export default function InspectionPage() {
       setPhotos((prev) => [...prev, photo])
       toast.success('Фото загружено')
     },
-    onError: () => toast.error('Ошибка загрузки фото'),
+    onError: (err) => toast.error(describeUploadError(err)),
   })
 
   const uploadItemPhotoMutation = useMutation({
@@ -289,10 +294,13 @@ export default function InspectionPage() {
       setPhotos((prev) => [...prev, photo])
       setUploadingForItemId(null)
       toast.success('Фото для пункта загружено')
+      // Если ответ ещё не был сохранён, mutationFn выше сохранил его перед
+      // загрузкой фото — при результате "Не ОК" это могло создать замечание.
+      queryClient.invalidateQueries({ queryKey: ['issues', inspectionId] })
     },
-    onError: () => {
+    onError: (err) => {
       setUploadingForItemId(null)
-      toast.error('Ошибка загрузки фото')
+      toast.error(describeUploadError(err))
     },
   })
 

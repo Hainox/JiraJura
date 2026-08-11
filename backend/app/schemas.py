@@ -401,6 +401,11 @@ class DashboardDistrictRow(BaseModel):
     inspections_total: int
     inspections_completed: int
     inspections_in_progress: int
+    # Реально выявлено при обходе (чек-лист, result='defect') — не зависит от
+    # того, оформил ли инспектор отдельное замечание. См. issues_total ниже:
+    # оформление замечания — необязательный второй шаг, и по нему одному
+    # нельзя судить о том, сколько проблем реально нашли в районе.
+    checklist_defects: int
     issues_total: int
     issues_open: int
     issues_fixed: int

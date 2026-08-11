@@ -223,6 +223,17 @@ async def admin_dashboard(
             Inspection.created_at,
         ))).scalar_one() or 0
 
+        # Реально выявлено при обходе — по чек-листу, независимо от того,
+        # оформил ли инспектор отдельное замечание (см. комментарий у поля
+        # в schemas.py). Именно это число надо использовать для оценки
+        # района, а не issues_total ниже.
+        defects_base = (
+            select(func.count()).select_from(ChecklistAnswer)
+            .join(Inspection, ChecklistAnswer.inspection_id == Inspection.id)
+            .where(Inspection.site_id.in_(site_sub), ChecklistAnswer.result == "defect")
+        )
+        checklist_defects = (await db.execute(period(defects_base, ChecklistAnswer.created_at))).scalar_one() or 0
+
         iss_base = select(func.count()).select_from(Issue).where(Issue.site_id.in_(site_sub))
         issues_total = (await db.execute(period(iss_base, Issue.created_at))).scalar_one() or 0
         issues_open = (await db.execute(period(
@@ -247,6 +258,7 @@ async def admin_dashboard(
             district_id=d.id, district_name=d.name, total_sites=total_sites,
             inspections_total=inspections_total, inspections_completed=inspections_completed,
             inspections_in_progress=inspections_in_progress,
+            checklist_defects=checklist_defects,
             issues_total=issues_total, issues_open=issues_open,
             issues_fixed=issues_fixed, issues_revision_needed=issues_revision_needed,
             issues_closed=issues_closed,
@@ -258,6 +270,7 @@ async def admin_dashboard(
         total_row.inspections_total += inspections_total
         total_row.inspections_completed += inspections_completed
         total_row.inspections_in_progress += inspections_in_progress
+        total_row.checklist_defects += checklist_defects
         total_row.issues_total += issues_total
         total_row.issues_open += issues_open
         total_row.issues_fixed += issues_fixed

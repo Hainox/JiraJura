@@ -367,12 +367,17 @@ INSERT INTO checklist_items (template_id, category, question, sort_order, is_cri
 -- ============================================================
 
 CREATE TYPE feedback_status AS ENUM ('new', 'in_review', 'resolved', 'dismissed');
+-- site — жалоба по конкретной площадке/двору; app — техническая проблема
+-- с самим приложением (не заходит, баг, что-то не отображается); other —
+-- всё остальное. Определяет, какие поля формы показывает фронтенд.
+CREATE TYPE feedback_report_type AS ENUM ('site', 'app', 'other');
 
 CREATE TABLE feedback_reports (
     id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    report_type    feedback_report_type NOT NULL DEFAULT 'site',
     full_name      VARCHAR(200),
     phone          VARCHAR(20),
-    location_text  VARCHAR(500),          -- адрес/площадка со слов заявителя, свободный текст
+    location_text  VARCHAR(500),          -- адрес/площадка ИЛИ где возникла техпроблема — свободный текст
     message        TEXT NOT NULL,
     status         feedback_status NOT NULL DEFAULT 'new',
     admin_comment  TEXT,
@@ -382,3 +387,18 @@ CREATE TABLE feedback_reports (
 
 CREATE INDEX idx_feedback_reports_status ON feedback_reports(status);
 CREATE INDEX idx_feedback_reports_created ON feedback_reports(created_at);
+CREATE INDEX idx_feedback_reports_type ON feedback_reports(report_type);
+
+-- Фото или файлы (списки и т.п.), приложенные к обращению — не Photo, та
+-- привязана к обходу/замечанию/оборудованию и подразумевает именно фото.
+CREATE TABLE feedback_attachments (
+    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    feedback_report_id  UUID NOT NULL REFERENCES feedback_reports(id) ON DELETE CASCADE,
+    storage_path        VARCHAR(500) NOT NULL,
+    original_filename   VARCHAR(255),
+    content_type        VARCHAR(100),
+    size_bytes          INT,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_feedback_attachments_report ON feedback_attachments(feedback_report_id);

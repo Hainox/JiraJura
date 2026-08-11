@@ -272,15 +272,27 @@ export interface SystemStatsOut {
 
 // ── Обращения (публичная веб-форма) ──
 export type FeedbackStatus = 'new' | 'in_review' | 'resolved' | 'dismissed'
+export type FeedbackReportType = 'site' | 'app' | 'other'
+
+export interface FeedbackAttachmentOut {
+  id: string
+  url: string
+  original_filename: string | null
+  content_type: string | null
+  size_bytes: number | null
+  created_at: string
+}
 
 export interface FeedbackReportOut {
   id: string
+  report_type: FeedbackReportType
   full_name: string | null
   phone: string | null
   location_text: string | null
   message: string
   status: FeedbackStatus
   admin_comment: string | null
+  attachments: FeedbackAttachmentOut[]
   created_at: string
   resolved_at: string | null
 }

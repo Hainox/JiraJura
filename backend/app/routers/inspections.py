@@ -62,6 +62,7 @@ async def create_inspection(
             selectinload(Inspection.site).selectinload(Site.courtyard).selectinload(Courtyard.district),
             selectinload(Inspection.inspector),
             selectinload(Inspection.answers),
+            selectinload(Inspection.reviewed_by_user),
         )
         own_unfinished = (await db.execute(q)).scalar_one()
         return await _inspection_to_out(own_unfinished, db)
@@ -113,6 +114,7 @@ async def create_inspection(
         selectinload(Inspection.site).selectinload(Site.courtyard).selectinload(Courtyard.district),
         selectinload(Inspection.inspector),
         selectinload(Inspection.answers),
+        selectinload(Inspection.reviewed_by_user),
     )
     inspection = (await db.execute(q)).scalar_one()
     return await _inspection_to_out(inspection, db)
@@ -133,6 +135,7 @@ async def list_inspections(
         selectinload(Inspection.site).selectinload(Site.courtyard).selectinload(Courtyard.district),
         selectinload(Inspection.inspector),
         selectinload(Inspection.answers),
+        selectinload(Inspection.reviewed_by_user),
     ).order_by(Inspection.created_at.desc())
 
     if site_id:

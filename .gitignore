@@ -31,7 +31,12 @@ backend/rosters/
 *result*.csv
 
 # === Runtime uploads (user-generated content, not source) ===
-backend/uploads/*
+# backend/uploads/* only matched the first level, so files inside
+# subdirectories (e.g. backend/uploads/inspections/*.jpg) were never
+# actually ignored -- confirmed live on the production checkout, which
+# had hundreds of untracked real inspection photos sitting in `git
+# status`. ** matches at every depth, which is what was actually meant.
+backend/uploads/**
 !backend/uploads/**/
 !backend/uploads/**/.gitkeep
 

@@ -610,6 +610,18 @@ async def export_xlsx(
             select(func.count()).select_from(Inspection).where(Inspection.site_id.in_(site_sub)),
             Inspection.created_at,
         ))).scalar_one() or 0
+        # Реально выявлено при обходе (чек-лист, result='defect') — то же
+        # число, что и checklist_defects на дешборде (см. admin_dashboard
+        # выше). Оформление замечания — отдельный необязательный шаг, эти
+        # два числа умышленно расходятся и оба нужны рядом в отчёте, иначе
+        # руководство снова будет судить о районе по неполной цифре (см.
+        # аудит статистики — районам выносили выговоры именно за это).
+        checklist_defects = (await db.execute(period(
+            select(func.count()).select_from(ChecklistAnswer)
+            .join(Inspection, ChecklistAnswer.inspection_id == Inspection.id)
+            .where(Inspection.site_id.in_(site_sub), ChecklistAnswer.result == "defect"),
+            ChecklistAnswer.created_at,
+        ))).scalar_one() or 0
         created = (await db.execute(period(
             select(func.count()).select_from(Issue).where(Issue.site_id.in_(site_sub)),
             Issue.created_at,
@@ -631,7 +643,7 @@ async def export_xlsx(
                 Issue.site_id.in_(site_sub), Issue.status == "overdue"
             )
         )).scalar_one() or 0
-        summary_data.append((d.name, total_sites, inspected, created, closed, open_now, overdue))
+        summary_data.append((d.name, total_sites, inspected, checklist_defects, created, closed, open_now, overdue))
 
     # ── Динамика по дням (инспектор × дата) ──
     # Группируем по User.id, а не по ФИО — у full_name нет уникальности в
@@ -715,6 +727,7 @@ async def export_xlsx(
     # доступен только через ручной запуск скрипта на сервере) ──
     now_str = datetime.now(MSK).strftime("%d.%m.%Y %H:%M")
     total_sites_all = sum(x[1] for x in summary_data) if summary_data else 0
+    total_checklist_defects_all = sum(x[3] for x in summary_data) if summary_data else 0
     total_insp_all = len(insp_data)
     total_insp_done_all = sum(1 for r in insp_data if r[6] != "В процессе")
     total_iss_all = len(iss_data)
@@ -735,7 +748,9 @@ async def export_xlsx(
     _row("Регистрация", f"{total_reg} / {total_all_invited} ({overall_reg_pct:.0%})")
     _row("Площадок в системе", total_sites_all)
     _row("Обходов всего / завершено", f"{total_insp_all} / {total_insp_done_all} (в процессе: {total_insp_all - total_insp_done_all})")
-    _row("Нарушений создано / открыто сейчас", f"{total_iss_all} / {total_iss_all - total_iss_closed_all} (закрыто: {total_iss_closed_all})")
+    _row("Найдено дефектов по чек-листу / замечаний оформлено", f"{total_checklist_defects_all} / {total_iss_all}")
+    _row("Замечаний открыто сейчас / закрыто", f"{total_iss_all - total_iss_closed_all} / {total_iss_closed_all}")
+    _row("   Оформление замечания — отдельный шаг сверх чек-листа, не то же самое, что число найденных дефектов.")
     _row()
     _row("Требуют внимания в первую очередь")
     ov[f"A{ov.max_row}"].font = Font(bold=True)
@@ -769,7 +784,7 @@ async def export_xlsx(
     for name, desc in [
         ("Регистрация", "Кто зарегистрирован/нет по районам, поимённо, худшие районы сверху"),
         ("Задания", "Снимок сейчас: кто отвечает за площадку и когда там были в последний раз"),
-        ("Сводка по районам", "Площадки/обходы/нарушения за период, в одной таблице"),
+        ("Сводка по районам", "Площадки/обходы, найденные дефекты и оформленные замечания за период, в одной таблице"),
         ("Обходы", "Детальный лог всех обходов: инспектор, площадка, статус, ОК/дефектов/фото"),
         ("Нарушения по чек-листу", "Разбивка нарушений по категориям и конкретным пунктам чек-листа"),
         ("Замечания", "Все зафиксированные замечания с критичностью и статусом"),
@@ -857,8 +872,8 @@ async def export_xlsx(
         ["Район", "Двор", "Тип площадки", "Назначенный инспектор", "Телефон", "Последний обход", "Статус последнего обхода"],
         assignment_data, [24, 40, 20, 26, 16, 18, 22])
     _sheet(wb, "Сводка по районам",
-        ["Район", "Всего площадок", "Обходов за период", "Замечаний создано", "Закрыто", "Открыто сейчас", "Просрочено"],
-        summary_data, [24, 15, 17, 17, 10, 14, 12])
+        ["Район", "Всего площадок", "Обходов за период", "Найдено дефектов (чек-лист)", "Замечаний оформлено", "Закрыто", "Открыто сейчас", "Просрочено"],
+        summary_data, [24, 15, 17, 24, 18, 10, 14, 12])
     _sheet(wb, "Обходы",
         ["Дата", "Район", "Двор", "Тип площадки", "Инспектор", "Телефон", "Статус", "Начат", "Завершён", "Пунктов ОК", "Дефектов", "Фото", "Комментарий"],
         insp_data, [16, 20, 40, 20, 24, 16, 14, 16, 16, 12, 10, 7, 40])

@@ -128,7 +128,11 @@ export default function DashboardPage() {
           </div>
 
           {/* KPI cards — issues */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+            {/* Реально найдено при обходе (чек-лист) — не путать с
+                "Замечаний" ниже: оформление замечания отдельный шаг,
+                эти два числа умышленно разные. */}
+            <KpiCard icon={<AlertTriangle className="w-5 h-5" />} label="Найдено дефектов" value={t?.checklist_defects ?? 0} color="bg-rose-600" />
             <KpiCard icon={<AlertTriangle className="w-5 h-5" />} label="Замечаний" value={t?.issues_total ?? 0} color="bg-red-500" />
             <KpiCard icon={<AlertTriangle className="w-5 h-5" />} label="Открыто" value={t?.issues_open ?? 0} color="bg-orange-500" />
             <KpiCard icon={<CheckCircle2 className="w-5 h-5" />} label="Исправлено" value={t?.issues_fixed ?? 0} color="bg-emerald-500" />
@@ -150,6 +154,7 @@ export default function DashboardPage() {
                     <th className="p-2 font-medium text-center">Площадок</th>
                     <th className="p-2 font-medium text-center">Обходов</th>
                     <th className="p-2 font-medium text-center">Заверш.</th>
+                    <th className="p-2 font-medium text-center">Дефектов</th>
                     <th className="p-2 font-medium text-center">Замечаний</th>
                     <th className="p-2 font-medium text-center">Открыто</th>
                     <th className="p-2 font-medium text-center">Исправл.</th>
@@ -165,6 +170,7 @@ export default function DashboardPage() {
                       <td className="p-2 text-center">{t.total_sites}</td>
                       <td className="p-2 text-center">{t.inspections_total}</td>
                       <td className="p-2 text-center">{t.inspections_completed}</td>
+                      <td className="p-2 text-center text-rose-700">{t.checklist_defects}</td>
                       <td className="p-2 text-center">{t.issues_total}</td>
                       <td className="p-2 text-center">{t.issues_open}</td>
                       <td className="p-2 text-center">{t.issues_fixed}</td>
@@ -178,6 +184,7 @@ export default function DashboardPage() {
                       <td className="p-2 text-center text-gray-600">{d.total_sites}</td>
                       <td className="p-2 text-center">{d.inspections_total || '-'}</td>
                       <td className="p-2 text-center text-green-700">{d.inspections_completed || '-'}</td>
+                      <td className="p-2 text-center text-rose-700 font-medium">{d.checklist_defects || '-'}</td>
                       <td className="p-2 text-center font-medium">{d.issues_total || '-'}</td>
                       <td className="p-2 text-center text-red-600">{d.issues_open || '-'}</td>
                       <td className="p-2 text-center text-emerald-600">{d.issues_fixed || '-'}</td>

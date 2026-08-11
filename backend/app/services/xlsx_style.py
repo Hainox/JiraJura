@@ -41,3 +41,26 @@ def style_data_cell(cell) -> None:
 def style_data_row(ws, row_idx: int, ncols: int) -> None:
     for col in range(1, ncols + 1):
         style_data_cell(ws.cell(row_idx, col))
+
+
+SPACER_ROW_HEIGHT = 8
+
+
+def style_merged_label(ws, row_idx: int, ncols: int, header: bool = False, fill: bool = True) -> None:
+    """Одноколоночная 'ярлык'-строка (заголовок секции или длинная строка
+    текста/сноска), слитая на ncols колонок в один заполненный блок вместо
+    узкой рамки в одной колонке рядом с пустым нестилизованным местом.
+
+    Рамку/заливку ставим на КАЖДОЙ покрываемой ячейке, а не только на
+    первой: Excel рисует край слитой ячейки по границе именно той
+    исходной ячейки, что на этом краю — если стилизована только первая
+    (левая) ячейка, у блока не будет рамки с правой стороны.
+    """
+    for col in range(1, ncols + 1):
+        cell = ws.cell(row_idx, col)
+        if header:
+            style_header_cell(cell, fill=fill)
+        else:
+            style_data_cell(cell)
+    if ncols > 1:
+        ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=ncols)

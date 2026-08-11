@@ -336,7 +336,8 @@ def build_workbook(data: dict):
     from openpyxl.chart import BarChart, PieChart, Reference
     from openpyxl.chart.label import DataLabelList
     from app.services.xlsx_style import (
-        style_header_row, style_data_row, style_header_cell, style_data_cell, CENTER_WRAP,
+        style_header_row, style_data_row, style_header_cell, style_data_cell,
+        style_merged_label, CENTER_WRAP, SPACER_ROW_HEIGHT,
     )
 
     RED = PatternFill("solid", fgColor="FFC7CE")
@@ -376,14 +377,16 @@ def build_workbook(data: dict):
         ov.append(list(vals) if vals else [None])
         r = ov.max_row
         if not vals:
+            ov.row_dimensions[r].height = SPACER_ROW_HEIGHT
             return
         if style == "header":
-            style_header_cell(ov.cell(r, 1))
-            if len(vals) == 1:
-                ov.merge_cells(start_row=r, start_column=1, end_row=r, end_column=2)
+            style_merged_label(ov, r, 2, header=True)
         elif style == "data":
-            for i in range(1, len(vals) + 1):
-                style_data_cell(ov.cell(r, i))
+            if len(vals) == 1:
+                style_merged_label(ov, r, 2, header=False)
+            else:
+                for i in range(1, len(vals) + 1):
+                    style_data_cell(ov.cell(r, i))
 
     row("Сводный отчёт по проекту «Журнал обхода площадок» — САО г. Москвы")
     ov["A1"].font = Font(bold=True, size=14)
@@ -441,6 +444,7 @@ def build_workbook(data: dict):
     # (тот в колонках A-B), чтобы не мешать
     ov["H1"] = "Обходы"
     style_header_cell(ov["H1"], fill=False)
+    style_header_cell(ov["I1"], fill=False)
     ov.merge_cells("H1:I1")
     ov["H2"], ov["I2"] = "Завершено", data["total_insp_done"]
     ov["H3"], ov["I3"] = "В процессе", data["total_insp"] - data["total_insp_done"]
@@ -448,6 +452,7 @@ def build_workbook(data: dict):
         style_data_cell(cell)
     ov["H5"] = "Замечания"
     style_header_cell(ov["H5"], fill=False)
+    style_header_cell(ov["I5"], fill=False)
     ov.merge_cells("H5:I5")
     ov["H6"], ov["I6"] = "Открыто", data["total_iss"] - data["total_iss_closed"]
     ov["H7"], ov["I7"] = "Закрыто", data["total_iss_closed"]
@@ -462,12 +467,17 @@ def build_workbook(data: dict):
 
     # ── Регистрация ──
     reg_ws = wb.create_sheet("Регистрация")
+
+    def _reg_spacer():
+        reg_ws.append([])
+        reg_ws.row_dimensions[reg_ws.max_row].height = SPACER_ROW_HEIGHT
+
     reg_ws.append(["Регистрация пользователей по районам"])
     reg_ws["A1"].font = Font(bold=True, size=14)
     reg_ws["A1"].alignment = CENTER_WRAP
     reg_ws.append([f"Снимок на {now_str} — user_invites + users, дедуп по ФИО"])
     reg_ws[f"A{reg_ws.max_row}"].alignment = CENTER_WRAP
-    reg_ws.append([])
+    _reg_spacer()
     reg_ws.append(["Район", "Зарегистрировано", "Всего приглашено", "% регистрации"])
     style_header_row(reg_ws, reg_ws.max_row, 4)
     for x in data["reg_stats"]:
@@ -482,15 +492,17 @@ def build_workbook(data: dict):
 
     def _reg_header(text):
         reg_ws.append([text])
-        r = reg_ws.max_row
-        style_header_cell(reg_ws.cell(r, 1))
-        reg_ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=2)
+        style_merged_label(reg_ws, reg_ws.max_row, 2, header=True)
 
     def _reg_item(text):
         reg_ws.append([text])
-        style_data_cell(reg_ws.cell(reg_ws.max_row, 1))
+        style_merged_label(reg_ws, reg_ws.max_row, 2, header=False)
 
-    reg_ws.append([])
+    def _reg_note(text):
+        reg_ws.append([text])
+        style_merged_label(reg_ws, reg_ws.max_row, 4, header=False)
+
+    _reg_spacer()
     _reg_header("Не зарегистрированы поимённо (по районам, худшие сверху)")
     for x in data["reg_stats"]:
         if not x["pending"]:
@@ -500,21 +512,21 @@ def build_workbook(data: dict):
             _reg_item(f"   {r.full_name}")
 
     if data["pending_okrug_reviewers"]:
-        reg_ws.append([])
+        _reg_spacer()
         _reg_header("Проверяющие без района (весь округ) — не зарегистрированы")
         for r in data["pending_okrug_reviewers"]:
             _reg_item(f"   {r.full_name}")
 
     if data["pending_admins"]:
-        reg_ws.append([])
+        _reg_spacer()
         _reg_header("Админы — не зарегистрированы")
         for r in data["pending_admins"]:
             _reg_item(f"   {r.full_name}")
 
+    _reg_spacer()
     if data["odd_districts"]:
-        reg_ws.append([])
-        reg_ws.append([f"* {', '.join(data['odd_districts'])} — вероятная опечатка/задвоение при заведении района, не отдельный реальный район."])
-    reg_ws.append(["Цвет строки: красный < 50% регистрации, жёлтый 50–80%, зелёный ≥ 80%."])
+        _reg_note(f"* {', '.join(data['odd_districts'])} — вероятная опечатка/задвоение при заведении района, не отдельный реальный район.")
+    _reg_note("Цвет строки: красный < 50% регистрации, жёлтый 50–80%, зелёный ≥ 80%.")
     for col, w in zip("ABCD", (45, 18, 18, 15)):
         reg_ws.column_dimensions[col].width = w
 
@@ -550,6 +562,7 @@ def build_workbook(data: dict):
     style_header_row(sum_ws, sum_ws.max_row, 8)
     sum_ws.cell(sum_ws.max_row, 8).number_format = "0%"
     sum_ws.append(["Цвет строки: красный — 0 обходов при >50 площадках, зелёный — район-лидер по завершённым обходам."])
+    style_merged_label(sum_ws, sum_ws.max_row, 8, header=False)
     for col, w in zip("ABCDEFGH", (24, 12, 10, 10, 12, 10, 14, 14)):
         sum_ws.column_dimensions[col].width = w
 
@@ -574,6 +587,7 @@ def build_workbook(data: dict):
     if data["issues_by_criticality"]:
         iss_ws["N1"] = "Критичность"
         style_header_cell(iss_ws["N1"], fill=False)
+        style_header_cell(iss_ws["O1"], fill=False)
         iss_ws.merge_cells("N1:O1")
         for i, (label, cnt) in enumerate(data["issues_by_criticality"].most_common(), start=2):
             iss_ws.cell(i, 14, label)
@@ -586,6 +600,7 @@ def build_workbook(data: dict):
     if data["issues_by_status"]:
         iss_ws["N17"] = "Статус"
         style_header_cell(iss_ws["N17"], fill=False)
+        style_header_cell(iss_ws["O17"], fill=False)
         iss_ws.merge_cells("N17:O17")
         for i, (label, cnt) in enumerate(data["issues_by_status"].most_common(), start=18):
             iss_ws.cell(i, 14, label)

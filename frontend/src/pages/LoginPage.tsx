@@ -96,7 +96,7 @@ export default function LoginPage() {
             другим способом, если человек ещё не залогинен. */}
         <button
           onClick={() => navigate('/feedback')}
-          className="w-full mt-4 flex items-center justify-center gap-1.5 text-sm text-blue-200 hover:text-white transition-colors"
+          className="w-full mt-4 flex items-center justify-center gap-1.5 text-sm font-medium text-white bg-white/15 hover:bg-white/25 border border-white/30 rounded-lg py-2.5 transition-colors"
         >
           <MessageSquareWarning className="w-4 h-4" />
           Не получается войти или другая проблема?

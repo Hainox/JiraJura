@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
 import { authApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
-import { ArrowLeft, Save, Lock, User, Phone, Shield } from 'lucide-react'
+import { ArrowLeft, Save, Lock, User, Phone, Shield, MessageSquareWarning } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
 
 const ROLE_LABELS: Record<string, string> = {
@@ -173,6 +173,23 @@ export default function ProfilePage() {
             </div>
           )}
         </div>
+
+        {/* Обращения/жалобы — та же публичная форма /feedback, чтобы не
+            искать ссылку отдельно: любой залогиненный сотрудник, а не
+            только внешние пользователи, может пожаловаться на площадку
+            или сообщить о технической проблеме в приложении. */}
+        <button
+          onClick={() => navigate('/feedback')}
+          className="card w-full flex items-center gap-3 text-left hover:border-primary-300 transition-colors"
+        >
+          <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+            <MessageSquareWarning className="w-5 h-5 text-red-600" />
+          </div>
+          <div>
+            <div className="font-semibold text-sm text-gray-800">Сообщить о проблеме</div>
+            <div className="text-xs text-gray-500">Жалоба на площадку или техническая проблема в приложении</div>
+          </div>
+        </button>
       </div>
     </div>
   )

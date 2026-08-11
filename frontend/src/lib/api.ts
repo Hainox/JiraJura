@@ -27,6 +27,7 @@ import type {
   SystemStatsOut,
   FeedbackReportOut,
   FeedbackReportListOut,
+  FeedbackAttachmentOut,
 } from '@/types'
 
 export const api = axios.create({
@@ -292,12 +293,24 @@ export const systemApi = {
 // ── Обращения ──
 export const feedbackApi = {
   // Публичный — без авторизации, вызывается с /feedback до логина
-  submit: (data: { full_name?: string; phone?: string; location_text?: string; message: string }) =>
+  submit: (data: { report_type?: string; full_name?: string; phone?: string; location_text?: string; message: string }) =>
     api.post<FeedbackReportOut>('/feedback/', data).then((r) => r.data),
 
-  list: (params?: { status?: string }) =>
+  list: (params?: { status?: string; report_type?: string }) =>
     api.get<FeedbackReportListOut>('/feedback/', { params }).then((r) => r.data),
 
   update: (id: string, data: { status?: string; admin_comment?: string }) =>
     api.patch<FeedbackReportOut>(`/feedback/${id}`, data).then((r) => r.data),
+
+  // Публичный — без авторизации, вызывается сразу после submit() с /feedback
+  uploadAttachment: (reportId: string, file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api
+      .post<FeedbackAttachmentOut>(`/feedback/${reportId}/attachments`, form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: PHOTO_UPLOAD_TIMEOUT_MS,
+      })
+      .then((r) => r.data)
+  },
 }

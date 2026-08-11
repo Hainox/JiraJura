@@ -73,6 +73,11 @@ FEEDBACK_STATUS_ENUM = Enum(
     name='feedback_status', create_type=False,
 )
 
+FEEDBACK_REPORT_TYPE_ENUM = Enum(
+    'site', 'app', 'other',
+    name='feedback_report_type', create_type=False,
+)
+
 
 # ── Модели ──────────────────────────────────────────────────────
 
@@ -346,6 +351,7 @@ class FeedbackReport(Base):
     """
     __tablename__ = "feedback_reports"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    report_type = Column(FEEDBACK_REPORT_TYPE_ENUM, nullable=False, default="site")
     full_name = Column(String(200), nullable=True)
     phone = Column(String(20), nullable=True)
     location_text = Column(String(500), nullable=True)
@@ -354,3 +360,25 @@ class FeedbackReport(Base):
     admin_comment = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=_utcnow)
     resolved_at = Column(DateTime(timezone=True), nullable=True)
+
+    attachments = relationship(
+        "FeedbackAttachment", back_populates="report",
+        cascade="all, delete-orphan", order_by="FeedbackAttachment.created_at",
+    )
+
+
+class FeedbackAttachment(Base):
+    """Фото или файл (список и т.п.), приложенные к обращению — отдельная
+    таблица, не Photo: та привязана к обходу/замечанию/оборудованию и
+    подразумевает именно фотографию, а сюда можно прикладывать и xlsx/csv.
+    """
+    __tablename__ = "feedback_attachments"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    feedback_report_id = Column(UUID(as_uuid=True), ForeignKey("feedback_reports.id", ondelete="CASCADE"), nullable=False)
+    storage_path = Column(String(500), nullable=False)
+    original_filename = Column(String(255), nullable=True)
+    content_type = Column(String(100), nullable=True)
+    size_bytes = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+    report = relationship("FeedbackReport", back_populates="attachments")

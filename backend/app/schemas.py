@@ -421,6 +421,7 @@ class DashboardOut(BaseModel):
 # ── Обращения (публичная веб-форма) ──────────────────────────────
 
 class FeedbackReportCreate(BaseModel):
+    report_type: str = "site"
     full_name: Optional[str] = Field(None, max_length=200)
     phone: Optional[str] = Field(None, max_length=20)
     location_text: Optional[str] = Field(None, max_length=500)
@@ -432,14 +433,27 @@ class FeedbackReportUpdate(BaseModel):
     admin_comment: Optional[str] = None
 
 
+class FeedbackAttachmentOut(BaseModel):
+    id: UUID
+    url: str
+    original_filename: Optional[str] = None
+    content_type: Optional[str] = None
+    size_bytes: Optional[int] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class FeedbackReportOut(BaseModel):
     id: UUID
+    report_type: str
     full_name: Optional[str] = None
     phone: Optional[str] = None
     location_text: Optional[str] = None
     message: str
     status: str
     admin_comment: Optional[str] = None
+    attachments: list[FeedbackAttachmentOut] = []
     created_at: datetime
     resolved_at: Optional[datetime] = None
 

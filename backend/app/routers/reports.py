@@ -197,6 +197,7 @@ async def admin_dashboard(
         district_id=UUID("00000000-0000-0000-0000-000000000000"),
         district_name="ВСЕГО", total_sites=0, inspections_total=0,
         inspections_completed=0, inspections_in_progress=0,
+        checklist_defects=0,
         issues_total=0, issues_open=0, issues_fixed=0,
         issues_revision_needed=0, issues_closed=0,
     )

@@ -172,28 +172,32 @@ export default function MapPage() {
     onError: () => toast.error('Не удалось принять обходы'),
   })
 
-  // Обходы для раскраски меток: инспектору — свои (бэкенд сам их так и
-  // скопит), проверяющему/админу — по выбранному району, иначе на карте
-  // всегда были только синие "необойдённые" точки независимо от реального
-  // статуса — раскраска была реализована только для инспектора.
+  // Обходы для раскраски меток: инспектору — весь его район (all_in_district),
+  // не только свои — иначе площадка, которую уже обошёл коллега, выглядела
+  // на карте нетронутой (синей), и это провоцировало задваивание работы на
+  // одной и той же площадке (жалоба из поля — "не видим, кто из коллег
+  // какие площадки уже обошёл"). Проверяющему/админу — по выбранному
+  // району, как и раньше.
   // page_size=1000 — реальный максимум на бэкенде (Query(..., le=1000) в
   // list_inspections); запрос 5000 всегда падал 422 и молча оставлял карту
   // нераскрашенной даже для инспектора.
-  const { data: myInspectionsData } = useQuery<{ total: number; items: InspectionOut[] }>({
-    queryKey: ['my-inspections-map', effectiveDistrictFilter],
-    queryFn: () => inspectionsApi.list({ page_size: 1000, district_id: effectiveDistrictFilter }),
+  const { data: districtInspectionsData } = useQuery<{ total: number; items: InspectionOut[] }>({
+    queryKey: ['district-inspections-map', effectiveDistrictFilter],
+    queryFn: () => inspectionsApi.list({
+      page_size: 1000, district_id: effectiveDistrictFilter,
+      all_in_district: user?.role === 'inspector' || undefined,
+    }),
     enabled: user?.role === 'inspector' || isReviewerLike,
   })
-  const myInspections = myInspectionsData?.items ?? []
+  const myInspections = districtInspectionsData?.items ?? []
 
-  // Карта: site_id → последний статус обхода
+  // Карта: site_id → последний обход (статус + кто/когда, чтобы инспектор
+  // видел не только "обойдено", но и кем — включая себя самого).
   const siteStatusMap = useMemo(() => {
-    const map: Record<string, string> = {}
-    const latestCreatedAt: Record<string, string> = {}
+    const map: Record<string, { status: string; inspectorName: string; date: string }> = {}
     for (const insp of myInspections) {
-      if (!latestCreatedAt[insp.site_id] || insp.created_at > latestCreatedAt[insp.site_id]) {
-        latestCreatedAt[insp.site_id] = insp.created_at
-        map[insp.site_id] = insp.status
+      if (!map[insp.site_id] || insp.created_at > map[insp.site_id].date) {
+        map[insp.site_id] = { status: insp.status, inspectorName: insp.inspector.full_name, date: insp.created_at }
       }
     }
     return map
@@ -320,7 +324,7 @@ export default function MapPage() {
                 Легенда
               </button>
               <span className="text-xs text-gray-400">
-                Обойдено: {Object.values(siteStatusMap).filter((s) => s === 'completed' || s === 'issues_found').length}/{totalCount}
+                Обойдено: {Object.values(siteStatusMap).filter((s) => s.status === 'completed' || s.status === 'issues_found').length}/{totalCount}
               </span>
             </div>
           )}
@@ -496,9 +500,9 @@ export default function MapPage() {
             {/* Кластеризация — при 3800+ площадках плоский список меток
                 делал карту нечитаемой и тяжёлой при отдалении. */}
             <MarkerClusterGroup chunkedLoading maxClusterRadius={60} spiderfyOnMaxZoom>
-              {sites.filter((s) => !myInspOnly || !siteStatusMap[s.id] || siteStatusMap[s.id] !== 'completed').map((s) => {
-                const status = (user?.role === 'inspector' || isReviewerLike) ? siteStatusMap[s.id] : null
-                const icon = s.type === CHILD_TYPE ? childIcon(status) : sportIcon(status)
+              {sites.filter((s) => !myInspOnly || !siteStatusMap[s.id] || siteStatusMap[s.id].status !== 'completed').map((s) => {
+                const coverage = (user?.role === 'inspector' || isReviewerLike) ? siteStatusMap[s.id] : undefined
+                const icon = s.type === CHILD_TYPE ? childIcon(coverage?.status) : sportIcon(coverage?.status)
                 return <Marker key={s.id} position={[s.lat ?? 55.829, s.lon ?? 37.532]} icon={icon}>
                   <Popup>
                     <div className="min-w-[180px]">
@@ -510,6 +514,11 @@ export default function MapPage() {
                       {isReviewerLike && (
                         <div className="text-xs text-gray-400 mt-0.5">
                           {s.assigned_inspector ? `Назначена: ${s.assigned_inspector.full_name}` : 'Не назначена'}
+                        </div>
+                      )}
+                      {user?.role === 'inspector' && coverage && (
+                        <div className="text-xs text-gray-400 mt-0.5">
+                          Обошёл: {coverage.inspectorName}, {new Date(coverage.date).toLocaleDateString('ru')}
                         </div>
                       )}
                       <button onClick={() => navigate(`/sites/${s.id}`)} className="mt-2 text-xs btn-primary py-1 px-3 w-full flex items-center justify-center gap-1">
@@ -536,6 +545,11 @@ export default function MapPage() {
                     {isReviewerLike && (
                       <div className="text-xs text-gray-400 mt-0.5">
                         {s.assigned_inspector ? `Назначена: ${s.assigned_inspector.full_name}` : 'Не назначена'}
+                      </div>
+                    )}
+                    {user?.role === 'inspector' && siteStatusMap[s.id] && (
+                      <div className="text-xs text-gray-400 mt-0.5">
+                        Обошёл: {siteStatusMap[s.id].inspectorName}, {new Date(siteStatusMap[s.id].date).toLocaleDateString('ru')}
                       </div>
                     )}
                   </div>

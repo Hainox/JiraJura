@@ -126,6 +126,7 @@ async def list_inspections(
     inspector_id: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     district_id: Optional[str] = Query(None),
+    all_in_district: bool = Query(False),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=1000),
     db: AsyncSession = Depends(get_db),
@@ -143,9 +144,17 @@ async def list_inspections(
     if status:
         base = base.where(Inspection.status == status)
 
+    # all_in_district=True — инспектор просит обходы всего своего района,
+    # не только свои: чтобы видеть, что площадку уже обошёл коллега, и не
+    # задваивать работу (жалоба из поля — карта у инспектора красилась
+    # только по его собственным обходам, площадки коллег выглядели
+    # нетронутыми). Без district_id у инспектора падать в "видит всё" было
+    # бы слишком широко — оставляем own-only, как и раньше.
     if current_user.role == "inspector":
-        # инспектор видит только свои обходы, даже если передан чужой inspector_id
-        base = base.where(Inspection.inspector_id == current_user.id)
+        if all_in_district and current_user.district_id is not None:
+            pass  # район применится ниже через effective_district_id
+        else:
+            base = base.where(Inspection.inspector_id == current_user.id)
     elif inspector_id:
         base = base.where(Inspection.inspector_id == inspector_id)
 
@@ -153,6 +162,8 @@ async def list_inspections(
     # проверяющий или admin) — можно явно выбрать район через district_id
     effective_district_id = district_id
     if current_user.role == "reviewer" and current_user.district_id is not None:
+        effective_district_id = str(current_user.district_id)
+    elif current_user.role == "inspector" and all_in_district and current_user.district_id is not None:
         effective_district_id = str(current_user.district_id)
 
     if effective_district_id:
@@ -270,8 +281,14 @@ async def get_inspection(
     if not obj:
         raise HTTPException(404, "Обход не найден")
 
-    if current_user.role == "inspector":
-        check_own_or_role(current_user, obj.inspector_id, "reviewer", "admin")
+    if current_user.role == "inspector" and obj.inspector_id != current_user.id:
+        # Не свой обход — разрешаем только на чтение и только в своём районе
+        # (посмотреть, что коллега уже сделал на площадке, не задваивая
+        # работу); PATCH по-прежнему требует check_own_or_role в
+        # update_inspection и этим не затрагивается.
+        district_id = obj.site.courtyard.district_id if obj.site and obj.site.courtyard else None
+        if not in_district_scope(current_user, district_id):
+            raise HTTPException(403, "Обход вне вашего района")
     elif current_user.role == "reviewer":
         district_id = obj.site.courtyard.district_id if obj.site and obj.site.courtyard else None
         if not in_district_scope(current_user, district_id):

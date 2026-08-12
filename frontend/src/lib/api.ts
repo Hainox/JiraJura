@@ -188,7 +188,7 @@ export const inspectionsApi = {
 
   get: (id: string) => api.get<InspectionOut>(`/inspections/${id}`).then((r) => r.data),
 
-  list: (params?: { site_id?: string; status?: string; district_id?: string; page_size?: number }) =>
+  list: (params?: { site_id?: string; status?: string; district_id?: string; page_size?: number; all_in_district?: boolean }) =>
     api.get<InspectionListOut>('/inspections/', { params }).then((r) => r.data),
 
   update: (id: string, data: Record<string, unknown>) =>

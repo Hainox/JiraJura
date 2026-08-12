@@ -38,9 +38,12 @@ export default function SiteDetailPage() {
     enabled: !!site?.type,
   })
 
+  // all_in_district — иначе инспектор видел бы в истории площадки только
+  // свои обходы, и обход коллеги (важно знать, что площадку уже накрыли)
+  // был бы попросту не виден.
   const { data: inspectionsData } = useQuery<{ items: InspectionOut[] }>({
     queryKey: ['inspections', siteId],
-    queryFn: () => inspectionsApi.list({ site_id: siteId }),
+    queryFn: () => inspectionsApi.list({ site_id: siteId, all_in_district: user?.role === 'inspector' || undefined }),
     enabled: !!siteId,
   })
 

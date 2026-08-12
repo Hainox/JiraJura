@@ -90,6 +90,25 @@ print(hash_password('ВАШ_ПАРОЛЬ'))
 (crontab -l 2>/dev/null; echo "0 3 * * * cd /opt/jirajura && ./deploy/scripts/renew-cert.sh >> /var/log/jirajura-renew.log 2>&1") | crontab -
 ```
 
+### На выделенном сервере (без соседей на 80/443)
+
+Всё выше в этом README писано под сервер, где 80/443 заняты чужим nginx
+(телеграм-бот) — отсюда нестандартные порты и секундная остановка чужого
+контейнера при выпуске сертификата. На **новом, отдельном** сервере под
+JiraJura это не нужно — используйте вместо `issue-cert.sh`/`renew-cert.sh`:
+
+```bash
+# в .env: HTTP_PORT=80, HTTPS_PORT=443 (BOT_COMPOSE_PROJECT/BOT_NGINX_SERVICE не нужны)
+./deploy/scripts/issue-cert-standalone.sh
+(crontab -l 2>/dev/null; echo "0 3 * * * cd /opt/jirajura && ./deploy/scripts/renew-cert-standalone.sh >> /var/log/jirajura-renew.log 2>&1") | crontab -
+```
+
+Метод другой (webroot вместо standalone): certbot кладёт файл челленджа в
+`deploy/certbot/www`, а отдаёт его уже работающий `proxy` — тот слушает
+80 сам и не занят ничем чужим, поэтому его вообще не нужно останавливать
+ни на секунду (в отличие от сценария выше). Остальные шаги (1-3, 4.5-7)
+не меняются.
+
 ## 4.5. Импорт площадок из KML
 
 Площадки заводятся импортом KML-выгрузок (`backend/import_kml.py`). Скрипт уже

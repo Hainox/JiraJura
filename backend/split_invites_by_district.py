@@ -18,8 +18,13 @@
 Запуск на сервере:
   docker compose -f docker-compose.prod.yml exec api python split_invites_by_district.py
   docker compose -f docker-compose.prod.yml exec api python split_invites_by_district.py \
-      --in /app/uploads/reissued.csv --out-dir /app/uploads/by_district
+      --in /app/exports/reissued.csv --out-dir /app/exports/by_district
   # скачать папку с сервера (см. подсказку в конце вывода), разослать, удалить с сервера
+
+⚠️ --out-dir ОБЯЗАТЕЛЬНО вне /app/uploads/ — та раздаётся наружу без
+авторизации (см. app/services/safe_export.py). Раньше этот скрипт по
+умолчанию писал именно туда — часть ФИО/логинов лежала в публичной
+папке несколько дней, пока не заметили.
 """
 import argparse
 import asyncio
@@ -39,6 +44,9 @@ def _safe_filename(name: str) -> str:
 
 
 async def main(in_path: str, out_dir: str):
+    from app.services.safe_export import reject_uploads_path
+    reject_uploads_path(out_dir)
+
     with open(in_path, "r", newline="", encoding="utf-8-sig") as f:
         reader = csv.reader(f, delimiter=";")
         header = next(reader)
@@ -89,14 +97,13 @@ async def main(in_path: str, out_dir: str):
         print(f"   {key:30s} {len(group_rows):3d} чел. -> {fname}")
 
     print(f"\n[DONE] Папка: {out_dir}")
-    print("Скачайте, например: docker compose -f docker-compose.prod.yml cp api:" + out_dir + " ./by_district")
-    print("(или напрямую с хоста — та же папка примонтирована в backend/uploads)")
+    print("Скачайте: docker compose -f docker-compose.prod.yml cp api:" + out_dir + " ./by_district")
     print("После рассылки удалите файлы с сервера (ПДн).")
 
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Разложить CSV со ссылками-приглашениями по районам")
-    p.add_argument("--in", dest="in_path", default="/app/uploads/reissued.csv", help="входной CSV (reissue_invites.py)")
-    p.add_argument("--out-dir", default="/app/uploads/by_district", help="папка для файлов по районам")
+    p.add_argument("--in", dest="in_path", default="/app/exports/reissued.csv", help="входной CSV (reissue_invites.py)")
+    p.add_argument("--out-dir", default="/app/exports/by_district", help="папка для файлов по районам (НЕ внутрь uploads/ — та раздаётся публично)")
     args = p.parse_args()
     asyncio.run(main(args.in_path, args.out_dir))

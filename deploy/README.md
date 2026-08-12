@@ -171,10 +171,16 @@ rm -rf /opt/jirajura/rosters
 только новый токен, срок продлевается до 30 дней):
 ```bash
 docker compose -f docker-compose.prod.yml exec api python reissue_invites.py                      # dry-run, отчёт
-docker compose -f docker-compose.prod.yml exec api python reissue_invites.py --apply --out /app/uploads/reissued.csv
-docker compose -f docker-compose.prod.yml exec api python reissue_invites.py --district "Сокол" --apply --out /app/uploads/reissued_sokol.csv
-# скачать CSV с сервера, разослать ссылки, затем удалить файл с сервера (ПДн)
+docker compose -f docker-compose.prod.yml exec api python reissue_invites.py --apply --out /app/exports/reissued.csv
+docker compose -f docker-compose.prod.yml exec api python reissue_invites.py --district "Сокол" --apply --out /app/exports/reissued_sokol.csv
+# скачать CSV с сервера (docker compose ... cp api:/app/exports/reissued.csv .), разослать ссылки, затем удалить файл с сервера (ПДн)
 ```
+
+⚠️ `--out` всегда в `/app/exports/`, никогда в `/app/uploads/` — та раздаётся
+наружу без авторизации через `/uploads/...` (см. `app/services/safe_export.py`,
+там же — защита, которая обрывает скрипт, если всё-таки указать `uploads/`).
+`exports/` не смонтирована наружу вообще, файлы забираются через
+`docker compose ... cp api:/app/exports/<файл> .`, не напрямую с хоста.
 
 Другие разовые скрипты в `backend/` для диагностики после массовой
 рассылки — каждый читает БД напрямую (`DATABASE_URL`), запускать так же

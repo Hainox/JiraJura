@@ -10,7 +10,7 @@ split_invites_by_district.py) всё ещё рабочие — читает БД
 
 Запуск на сервере:
   docker compose -f docker-compose.prod.yml exec api python verify_invite_links.py
-  docker compose -f docker-compose.prod.yml exec api python verify_invite_links.py --in /app/uploads/reissued.csv
+  docker compose -f docker-compose.prod.yml exec api python verify_invite_links.py --in /app/exports/reissued.csv
 """
 import argparse
 import asyncio
@@ -94,12 +94,12 @@ async def main(in_path: str):
 
     if stale:
         print("\n[ДЕЙСТВИЕ] Мёртвые ссылки нужно перевыпустить заново и разослать только их:")
-        print("  docker compose -f docker-compose.prod.yml exec api python reissue_invites.py --apply --out /app/uploads/reissued2.csv")
-        print("  docker compose -f docker-compose.prod.yml exec api python split_invites_by_district.py --in /app/uploads/reissued2.csv --out-dir /app/uploads/by_district2")
+        print("  docker compose -f docker-compose.prod.yml exec api python reissue_invites.py --apply --out /app/exports/reissued2.csv")
+        print("  docker compose -f docker-compose.prod.yml exec api python split_invites_by_district.py --in /app/exports/reissued2.csv --out-dir /app/exports/by_district2")
 
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Проверить валидность уже разосланных ссылок-приглашений")
-    p.add_argument("--in", dest="in_path", default="/app/uploads/reissued.csv")
+    p.add_argument("--in", dest="in_path", default="/app/exports/reissued.csv")
     args = p.parse_args()
     asyncio.run(main(args.in_path))

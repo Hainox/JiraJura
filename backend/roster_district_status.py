@@ -23,8 +23,11 @@ token_hash и статусу (used_at/expires_at), формирует сводк
 
 Запуск на сервере:
   docker compose -f docker-compose.prod.yml exec api \
-    python roster_district_status.py --roster /app/uploads/roster.xlsx \
-    --out-pending /app/uploads/pending_by_district.csv
+    python roster_district_status.py --roster /app/exports/roster.xlsx \
+    --out-pending /app/exports/pending_by_district.csv
+
+⚠️ --roster/--out-pending ОБЯЗАТЕЛЬНО вне /app/uploads/ — та раздаётся
+наружу без авторизации (см. app/services/safe_export.py).
 """
 import argparse
 import asyncio
@@ -90,6 +93,10 @@ async def classify(db, person):
 
 
 async def main(roster_path, out_pending):
+    if out_pending:
+        from app.services.safe_export import reject_uploads_path
+        reject_uploads_path(out_pending)
+
     people = parse_roster(roster_path)
     print(f"В файле: {len(people)} строк\n")
 
@@ -124,6 +131,8 @@ async def main(roster_path, out_pending):
     print("ИТОГО".ljust(22) + "".join(str(totals[c]).rjust(col_w) for c in COLUMNS))
 
     if out_pending and pending_rows:
+        from app.services.safe_export import ensure_parent_dir
+        ensure_parent_dir(out_pending)
         with open(out_pending, "w", newline="", encoding="utf-8-sig") as f:
             w = csv.writer(f, delimiter=";")
             w.writerow(["Район", "ФИО", "Должность", "Телефон", "Статус"])

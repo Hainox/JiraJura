@@ -24,8 +24,12 @@ must_change_password=true, и пишет CSV со ссылками для рас
 
 Запуск на сервере:
   docker compose -f docker-compose.prod.yml exec api python reset_shared_passwords.py
-  docker compose -f docker-compose.prod.yml exec api python reset_shared_passwords.py --apply --out /app/uploads/reset_shared.csv
+  docker compose -f docker-compose.prod.yml exec api python reset_shared_passwords.py --apply --out /app/exports/reset_shared.csv
   # скачать файл, разослать лично, удалить с сервера (ПДн)
+
+⚠️ --out ОБЯЗАТЕЛЬНО вне /app/uploads/ — та раздаётся наружу без
+авторизации (см. app/services/safe_export.py). Пароли в открытом виде —
+особенно нельзя.
 """
 import argparse
 import asyncio
@@ -49,6 +53,9 @@ def _gen_password(length: int = 12) -> str:
 
 
 async def main(apply: bool, out_path: str):
+    from app.services.safe_export import reject_uploads_path
+    reject_uploads_path(out_path)
+
     from passlib.context import CryptContext
     pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -95,6 +102,8 @@ async def main(apply: bool, out_path: str):
         await db.commit()
 
         out_rows.sort(key=lambda row: (row[2], row[1]))
+        from app.services.safe_export import ensure_parent_dir
+        ensure_parent_dir(out_path)
         with open(out_path, "w", newline="", encoding="utf-8-sig") as f:
             w = csv.writer(f, delimiter=";")
             w.writerow(["Логин", "ФИО", "Район", "Новый пароль"])
@@ -111,6 +120,6 @@ async def main(apply: bool, out_path: str):
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Найти и починить аккаунты с общим (потерянным) паролем")
     p.add_argument("--apply", action="store_true", help="выдать персональный пароль каждому найденному")
-    p.add_argument("--out", default="reset_shared.csv", help="куда сохранить CSV с паролями")
+    p.add_argument("--out", default="exports/reset_shared.csv", help="куда сохранить CSV с паролями (НЕ внутрь uploads/ — та раздаётся публично)")
     args = p.parse_args()
     asyncio.run(main(args.apply, args.out))

@@ -30,6 +30,13 @@ backend/rosters/
 *roster*.xlsx
 *result*.csv
 
+# === Персональные данные (CSV-выгрузки reissue_invites.py и т.п.) ===
+# НЕ backend/uploads/ — та раздаётся наружу без авторизации через
+# /uploads/ (см. app/main.py StaticFiles + deploy/nginx/proxy.conf.template).
+# exports/ не смонтирована никуда наружу.
+/exports/
+backend/exports/
+
 # === Runtime uploads (user-generated content, not source) ===
 # backend/uploads/* only matched the first level, so files inside
 # subdirectories (e.g. backend/uploads/inspections/*.jpg) were never

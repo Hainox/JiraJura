@@ -22,9 +22,13 @@ admin-панели/reset_shared_passwords.py (без 0/O/1/l/I).
   docker compose -f docker-compose.prod.yml exec api python reset_passwords_for_logins.py \
     --logins AnikanovaTN,AushevaLA,BoboevKK
   docker compose -f docker-compose.prod.yml exec api python reset_passwords_for_logins.py \
-    --logins-file /app/uploads/logins.txt --apply --out /app/uploads/reset.csv
+    --logins-file /app/exports/logins.txt --apply --out /app/exports/reset.csv
   # логины-файл — по одному логину на строку
   # скачать CSV с сервера, разослать лично, затем удалить файл с сервера (ПДн)
+
+⚠️ --out/--logins-file ОБЯЗАТЕЛЬНО вне /app/uploads/ — та раздаётся наружу
+без авторизации (см. app/services/safe_export.py). Этот CSV содержит
+пароли в открытом виде, а не только ФИО/логины — сюда особенно нельзя.
 """
 import argparse
 import asyncio
@@ -70,6 +74,9 @@ async def main(logins: list[str], apply: bool, out_path: str):
     if not logins:
         print("Список логинов пуст — укажите --logins или --logins-file.")
         return
+
+    from app.services.safe_export import reject_uploads_path
+    reject_uploads_path(out_path)
 
     from passlib.context import CryptContext
     pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -121,6 +128,8 @@ async def main(logins: list[str], apply: bool, out_path: str):
         await db.commit()
 
         out_rows.sort(key=lambda row: (row[2], row[1]))
+        from app.services.safe_export import ensure_parent_dir
+        ensure_parent_dir(out_path)
         with open(out_path, "w", newline="", encoding="utf-8-sig") as f:
             w = csv.writer(f, delimiter=";")
             w.writerow(["Логин", "ФИО", "Район", "Новый пароль"])
@@ -139,6 +148,6 @@ if __name__ == "__main__":
     p.add_argument("--logins", default="", help="логины через запятую")
     p.add_argument("--logins-file", default="", help="файл с логинами, по одному на строку")
     p.add_argument("--apply", action="store_true", help="выдать новый пароль каждому найденному активному аккаунту")
-    p.add_argument("--out", default="reset_by_login.csv", help="куда сохранить CSV с паролями")
+    p.add_argument("--out", default="exports/reset_by_login.csv", help="куда сохранить CSV с паролями (НЕ внутрь uploads/ — та раздаётся публично)")
     args = p.parse_args()
     asyncio.run(main(_read_logins(args), args.apply, args.out))

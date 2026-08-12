@@ -25,13 +25,20 @@ token_hash (sha256), сам токен отдаётся один раз в от�
 
 Запуск на сервере:
   docker compose -f docker-compose.prod.yml exec api python reissue_invites.py
-  docker compose -f docker-compose.prod.yml exec api python reissue_invites.py --apply --out /app/uploads/reissued.csv
+  docker compose -f docker-compose.prod.yml exec api python reissue_invites.py --apply --out /app/exports/reissued.csv
   # скачать файл с сервера, разослать ссылки, затем удалить файл с сервера
 
   # перевыпустить ссылки только по одному району (например, если после
   # рассылки выяснилось, что именно в этом районе ссылки уже не работают —
   # 72 часа с исходной выдачи истекли раньше, чем их успели раздать людям):
-  docker compose -f docker-compose.prod.yml exec api python reissue_invites.py --district "Левобережный" --apply --out /app/uploads/reissued_levoberezhny.csv
+  docker compose -f docker-compose.prod.yml exec api python reissue_invites.py --district "Левобережный" --apply --out /app/exports/reissued_levoberezhny.csv
+
+⚠️ --out ОБЯЗАТЕЛЬНО должен быть вне /app/uploads/ — та смонтирована в
+docker-compose.prod.yml и раздаётся наружу БЕЗ авторизации через
+/uploads/... (см. app/main.py StaticFiles). CSV с ФИО/телефонами/
+токенами приглашений, однажды туда записанный, скачивается кем угодно
+по прямой ссылке. /app/exports/ — отдельная, никуда не проксируемая
+директория (см. docker-compose.prod.yml).
 """
 import argparse
 import asyncio
@@ -57,6 +64,9 @@ def _hash_token(token: str) -> str:
 
 
 async def main(apply: bool, out_path: str, district: str | None):
+    from app.services.safe_export import reject_uploads_path
+    reject_uploads_path(out_path)
+
     engine = create_async_engine(DATABASE_URL, echo=False)
     Session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -141,6 +151,8 @@ async def main(apply: bool, out_path: str, district: str | None):
             out_rows.append([r.login, r.full_name, r.role, r.district_name or "", link])
         await db.commit()
 
+        from app.services.safe_export import ensure_parent_dir
+        ensure_parent_dir(out_path)
         with open(out_path, "w", newline="", encoding="utf-8-sig") as f:
             w = csv.writer(f, delimiter=";")
             w.writerow(["Логин", "ФИО", "Роль", "Район", "Ссылка"])
@@ -156,7 +168,7 @@ async def main(apply: bool, out_path: str, district: str | None):
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Переиздание просроченных приглашений на регистрацию")
     p.add_argument("--apply", action="store_true", help="перевыпустить токены (иначе только отчёт)")
-    p.add_argument("--out", default="reissued_invites.csv", help="куда сохранить CSV со ссылками")
+    p.add_argument("--out", default="exports/reissued_invites.csv", help="куда сохранить CSV со ссылками (НЕ внутрь uploads/ — та раздаётся публично)")
     p.add_argument("--district", default=None, help="перевыпустить только для одного района (по названию, без учёта регистра)")
     args = p.parse_args()
     asyncio.run(main(args.apply, args.out, args.district))

@@ -106,6 +106,10 @@ def main():
     p.add_argument("--apply", action="store_true")
     args = p.parse_args()
 
+    from app.services.safe_export import reject_uploads_path, ensure_parent_dir
+    reject_uploads_path(args.out)
+    ensure_parent_dir(args.out)
+
     files = sorted(glob.glob(os.path.join(args.xlsx_dir, "*.xlsx")))
     rosters = [r for r in (parse_roster(f) for f in files) if r]
     if not rosters:

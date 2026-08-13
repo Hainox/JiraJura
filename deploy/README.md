@@ -1,21 +1,28 @@
-# Деплой JiraJura на сервер (изолированно от Telegram-бота)
+# Деплой JiraJura
 
-Сервер: `82.23.173.215`, домен для JiraJura: **`journal.yuvibot2.xyz`** (поддомен `yuvibot2.xyz` — сам `yuvibot2.xyz` уже занят Mini App бота). Все команды ниже выполняются **на сервере по SSH** (`ssh root@82.23.173.215`) — из песочницы агента прямого доступа по SSH нет.
+Продакшн сейчас — **выделенный сервер** `77.91.94.142` (HostKey, Россия), домен
+**`obhod-sao.ru`**. Ничего общего с Telegram-ботом не делит: обычные порты 80/443,
+свои DNS-записи, свой хостинг. Все команды ниже выполняются **на сервере по SSH**
+(`ssh root@77.91.94.142`) — из песочницы агента прямого доступа по SSH нет.
+
+> Изначально JiraJura запускалась на другом сервере (`82.23.173.215`,
+> `journal.yuvibot2.xyz`), деля его с ботом — оттуда нестандартные порты 8080/8443
+> в старых заметках/скриптах. 12-13.08.2026 переехали на этот, отдельный сервер.
+> Исторические шаги под общий с ботом сервер — в конце файла, раздел «Архив».
 
 ## 0. Аудит перед началом (read-only, ничего не меняет)
 
 ```bash
 echo "--- OS ---"; cat /etc/os-release
 echo "--- Docker ---"; docker --version; docker compose version
-echo "--- Все контейнеры (включая бота) ---"; docker ps -a
-echo "--- Слушающие порты ---"; ss -tulpn
 echo "--- ufw ---"; ufw status verbose
 echo "--- Диск/память ---"; df -h /; free -h
 ```
 
-Проверьте: контейнер бота `yuvibotv2-nginx-https-1` (или похожий) слушает 80/443; 8080/8443 свободны; ≥20 ГБ диска свободно.
+Проверьте: Docker и Docker Compose v2 установлены, ≥20 ГБ диска свободно.
 
-**Добавьте DNS A-запись** у вашего DNS-провайдера домена `yuvibot2.xyz`: `journal` → `82.23.173.215`. Проверьте, что применилась: `dig +short journal.yuvibot2.xyz` (или `ping journal.yuvibot2.xyz`) должен вернуть `82.23.173.215`.
+**Добавьте DNS A-запись** у регистратора домена: `obhod-sao.ru` (и `www.obhod-sao.ru`,
+если нужно) → IP сервера. Проверьте: `dig +short obhod-sao.ru` должен вернуть IP сервера.
 
 ## 1. Клонирование репозитория
 
@@ -30,24 +37,38 @@ cd /opt/jirajura
 ```bash
 cp .env.example .env
 # впишите в .env:
+#   DOMAIN=obhod-sao.ru
 #   CERTBOT_EMAIL=<ваш email>
 #   SECRET_KEY=$(openssl rand -hex 32)
 #   POSTGRES_PASSWORD=$(openssl rand -hex 24)
-# DOMAIN/HTTP_PORT/HTTPS_PORT/BOT_COMPOSE_PROJECT/BOT_NGINX_SERVICE уже
-# заполнены правильными значениями по умолчанию — менять не нужно, если
-# у бота действительно проект "yuvibotv2" и сервис "nginx-https"
-# (проверьте по выводу `docker ps` из шага 0).
+#   HTTP_PORT=80
+#   HTTPS_PORT=443
+# BOT_COMPOSE_PROJECT/BOT_NGINX_SERVICE — не нужны на выделенном сервере,
+# используются только в архивных issue-cert.sh/renew-cert.sh (см. «Архив»).
 
 nano .env   # или любой редактор
 ```
 
 Быстро сгенерировать и подставить секреты одной командой:
 ```bash
+sed -i 's/^DOMAIN=.*/DOMAIN=obhod-sao.ru/' .env
+sed -i 's/^HTTP_PORT=.*/HTTP_PORT=80/' .env
+sed -i 's/^HTTPS_PORT=.*/HTTPS_PORT=443/' .env
 sed -i "s/^SECRET_KEY=$/SECRET_KEY=$(openssl rand -hex 32)/" .env
 sed -i "s/^POSTGRES_PASSWORD=$/POSTGRES_PASSWORD=$(openssl rand -hex 24)/" .env
 ```
 
-## 3. Первый запуск (пока без HTTPS — на HTTP:8080)
+## 3. Файрвол
+
+```bash
+ufw allow OpenSSH
+ufw allow 80/tcp
+ufw allow 443/tcp
+ufw --force enable
+ufw status
+```
+
+## 4. Первый запуск (пока без HTTPS — на обычном HTTP:80)
 
 ```bash
 cp deploy/nginx/http-only.conf.template deploy/nginx/active.conf.template
@@ -57,7 +78,7 @@ docker compose -f docker-compose.prod.yml run --rm api alembic upgrade head
 docker compose -f docker-compose.prod.yml ps
 ```
 
-Проверка: `curl -I http://journal.yuvibot2.xyz:8080/` должен отдать фронтенд.
+Проверка: `curl -I http://obhod-sao.ru/` должен отдать фронтенд.
 
 Заведите первого админа (регистрация только по приглашению, а приглашать пока некому — один раз вручную):
 ```bash
@@ -76,49 +97,34 @@ print(hash_password('ВАШ_ПАРОЛЬ'))
 ```
 Дальше всех остальных пользователей заводите уже через веб-интерфейс («Пользователи» → «Пригласить») под этим админом.
 
-## 4. HTTPS
+(Если переносите данные с другого сервера, а не начинаете с нуля — см. `## 8. Перенос данных с другого сервера` ниже, шаги 4-4.4 в этом случае пропускаются.)
+
+## 5. HTTPS
 
 ```bash
-./deploy/scripts/issue-cert.sh
+./deploy/scripts/issue-cert-standalone.sh
 ```
-Скрипт сам: остановит nginx-контейнер бота на несколько секунд → получит сертификат Let's Encrypt → вернёт бота → переключит JiraJura на TLS-конфиг. Бот при этом ни разу не перезапускается «жёстко» — только `stop`/`start` того же контейнера, без изменения его файлов.
+Certbot получает сертификат методом webroot — кладёт файл челленджа в общий том
+`deploy/certbot/www`, который отдаёт уже работающий `proxy` (тот и так слушает 80
+сам, не занят ничем чужим). Ничего не нужно останавливать ни на секунду.
 
-Проверка: `curl -Ik https://journal.yuvibot2.xyz:8443/`, залогиньтесь в приложении под заведённым админом.
+Проверка: `curl -Ik https://obhod-sao.ru/`, залогиньтесь в приложении.
 
 Автопродление (раз в сутки; сам certbot продлевает только когда до истечения <30 дней):
 ```bash
-(crontab -l 2>/dev/null; echo "0 3 * * * cd /opt/jirajura && ./deploy/scripts/renew-cert.sh >> /var/log/jirajura-renew.log 2>&1") | crontab -
-```
-
-### На выделенном сервере (без соседей на 80/443)
-
-Всё выше в этом README писано под сервер, где 80/443 заняты чужим nginx
-(телеграм-бот) — отсюда нестандартные порты и секундная остановка чужого
-контейнера при выпуске сертификата. На **новом, отдельном** сервере под
-JiraJura это не нужно — используйте вместо `issue-cert.sh`/`renew-cert.sh`:
-
-```bash
-# в .env: HTTP_PORT=80, HTTPS_PORT=443 (BOT_COMPOSE_PROJECT/BOT_NGINX_SERVICE не нужны)
-./deploy/scripts/issue-cert-standalone.sh
 (crontab -l 2>/dev/null; echo "0 3 * * * cd /opt/jirajura && ./deploy/scripts/renew-cert-standalone.sh >> /var/log/jirajura-renew.log 2>&1") | crontab -
 ```
 
-Метод другой (webroot вместо standalone): certbot кладёт файл челленджа в
-`deploy/certbot/www`, а отдаёт его уже работающий `proxy` — тот слушает
-80 сам и не занят ничем чужим, поэтому его вообще не нужно останавливать
-ни на секунду (в отличие от сценария выше). Остальные шаги (1-3, 4.5-7)
-не меняются.
-
-## 4.5. Импорт площадок из KML
+## 6. Импорт площадок из KML
 
 Площадки заводятся импортом KML-выгрузок (`backend/import_kml.py`). Скрипт уже
 входит в образ api, вместе с ним в контейнере есть psycopg2.
 
 1. Скопируйте KML-файлы на сервер (с локальной машины, PowerShell/терминал):
 ```powershell
-ssh root@82.23.173.215 "mkdir -p /opt/jirajura/kml"
-scp "C:\путь\к\Детская_площадка.kml" root@82.23.173.215:/opt/jirajura/kml/
-scp "C:\путь\к\Спортивная_площадка.kml" root@82.23.173.215:/opt/jirajura/kml/
+ssh root@77.91.94.142 "mkdir -p /opt/jirajura/kml"
+scp "C:\путь\к\Детская_площадка.kml" root@77.91.94.142:/opt/jirajura/kml/
+scp "C:\путь\к\Спортивная_площадка.kml" root@77.91.94.142:/opt/jirajura/kml/
 ```
 
 2. Запустите импорт (на сервере, из `/opt/jirajura`):
@@ -140,7 +146,7 @@ docker compose -f docker-compose.prod.yml run --rm \
 Проверка: обновите приложение в браузере — на карте и во вкладке «Список» должны
 появиться площадки.
 
-## 4.6. Массовое приглашение сотрудников
+## 6.1. Массовое приглашение сотрудников
 
 Списки по районам (xlsx, формат: `<Район> — N чел.`, колонки ФИО/Логин/Роль/Телефон)
 скачиваются в отдельную папку `rosters/` — она в `.gitignore`, в репозиторий не
@@ -148,8 +154,8 @@ docker compose -f docker-compose.prod.yml run --rm \
 
 1. Скопировать xlsx-файлы на сервер:
 ```powershell
-ssh root@82.23.173.215 "mkdir -p /opt/jirajura/rosters"
-scp "C:\путь\к\Бескудниковский.xlsx" root@82.23.173.215:/opt/jirajura/rosters/
+ssh root@77.91.94.142 "mkdir -p /opt/jirajura/rosters"
+scp "C:\путь\к\Бескудниковский.xlsx" root@77.91.94.142:/opt/jirajura/rosters/
 # ...и так для каждого района
 ```
 
@@ -175,14 +181,14 @@ docker compose -f docker-compose.prod.yml run --rm \
 
 4. `rosters/result.csv` — район/ФИО/логин/роль/телефон/статус/**ссылка**;
    ссылки нужно разослать сотрудникам лично (Telegram-бот сознательно не
-   интегрирован — см. план деплоя, часть B).
+   интегрирован).
 
 5. После рассылки удалить исходники с сервера (ПДн там больше не нужны):
 ```bash
 rm -rf /opt/jirajura/rosters
 ```
 
-## 4.7. Переиздание просроченных приглашений и диагностика логинов
+## 6.2. Переиздание просроченных приглашений и диагностика логинов
 
 Ссылка-приглашение действует 72 часа; если не успели раздать (или человек
 не смог зайти), не создавайте новое приглашение вручную под другим
@@ -211,21 +217,62 @@ docker compose -f docker-compose.prod.yml exec api python reissue_invites.py --d
 - `production_status_report.py` / `generate_summary_report.py` — сводка по округу в консоль/xlsx
 - `split_invites_by_district.py` — разбивка результата рассылки по районам для раздачи файлов
 
-## 5. Бэкапы
+## 7. Бэкапы
 
 ```bash
 (crontab -l 2>/dev/null; echo "0 2 * * * /opt/jirajura/deploy/scripts/backup.sh >> /var/log/jirajura-backup.log 2>&1") | crontab -
 ```
 
-Дамп БД хранится 14 дней, архив `uploads/` — 2 дня (он дублирует 1:1 то, что и так есть в `backend/uploads/`, и растёт вместе с ним; 12.08.2026 из-за 14-дневного хранения полных копий диск на сервере заполнился до 0 и `db`-контейнер стал unhealthy). Скрипт сам пропускает архивацию `uploads/`, если свободного места меньше полутора его размеров, и пишет об этом в `/var/log/jirajura-backup.log`. Для настоящего офсайт-хранения переносите `db_*.sql.gz`/`uploads_*.tar.gz` за пределы сервера — см. план бэкапа для переезда.
+Дамп БД хранится 14 дней, архив `uploads/` — 2 дня (он дублирует 1:1 то, что и так есть в `backend/uploads/`, и растёт вместе с ним; 12.08.2026 из-за 14-дневного хранения полных копий диск на сервере заполнился до 0 и `db`-контейнер стал unhealthy). Скрипт сам пропускает архивацию `uploads/`, если свободного места меньше полутора его размеров, и пишет об этом в `/var/log/jirajura-backup.log`. Для настоящего офсайт-хранения переносите `db_*.sql.gz`/`uploads_*.tar.gz` за пределы сервера регулярно (вручную/scp), не полагайтесь только на локальные копии на сервере.
 
-## 6. Файрвол
+## 8. Перенос данных с другого сервера
 
-На этом сервере `ufw` не установлен — порты бота (80/443/8002/8003) и так открыты всему интернету напрямую через Docker (Docker сам управляет `iptables` в обход хостового файрвола, так что даже установка `ufw` не закрыла бы уже опубликованные Docker-портыт без дополнительной настройки под Docker). Порты JiraJura (8080/8443) будут открыты ровно так же, как и у бота, — отдельных действий на этом шаге не требуется.
+Если разворачиваете этот сервер как замену другому (перенос БД + фото), после шага 4
+(до выпуска HTTPS или после — не важно, только `api`/`db` должны быть подняты):
 
-Если хотите реально ограничить доступ (например, только определённые порты/IP наружу) — это делается либо через файрвол в панели облачного провайдера (фильтрует ещё до попадания трафика на сервер, не обходится Docker'ом), либо через `ufw` + `ufw-docker`/правила в цепочке `DOCKER-USER` (сложнее, отдельная задача, не блокирует запуск JiraJura).
+```bash
+# 1. Очистить пустую схему, оставшуюся от alembic:
+docker compose -f docker-compose.prod.yml exec -T db psql -U postgres -d sao_inspection \
+  -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
 
-## 7. Обновление после изменений в репозитории
+# 2а. Если старый сервер ещё доступен по SSH — перенос напрямую, без хранения дампа
+#     на промежуточном компьютере (быстрее и надёжнее для больших объёмов):
+ssh root@<старый_сервер> "docker compose -f /opt/jirajura/docker-compose.prod.yml exec -T db pg_dump -U postgres sao_inspection" \
+  | docker compose -f docker-compose.prod.yml exec -T db psql -U postgres -d sao_inspection
+ssh root@<старый_сервер> "tar -czf - -C /opt/jirajura/backend/uploads ." \
+  | tar -xzf - -C backend/uploads
+
+# 2б. Либо восстановить из локального файла дампа (db_*.sql.gz с бэкапа):
+gunzip -c db_ВРЕМЯ.sql.gz | docker compose -f docker-compose.prod.yml exec -T db psql -U postgres -d sao_inspection
+
+# 3. Перезапустить api и сверить счётчики:
+docker compose -f docker-compose.prod.yml restart api
+docker compose -f docker-compose.prod.yml exec -T db psql -U postgres -d sao_inspection -c "
+SELECT 'districts' t, count(*) FROM districts
+UNION ALL SELECT 'sites', count(*) FROM sites
+UNION ALL SELECT 'users', count(*) FROM users
+UNION ALL SELECT 'inspections', count(*) FROM inspections
+UNION ALL SELECT 'issues', count(*) FROM issues
+UNION ALL SELECT 'photos', count(*) FROM photos;
+"
+```
+
+Долгие переносы (десятки ГБ) лучше делать в `tmux`/`screen` на сервере — обрыв SSH
+не оборвёт саму передачу:
+```bash
+apt install -y tmux
+tmux new -s transfer
+# ...команда переноса...
+# Ctrl+B, затем D — отсоединиться, не прерывая; вернуться: tmux attach -t transfer
+```
+
+⚠️ Команды выше выполняются **на новом сервере**, а не на старом и не на локальном
+компьютере — перепутать легко, если работаете сразу в нескольких SSH-окнах.
+После переноса не забудьте сравнить пароль root старого сервера как
+скомпрометированный (если он где-то засветился при передаче) и сменить его
+(`passwd`), раз сервер выводится из эксплуатации.
+
+## 9. Обновление после изменений в репозитории
 
 ```bash
 cd /opt/jirajura
@@ -236,12 +283,33 @@ docker compose -f docker-compose.prod.yml run --rm api alembic upgrade head
 ```
 
 `deploy/nginx/proxy.conf.template` использует Docker DNS-резолвер
-(`resolver 127.0.0.11 valid=10s;` + `set $api_upstream`) — nginx сам
-переоткрывает соединение на актуальный IP `api`/`frontend` в течение ~10
-секунд после пересборки, отдельный `restart proxy` для этого больше не
-нужен. Перезапускать `proxy` вручную нужно, только если менялся сам
+(`resolver 127.0.0.11 valid=10s;` + `set $api_upstream` + явный `$request_uri` в
+`proxy_pass`) — nginx сам переоткрывает соединение на актуальный IP `api`/`frontend`
+в течение ~10 секунд после пересборки, отдельный `restart proxy` для этого не нужен.
+Перезапускать `proxy` вручную нужно, только если менялся сам
 `proxy.conf.template`/`http-only.conf.template`.
 
-## Проверка, что бот не пострадал
+---
 
-До и после каждого шага (особенно после `issue-cert.sh`/`renew-cert.sh`) отправьте боту сообщение в Telegram — должен ответить как обычно. `docker ps` — контейнеры `jirajura-*` не пересекаются именами/портами с `yuvibotv2-*`.
+## Архив: сервер, общий с Telegram-ботом
+
+Исторические шаги для первого сервера JiraJura (`82.23.173.215`, `journal.yuvibot2.xyz`),
+где 80/443 были заняты чужим nginx-контейнером бота (`yuvibotv2-nginx-https-1`).
+Актуально, только если когда-нибудь понадобится развернуть JiraJura рядом с другим
+сервисом на общем сервере — на текущем продакшене (раздел выше) не используется.
+
+- Порты наружу — не 80/443, а `HTTP_PORT=8080`/`HTTPS_PORT=8443` в `.env`.
+- HTTPS — `./deploy/scripts/issue-cert.sh` / `renew-cert.sh` (не `-standalone` версии):
+  используют certbot в режиме `--standalone`, для чего на несколько секунд
+  останавливают nginx-контейнер соседа (`docker compose -p $BOT_COMPOSE_PROJECT stop
+  $BOT_NGINX_SERVICE`), получают сертификат, поднимают его обратно. Имя
+  compose-проекта и сервиса соседа — в `.env` (`BOT_COMPOSE_PROJECT`/`BOT_NGINX_SERVICE`).
+- Файрвол: на том сервере `ufw` не был установлен — порты бота и так были открыты
+  всему интернету напрямую через Docker (Docker сам управляет `iptables` в обход
+  хостового файрвола). Если переиспользуете этот сценарий на новом общем сервере,
+  учитывайте то же самое или настраивайте `ufw-docker`/правила в цепочке
+  `DOCKER-USER` отдельно.
+- До и после каждого шага (особенно после `issue-cert.sh`/`renew-cert.sh`)
+  отправляйте соседнему сервису тестовый запрос — должен отвечать как обычно.
+  `docker ps` — контейнеры `jirajura-*` не должны пересекаться именами/портами
+  с контейнерами соседа.

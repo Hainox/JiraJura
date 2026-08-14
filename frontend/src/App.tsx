@@ -56,7 +56,12 @@ function useSyncUserFromServer() {
     queryKey: ['auth-me'],
     queryFn: authApi.me,
     enabled: isAuth,
-    staleTime: 5 * 60 * 1000,
+    // Район/роль — права доступа, а не обычный справочник. После изменения
+    // администратором клиент должен получить их при каждом открытии/возврате
+    // во вкладку, иначе UI продолжает показывать старый район до перелогина.
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: 'always',
   })
   useEffect(() => {
     if (data) setUser(data)

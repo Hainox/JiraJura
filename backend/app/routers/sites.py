@@ -58,9 +58,16 @@ async def list_sites(
     elif current_user.role == "reviewer" and current_user.district_id is not None:
         base = base.where(Courtyard.district_id == current_user.district_id)
 
-    if district_id:
-        # Дополнительно: если не-админ передал чужой district_id — игнорируем,
-        # потому что ограничение по своему району уже применено выше
+    if district_id and (
+        current_user.role == "admin"
+        or (current_user.role == "reviewer" and current_user.district_id is None)
+    ):
+        # Район пользователя берём только из БД, а не из query-параметра.
+        # После смены района уже открытый клиент ещё некоторое время может
+        # присылать старый district_id. Раньше сервер накладывал одновременно
+        # новый район из current_user и старый район из URL, получал пустое
+        # пересечение и площадки «исчезали» до повторного входа.
+        # Явный фильтр нужен только админу и округ-wide проверяющему.
         base = base.where(District.id == district_id)
     if courtyard_id:
         base = base.where(Site.courtyard_id == courtyard_id)
@@ -194,8 +201,15 @@ async def assign_site_inspector(
         inspector = (await db.execute(
             select(User).where(User.id == data.inspector_id)
         )).scalar_one_or_none()
-        if not inspector or inspector.role != "inspector":
+        if not inspector or inspector.role != "inspector" or not inspector.is_active:
             raise HTTPException(400, "Указанный пользователь — не инспектор")
+
+        site_district_id = site.courtyard.district_id if site.courtyard else None
+        if inspector.district_id != site_district_id:
+            raise HTTPException(
+                400,
+                "Инспектор и площадка должны относиться к одному району",
+            )
 
     site.assigned_inspector_id = data.inspector_id
     await log_action(db, str(current_user.id), "site_assign", "site", site_id, {

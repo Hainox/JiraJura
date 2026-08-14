@@ -37,8 +37,6 @@ _ALLOWED_EXTENSIONS = {
     "jpg", "jpeg", "png", "heic", "webp",
     "pdf", "doc", "docx", "xls", "xlsx", "csv", "txt",
 }
-_MAX_ATTACHMENTS_PER_REPORT = 5
-
 UPLOAD_DIR = os.environ.get("UPLOAD_DIR", "uploads")
 
 
@@ -102,13 +100,6 @@ async def upload_feedback_attachment(
     )).scalar_one_or_none()
     if not report:
         raise HTTPException(404, "Обращение не найдено")
-
-    existing_count = (await db.execute(
-        select(func.count()).select_from(FeedbackAttachment)
-        .where(FeedbackAttachment.feedback_report_id == report_id)
-    )).scalar_one()
-    if existing_count >= _MAX_ATTACHMENTS_PER_REPORT:
-        raise HTTPException(400, f"Не больше {_MAX_ATTACHMENTS_PER_REPORT} вложений на одно обращение")
 
     ext = file.filename.rsplit(".", 1)[-1].lower() if file.filename and "." in file.filename else ""
     if ext not in _ALLOWED_EXTENSIONS:

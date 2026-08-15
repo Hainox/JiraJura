@@ -2,8 +2,8 @@ name: jirajura
 
 # Продакшн-стек JiraJura. Полностью изолирован от других приложений на
 # сервере: свой compose-project ("jirajura" выше), свои volumes/сеть, порты
-# наружу только у proxy — 8080/8443, НЕ 80/443 (те заняты другим сервисом,
-# см. deploy/README.md). Запуск: docker compose -f docker-compose.prod.yml up -d
+# наружу только у proxy — 80/443 на выделенном production-сервере
+# (см. deploy/README.md). Запуск: docker compose -f docker-compose.prod.yml up -d
 # (переменные читаются из .env рядом с этим файлом — см. .env.example).
 
 services:
@@ -29,7 +29,12 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@db:5432/sao_inspection
       SECRET_KEY: ${SECRET_KEY}
-      CORS_ORIGINS: https://${DOMAIN}:${HTTPS_PORT}
+      # Keep both spellings: browsers omit the default :443 port from Origin,
+      # while a non-standard HTTPS_PORT is included in Origin.
+      CORS_ORIGINS: https://${DOMAIN},https://${DOMAIN}:${HTTPS_PORT:-443}
+      # Аварийный рубильник "одна проверка площадки в сутки" — см. app/config.py.
+      # По умолчанию выключен, т.к. блокировал повторные обходы в поле (409).
+      ENABLE_DAILY_INSPECTION_LIMIT: ${ENABLE_DAILY_INSPECTION_LIMIT:-false}
       APP_ENV: production
     depends_on:
       db:
@@ -50,8 +55,8 @@ services:
   proxy:
     image: nginx:1.27-alpine
     ports:
-      - "${HTTP_PORT:-8080}:80"
-      - "${HTTPS_PORT:-8443}:443"
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
     volumes:
       # active.conf.template переключается между http-only.conf.template и
       # proxy.conf.template скриптами в deploy/scripts/ — см. deploy/README.md
@@ -60,7 +65,7 @@ services:
       - ./deploy/certbot/conf:/etc/letsencrypt:ro
     environment:
       DOMAIN: ${DOMAIN}
-      HTTPS_PORT: ${HTTPS_PORT:-8443}
+      HTTPS_PORT: ${HTTPS_PORT:-443}
     depends_on:
       - api
       - frontend

@@ -36,17 +36,13 @@ export default defineConfig({
         // закэшированная страница логина
         navigateFallbackDenylist: [/^\/api\//, /^\/uploads\//],
         runtimeCaching: [
+          // API-ответы зависят от Authorization и района пользователя.
+          // Их нельзя кэшировать по одному URL: Workbox не включает заголовок
+          // Authorization в ключ runtime-кэша, поэтому ответ одного сотрудника
+          // мог попасть другому (в том числе пустой ответ при таймауте сети).
           {
-            // Относительный паттерн (без протокола/хоста) — фронтенд и API
-            // всегда на одном origin через reverse proxy (см. docs/ и корневой
-            // README), поэтому кэш работает независимо от домена деплоя.
             urlPattern: /^\/api\/v1\/.*/,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'api-cache',
-              networkTimeoutSeconds: 5,
-              expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 }
-            }
+            handler: 'NetworkOnly',
           },
           {
             urlPattern: /^https:\/\/.*\.tile\.openstreetmap\.org\/.*/i,

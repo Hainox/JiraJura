@@ -45,7 +45,9 @@ async def list_sites(
     # всем остальным (карта/список для обходов) неактивные площадки
     # по-прежнему не показываются, даже если параметр передан.
     if not (include_inactive and current_user.role == "admin"):
-        base = base.where(Site.is_active)
+        # Старые записи из БД могли быть созданы до NOT NULL/default для
+        # is_active. NULL означает "не отключена", а не скрытую площадку.
+        base = base.where(Site.is_active.is_not(False))
 
     # Не-админы: инспектор видит только площадки своего района (без района —
     # ничего, это неполная настройка аккаунта). Проверяющий с district_id=NULL
@@ -249,7 +251,9 @@ def _site_to_out(s: Site, lat: float | None = None, lon: float | None = None) ->
         area_m2=s.area_m2,
         courtyard=CourtyardOut.model_validate(s.courtyard),
         district=DistrictOut.model_validate(s.courtyard.district),
-        is_active=s.is_active,
+        # Совместимость с legacy-строками, где is_active ещё был NULL:
+        # отсутствие флага трактуем как активную площадку.
+        is_active=s.is_active is not False,
         lat=float(lat) if lat is not None else None,
         lon=float(lon) if lon is not None else None,
         assigned_inspector=UserOut.model_validate(s.assigned_inspector) if s.assigned_inspector else None,

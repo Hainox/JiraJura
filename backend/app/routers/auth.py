@@ -4,11 +4,11 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import User, UserInvite
+from app.models import User, UserInvite, Site, Courtyard
 from app.schemas import (
     LoginRequest, TokenResponse, UserOut, UserAdminOut, UserRoleUpdate, SelfUpdateRequest,
     PasswordResetOut, ChangePasswordRequest,
@@ -281,10 +281,35 @@ async def update_user(
     if data.is_developer is not None:
         user.is_developer = data.is_developer
 
+    # Персональное назначение площадки не должно переживать перенос
+    # инспектора в другой район, смену роли или деактивацию. Иначе в админке
+    # площадка остаётся «назначенной», но сам сотрудник её не видит из-за
+    # районного RBAC — ещё один вариант жалобы «площадка исчезла».
+    assignments_cleared = 0
+    if (
+        "district_id" in data.model_fields_set
+        or data.role is not None
+        or data.is_active is not None
+    ):
+        assignment_filter = Site.assigned_inspector_id == user.id
+        if user.role == "inspector" and user.is_active and user.district_id is not None:
+            assignment_filter = assignment_filter & Site.courtyard_id.in_(
+                select(Courtyard.id).where(Courtyard.district_id != user.district_id)
+            )
+        result = await db.execute(
+            update(Site)
+            .where(assignment_filter)
+            .values(assigned_inspector_id=None)
+        )
+        assignments_cleared = result.rowcount or 0
+
     # exclude_unset (не exclude_none!) — иначе явно переданный district_id=null
     # (снятие района) вырезается из лога вместе с полями, которых вовсе не было
     # в запросе, и в аудите остаётся пустая запись вместо реального изменения
-    await log_action(db, str(current_user.id), "user_update", "user", user_id, data.model_dump(exclude_unset=True))
+    audit_data = data.model_dump(exclude_unset=True)
+    if assignments_cleared:
+        audit_data["assignments_cleared"] = assignments_cleared
+    await log_action(db, str(current_user.id), "user_update", "user", user_id, audit_data)
     await db.commit()
     await db.refresh(user)
     return UserAdminOut.model_validate(user)

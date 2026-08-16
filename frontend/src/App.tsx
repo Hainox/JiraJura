@@ -56,11 +56,14 @@ function useSyncUserFromServer() {
     queryKey: ['auth-me'],
     queryFn: authApi.me,
     enabled: isAuth,
-    staleTime: 5 * 60 * 1000,
-    // Глобальный defaultOptions ставит refetchOnWindowFocus=false (main.tsx),
-    // а комментарий выше обещает ровно это поведение "подтянуть актуальные
-    // роль/район при возврате в приложение" — включаем явно для этого запроса.
-    refetchOnWindowFocus: true,
+    // Район/роль — права доступа, а не обычный справочник. После изменения
+    // администратором клиент должен получить их при каждом открытии/возврате
+    // во вкладку, иначе UI продолжает показывать старый район до перелогина.
+    // Глобальный defaultOptions в main.tsx ставит refetchOnWindowFocus=false,
+    // поэтому оба флага включаем явно и не кэшируем меш (staleTime: 0).
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: 'always',
   })
   useEffect(() => {
     if (data) setUser(data)

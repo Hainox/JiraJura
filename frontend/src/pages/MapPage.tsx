@@ -102,10 +102,20 @@ export default function MapPage() {
 
   const effectiveDistrictFilter = isAdmin ? districtFilter : (user?.district_id ?? districtFilter)
 
-  const { data: sitesData, isLoading: sitesLoading } = useQuery({
+  const {
+    data: sitesData,
+    isLoading: sitesLoading,
+    isError: sitesError,
+    refetch: refetchSites,
+  } = useQuery({
     queryKey: ['sites', effectiveDistrictFilter, typeFilter, myAssignedOnly],
     queryFn: () => sitesApi.list({
-      district_id: effectiveDistrictFilter, type: typeFilter, page_size: 5000,
+      // Для scoped-пользователей район всегда определяет сервер по свежему
+      // current_user. Не отправляем cached district_id из localStorage:
+      // после переназначения он может быть старым и раньше давал пустое
+      // пересечение двух районных фильтров до повторного входа.
+      district_id: isAdmin ? districtFilter : undefined,
+      type: typeFilter, page_size: 5000,
       assigned_to_me: user?.role === 'inspector' && myAssignedOnly || undefined,
     }),
     // Админ без выбранного района не загружает все площадки — слишком долго
@@ -439,6 +449,25 @@ export default function MapPage() {
               </p>
             </div>
           </div>
+        ) : viewMode !== 'review' && sitesLoading ? (
+          <div className="h-full flex items-center justify-center text-sm text-gray-400">
+            Загружаем площадки...
+          </div>
+        ) : viewMode !== 'review' && sitesError ? (
+          <div className="h-full flex items-center justify-center">
+            <div className="text-center max-w-sm px-4">
+              <div className="inline-flex items-center justify-center w-16 h-16 bg-red-100 rounded-2xl mb-4">
+                <AlertCircle className="w-8 h-8 text-red-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-700 mb-2">Не удалось загрузить площадки</h3>
+              <p className="text-sm text-gray-500">
+                Это ошибка связи или сервера, а не отсутствие площадок в районе.
+              </p>
+              <button onClick={() => refetchSites()} className="btn-primary mt-4">
+                Повторить загрузку
+              </button>
+            </div>
+          </div>
         ) : /* "Мои площадки" при нуле персональных назначений выглядит
             неотличимо от "в районе вообще нет площадок" — реальный случай
             из поля (инспектор с 0 assigned_inspector_id решил, что все
@@ -460,6 +489,21 @@ export default function MapPage() {
                 className="btn-primary mt-4"
               >
                 Отключить «Мои площадки»
+              </button>
+            </div>
+          </div>
+        ) : viewMode !== 'review' && sites.length === 0 && !!typeFilter ? (
+          <div className="h-full flex items-center justify-center">
+            <div className="text-center max-w-sm px-4">
+              <div className="inline-flex items-center justify-center w-16 h-16 bg-amber-100 rounded-2xl mb-4">
+                <AlertCircle className="w-8 h-8 text-amber-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-700 mb-2">Фильтр скрыл все площадки</h3>
+              <p className="text-sm text-gray-500">
+                В выбранном районе нет площадок этого типа. Сбросьте фильтр, чтобы увидеть остальные.
+              </p>
+              <button onClick={() => setTypeFilter(undefined)} className="btn-primary mt-4">
+                Показать все типы
               </button>
             </div>
           </div>

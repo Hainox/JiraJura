@@ -23,6 +23,7 @@ from app.schemas import (
 )
 from app.services.permissions import require_role
 from app.services.rate_limit import RateLimiter
+from app.services.audit import log_action
 
 router = APIRouter()
 
@@ -33,6 +34,13 @@ _upload_limiter = RateLimiter(
     max_requests=settings.FEEDBACK_ATTACHMENT_MAX_PER_WINDOW,
     window_seconds=settings.FEEDBACK_ATTACHMENT_RATE_WINDOW_SECONDS,
     max_bytes=settings.FEEDBACK_ATTACHMENT_MAX_BYTES_PER_WINDOW,
+)
+
+# Создание обращения — тоже публичный эндпоинт: без лимита спамер плодит
+# строки в БД бесконечно (вложения от этого уже защищены _upload_limiter).
+_submit_limiter = RateLimiter(
+    max_requests=settings.FEEDBACK_SUBMIT_MAX_PER_WINDOW,
+    window_seconds=settings.FEEDBACK_SUBMIT_RATE_WINDOW_SECONDS,
 )
 
 
@@ -60,11 +68,20 @@ def _require_upload_rate_limit(request: Request) -> str:
         )
     return key
 
+
+def _require_submit_rate_limit(request: Request) -> None:
+    allowed, retry_after = _submit_limiter.check(_client_ip(request))
+    if not allowed:
+        raise HTTPException(
+            429,
+            "Слишком много обращений подряд — попробуйте позже",
+            headers={"Retry-After": str(retry_after)},
+        )
+
 TYPE_LABELS_RU = {"site": "Площадка", "app": "Приложение", "other": "Другое"}
 STATUS_LABELS_RU = {"new": "Новое", "in_review": "В работе", "resolved": "Решено", "dismissed": "Отклонено"}
 
 _STATUSES = ("new", "in_review", "resolved", "dismissed")
-_REPORT_TYPES = ("site", "app", "other")
 
 # Публичный эндпоинт без авторизации — белый список расширений вместо
 # чёрного, чтобы нельзя было залить исполняемый файл на сервер.
@@ -96,11 +113,11 @@ def _report_to_out(r: FeedbackReport) -> FeedbackReportOut:
 async def submit_feedback(
     data: FeedbackReportCreate,
     db: AsyncSession = Depends(get_db),
+    _rate_limit: None = Depends(_require_submit_rate_limit),
 ):
     """Публичный эндпоинт — без авторизации, заявитель может быть анонимным."""
-    report_type = data.report_type if data.report_type in _REPORT_TYPES else "site"
     report = FeedbackReport(
-        report_type=report_type,
+        report_type=data.report_type,
         full_name=data.full_name or None,
         phone=data.phone or None,
         location_text=data.location_text or None,
@@ -294,6 +311,16 @@ async def update_feedback(
             report.resolved_at = None
     if data.admin_comment is not None:
         report.admin_comment = data.admin_comment
+
+    # Разбор обращения меняет статус/комментарий — фиксируем в журнале аудита,
+    # как и остальные админ-действия (user_update/site_assign и т.п.).
+    audit_fields = {}
+    if data.status is not None:
+        audit_fields["status"] = data.status
+    if data.admin_comment is not None:
+        audit_fields["admin_comment"] = data.admin_comment
+    if audit_fields:
+        await log_action(db, str(current_user.id), "feedback_update", "feedback_report", report_id, audit_fields)
 
     await db.commit()
     await db.refresh(report)

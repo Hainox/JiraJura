@@ -2,7 +2,7 @@
 from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -421,7 +421,9 @@ class DashboardOut(BaseModel):
 # ── Обращения (публичная веб-форма) ──────────────────────────────
 
 class FeedbackReportCreate(BaseModel):
-    report_type: str = "site"
+    # Явная валидация вместо тихого приведения невалидного значения к "site"
+    # в роутере: опечатка в типе раньше молча загрязняла бакет "Площадка".
+    report_type: Literal["site", "app", "other"] = "site"
     full_name: Optional[str] = Field(None, max_length=200)
     phone: Optional[str] = Field(None, max_length=20)
     location_text: Optional[str] = Field(None, max_length=500)

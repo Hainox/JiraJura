@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     FEEDBACK_ATTACHMENT_MAX_PER_WINDOW: int = 20
     FEEDBACK_ATTACHMENT_RATE_WINDOW_SECONDS: int = 60
     FEEDBACK_ATTACHMENT_MAX_BYTES_PER_WINDOW: int = 100 * 1024 * 1024
+    # Тот же принцип для создания самого обращения (POST /feedback/) — это
+    # публичный эндпоинт, спамер мог бы без лимита плодить строки в БД.
+    FEEDBACK_SUBMIT_MAX_PER_WINDOW: int = 10
+    FEEDBACK_SUBMIT_RATE_WINDOW_SECONDS: int = 60
 
     model_config = {"env_file": ".env"}
 

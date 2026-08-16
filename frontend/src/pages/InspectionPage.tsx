@@ -7,7 +7,7 @@ import type { InspectionOut, ChecklistTemplateOut, ChecklistItemOut, PhotoOut, I
 import {
   ArrowLeft, Send, X, AlertTriangle, CheckCircle, Eye,
   CheckCircle2, HelpCircle, ChevronRight, Plus, Camera,
-  Flag, RotateCcw, FileText
+  Flag, RotateCcw, FileText, ClipboardList
 } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
 
@@ -419,6 +419,14 @@ export default function InspectionPage() {
           title="PDF-отчёт"
         >
           <FileText className="w-4 h-4 inline mr-1" />
+        </button>
+        <button
+          onClick={() => navigate(`/inspections/${inspectionId}/summary`)}
+          data-prefetch={`/inspections/${inspectionId}/summary`}
+          className="text-xs bg-white/20 px-3 py-1.5 rounded-lg hover:bg-white/30"
+          title="Сводка обхода"
+        >
+          <ClipboardList className="w-4 h-4 inline mr-1" />
         </button>
         {isReviewer && !isInspector && inspection.status !== 'planned' && (
           <button

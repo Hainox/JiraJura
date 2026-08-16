@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 import { feedbackApi } from '@/lib/api'
 import { notify as toast } from '@/lib/toast'
 import type { FeedbackReportType } from '@/types'
@@ -38,11 +38,12 @@ const TYPE_CONFIG: Record<FeedbackReportType, {
   },
 }
 
-// Синхронно с бэкендом (см. _ALLOWED_EXTENSIONS/_MAX_ATTACHMENTS_PER_REPORT
-// в app/routers/feedback.py) — тут только для ранней обратной связи,
-// реальная проверка всё равно на сервере.
+// Синхронно с бэкендом (см. _ALLOWED_EXTENSIONS в
+// app/routers/feedback.py) — тут только для ранней обратной связи,
+// реальная проверка всё равно на сервере. Количество вложений на одно
+// обращение не ограничиваем; защитный предел остаётся только на размер
+// каждого отдельного файла.
 const ALLOWED_EXT = ['jpg', 'jpeg', 'png', 'heic', 'webp', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'txt']
-const MAX_ATTACHMENTS = 5
 const MAX_ATTACHMENT_MB = 20
 
 function fileExt(name: string): string {
@@ -58,8 +59,6 @@ export default function FeedbackFormPage() {
   const [files, setFiles] = useState<File[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [sent, setSent] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-
   const cfg = TYPE_CONFIG[type]
 
   const handleFilesPicked = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -69,10 +68,6 @@ export default function FeedbackFormPage() {
 
     const next = [...files]
     for (const f of picked) {
-      if (next.length >= MAX_ATTACHMENTS) {
-        toast.error(`Не больше ${MAX_ATTACHMENTS} файлов`)
-        break
-      }
       if (!ALLOWED_EXT.includes(fileExt(f.name))) {
         toast.error(`Неподдерживаемый тип файла: ${f.name}`)
         continue
@@ -213,7 +208,7 @@ export default function FeedbackFormPage() {
               <div className="mb-6">
                 <label className="label">Вложения (необязательно)</label>
                 <p className="text-xs text-gray-400 mb-2">
-                  Фото или файлы — например, скриншот ошибки или список проблемных пользователей. До {MAX_ATTACHMENTS} файлов, {MAX_ATTACHMENT_MB} МБ каждый.
+                  Фото или файлы — например, скриншоты ошибки или список проблемных пользователей. Количество не ограничено, до {MAX_ATTACHMENT_MB} МБ каждый.
                 </p>
                 {files.length > 0 && (
                   <div className="space-y-1.5 mb-2">
@@ -231,20 +226,20 @@ export default function FeedbackFormPage() {
                     ))}
                   </div>
                 )}
-                {files.length < MAX_ATTACHMENTS && (
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="btn-outline w-full text-sm flex items-center justify-center gap-2"
-                  >
-                    <Paperclip className="w-4 h-4" /> Прикрепить файл
-                  </button>
-                )}
                 <input
-                  ref={fileInputRef} type="file" multiple hidden
+                  id="feedback-attachments"
+                  type="file"
+                  multiple
+                  className="sr-only"
                   accept={ALLOWED_EXT.map((e) => `.${e}`).join(',')}
                   onChange={handleFilesPicked}
                 />
+                <label
+                  htmlFor="feedback-attachments"
+                  className="btn-outline w-full text-sm flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Paperclip className="w-4 h-4" /> Прикрепить файлы
+                </label>
               </div>
 
               <button type="submit" disabled={submitting} className="btn-primary w-full">

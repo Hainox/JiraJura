@@ -17,6 +17,14 @@ class Settings(BaseSettings):
     # без редеплоя кода, если лимит где-то ошибочно блокирует реальную
     # работу в поле, пока разбираемся в чём дело. По умолчанию включён.
     ENABLE_DAILY_INSPECTION_LIMIT: bool = True
+    # Rate-limit публичного эндпоинта загрузки вложений обращений (/feedback).
+    # Лимит числа вложений на обращение снят (продуктовое решение), поэтому
+    # диск защищаем на уровне IP: не более N загрузок и не более M байт за
+    # одно окно. На проде один uvicorn-процесс — счётчик живёт в памяти
+    # процесса (app/services/rate_limit.py).
+    FEEDBACK_ATTACHMENT_MAX_PER_WINDOW: int = 20
+    FEEDBACK_ATTACHMENT_RATE_WINDOW_SECONDS: int = 60
+    FEEDBACK_ATTACHMENT_MAX_BYTES_PER_WINDOW: int = 100 * 1024 * 1024
 
     model_config = {"env_file": ".env"}
 

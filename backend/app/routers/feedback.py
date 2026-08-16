@@ -9,7 +9,7 @@ import uuid as _uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile, File, Request
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -22,8 +22,43 @@ from app.schemas import (
     FeedbackReportListOut, FeedbackAttachmentOut,
 )
 from app.services.permissions import require_role
+from app.services.rate_limit import RateLimiter
 
 router = APIRouter()
+
+# Публичный эндпоинт загрузки вложений: лимит числа файлов на обращение снят,
+# поэтому защищаем диск от флуда на уровне IP (число загрузок + суммарный
+# объём за окно). Синглтон на уровне процесса — на проде api один воркер.
+_upload_limiter = RateLimiter(
+    max_requests=settings.FEEDBACK_ATTACHMENT_MAX_PER_WINDOW,
+    window_seconds=settings.FEEDBACK_ATTACHMENT_RATE_WINDOW_SECONDS,
+    max_bytes=settings.FEEDBACK_ATTACHMENT_MAX_BYTES_PER_WINDOW,
+)
+
+
+def _client_ip(request: Request) -> str:
+    """X-Real-IP выставляет nginx как $remote_addr (не берёт заголовок от
+    клиента), поэтому он точнее X-Forwarded-For, который uvicorn кладёт в
+    request.client.host и который клиент может подделать первым значением.
+    """
+    x_real_ip = request.headers.get("x-real-ip")
+    if x_real_ip:
+        return x_real_ip.strip()
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
+def _require_upload_rate_limit(request: Request) -> str:
+    key = _client_ip(request)
+    allowed, retry_after = _upload_limiter.check(key)
+    if not allowed:
+        raise HTTPException(
+            429,
+            "Слишком много вложений подряд — попробуйте позже",
+            headers={"Retry-After": str(retry_after)},
+        )
+    return key
 
 TYPE_LABELS_RU = {"site": "Площадка", "app": "Приложение", "other": "Другое"}
 STATUS_LABELS_RU = {"new": "Новое", "in_review": "В работе", "resolved": "Решено", "dismissed": "Отклонено"}
@@ -91,6 +126,7 @@ async def upload_feedback_attachment(
     report_id: str,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
+    rate_key: str = Depends(_require_upload_rate_limit),
 ):
     """Публичный — прикрепить фото/файл к уже созданному обращению.
     Без авторизации, как и сама форма: заявитель может быть анонимным.
@@ -119,6 +155,14 @@ async def upload_feedback_attachment(
                 f.close()
                 os.remove(abs_path)
                 raise HTTPException(413, f"Файл больше {settings.MAX_PHOTO_SIZE_MB} МБ")
+            if not _upload_limiter.consume_bytes(rate_key, len(chunk)):
+                f.close()
+                os.remove(abs_path)
+                raise HTTPException(
+                    429,
+                    "Превышен суммарный объём вложений за короткое время — попробуйте позже",
+                    headers={"Retry-After": str(settings.FEEDBACK_ATTACHMENT_RATE_WINDOW_SECONDS)},
+                )
             f.write(chunk)
 
     attachment = FeedbackAttachment(

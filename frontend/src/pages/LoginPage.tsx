@@ -35,8 +35,8 @@ export default function LoginPage() {
       if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'ECONNABORTED') {
         toast.error('Сервер не отвечает. Проверьте подключение к интернету и попробуйте снова.')
       } else if (err && typeof err === 'object' && 'response' in err) {
-        const axiosErr = err as { response?: { status: number } }
-        if (axiosErr.response?.status === 401) {
+        const httpErr = err as { response?: { status: number } }
+        if (httpErr.response?.status === 401) {
           toast.error('Неверный логин или пароль')
         } else {
           toast.error('Ошибка сервера. Попробуйте позже.')

@@ -1,4 +1,3 @@
-import axios from 'axios'
 import type {
   LoginRequest,
   LoginResponse,
@@ -30,21 +29,139 @@ import type {
   FeedbackAttachmentOut,
 } from '@/types'
 
-export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || '/api/v1',
-  headers: { 'Content-Type': 'application/json' },
-  timeout: 30000, // 30 секунд — без этого запрос может висеть бесконечно
-})
+// Нативный fetch вместо axios: тот тянул в главный бандл ~46 kB ради
+// возможностей (интерцепторы, оба адаптера XHR+fetch), которые тут не
+// используются. Ниже — тонкая обёртка с ТЕМ ЖЕ контрактом ошибок, чтобы
+// не трогать ни один из ~60 вызовов *.Api и обработку ошибок на страницах.
+const BASE_URL = import.meta.env.VITE_API_URL || '/api/v1'
+const DEFAULT_TIMEOUT_MS = 30000 // 30 секунд — без этого запрос может висеть бесконечно
 
 // Фото грузят в поле на мобильном интернете — 30с общего таймаута часто не
 // хватает (были жалобы на "Ошибка загрузки фото" именно в поле по LTE).
 export const PHOTO_UPLOAD_TIMEOUT_MS = 90000
 
+type ApiConfig = {
+  params?: Record<string, string | number | boolean | null | undefined>
+  headers?: Record<string, string>
+  timeout?: number
+  responseType?: 'json' | 'blob' | 'text'
+}
+
+// Контракт ошибки, совместимый с прежним axios:
+//   - таймаут/сеть → error.code, без error.response;
+//   - HTTP-ошибка  → error.response.status + error.response.data (JSON).
+// Страницы читают err.response.data.detail и err.code === 'ECONNABORTED',
+// поэтому форма сохраняется намеренно.
+export class ApiError extends Error {
+  response?: { status: number; data: unknown }
+  code?: string
+
+  constructor(message: string, init?: { code?: string; response?: { status: number; data: unknown } }) {
+    super(message)
+    this.name = 'ApiError'
+    if (init?.code) this.code = init.code
+    if (init?.response) this.response = init.response
+  }
+}
+
+function buildQuery(params?: ApiConfig['params']): string {
+  if (!params) return ''
+  const qs = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === '') continue
+    qs.append(key, String(value))
+  }
+  const s = qs.toString()
+  return s ? `?${s}` : ''
+}
+
+async function parseBody(res: Response, responseType?: ApiConfig['responseType']): Promise<unknown> {
+  if (responseType === 'blob') return res.blob()
+  if (responseType === 'text') return res.text()
+  const text = await res.text()
+  if (!text) return null
+  try {
+    return JSON.parse(text)
+  } catch {
+    return text
+  }
+}
+
+function handleUnauthorized() {
+  // На страницах логина и смены пароля 401 — ожидаемое поведение,
+  // даём странице самой показать ошибку.
+  const path = window.location.pathname
+  if (path === '/login' || path === '/change-password') return
+  localStorage.removeItem('access_token')
+  localStorage.removeItem('user')
+  window.location.href = '/login'
+}
+
+async function request<T>(
+  method: string,
+  url: string,
+  body?: unknown,
+  config: ApiConfig = {},
+): Promise<{ data: T; status: number }> {
+  const timeoutMs = config.timeout ?? DEFAULT_TIMEOUT_MS
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+
+  const headers: Record<string, string> = { ...config.headers }
+  const token = localStorage.getItem('access_token')
+  if (token) headers.Authorization = `Bearer ${token}`
+
+  let payload: BodyInit | undefined
+  if (body !== undefined) {
+    if (body instanceof FormData) {
+      payload = body
+      // multipart-boundary браузер проставит сам — руками его не задаём
+      delete headers['Content-Type']
+    } else {
+      payload = JSON.stringify(body)
+      headers['Content-Type'] = headers['Content-Type'] ?? 'application/json'
+    }
+  }
+
+  try {
+    const res = await fetch(BASE_URL + url + buildQuery(config.params), {
+      method,
+      headers,
+      body: payload,
+      signal: controller.signal,
+    })
+    const data = await parseBody(res, config.responseType)
+    clearTimeout(timer)
+    if (!res.ok) {
+      if (res.status === 401) handleUnauthorized()
+      throw new ApiError(`Request failed with status ${res.status}`, {
+        response: { status: res.status, data },
+      })
+    }
+    return { data: data as T, status: res.status }
+  } catch (err) {
+    clearTimeout(timer)
+    if (err instanceof ApiError) throw err
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new ApiError('Request timeout', { code: 'ECONNABORTED' })
+    }
+    throw new ApiError('Network error', { code: 'ERR_NETWORK' })
+  }
+}
+
+export const api = {
+  get: <T>(url: string, config?: ApiConfig) => request<T>('GET', url, undefined, config),
+  post: <T>(url: string, data?: unknown, config?: ApiConfig) => request<T>('POST', url, data, config),
+  patch: <T>(url: string, data?: unknown, config?: ApiConfig) => request<T>('PATCH', url, data, config),
+  put: <T>(url: string, data?: unknown, config?: ApiConfig) => request<T>('PUT', url, data, config),
+  delete: <T>(url: string, config?: ApiConfig) => request<T>('DELETE', url, undefined, config),
+}
+
 // Человекочитаемая причина неудачи загрузки — вместо одного безликого
 // тоста на все случаи (таймаут/сеть/413/500 звучали одинаково и не
 // давали понять, что чинить: ждать сигнал получше или искать баг на сервере).
 export function describeUploadError(error: unknown): string {
-  if (axios.isAxiosError(error)) {
+  if (error instanceof ApiError) {
     if (error.code === 'ECONNABORTED') return 'Превышено время ожидания — проверьте связь и попробуйте ещё раз'
     if (!error.response) return 'Нет соединения с сервером — проверьте интернет'
     if (error.response.status === 413) return 'Файл слишком большой для сервера'
@@ -52,34 +169,6 @@ export function describeUploadError(error: unknown): string {
   }
   return 'Ошибка загрузки фото'
 }
-
-// Авто-прокидывание токена
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('access_token')
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
-  return config
-})
-
-// Обработка 401 — разлогин (но не на страницах входа/смены пароля)
-api.interceptors.response.use(
-  (r) => r,
-  (error) => {
-    if (error.response?.status === 401) {
-      const path = window.location.pathname
-      // На страницах логина и смены пароля 401 — ожидаемое поведение,
-      // даём странице самой показать ошибку.
-      if (path === '/login' || path === '/change-password') {
-        return Promise.reject(error)
-      }
-      localStorage.removeItem('access_token')
-      localStorage.removeItem('user')
-      window.location.href = '/login'
-    }
-    return Promise.reject(error)
-  }
-)
 
 // ── Auth ──
 export const authApi = {

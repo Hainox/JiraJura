@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '@/stores/auth'
@@ -6,28 +6,49 @@ import { useDemoModeStore } from '@/stores/demoMode'
 import { authApi } from '@/lib/api'
 import type { Role } from '@/types'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
-import LoginPage from '@/pages/LoginPage'
-import RegisterPage from '@/pages/RegisterPage'
-import FeedbackFormPage from '@/pages/FeedbackFormPage'
-import AdminFeedbackPage from '@/pages/AdminFeedbackPage'
-import ChangePasswordPage from '@/pages/ChangePasswordPage'
-import MapPage from '@/pages/MapPage'
-import SiteDetailPage from '@/pages/SiteDetailPage'
-import InspectionPage from '@/pages/InspectionPage'
-import SummaryPage from '@/pages/SummaryPage'
-import AdminUsersPage from '@/pages/AdminUsersPage'
-import IssuesPage from '@/pages/IssuesPage'
-import IssueFixPage from '@/pages/IssueFixPage'
-import ProfilePage from '@/pages/ProfilePage'
-import AuditPage from '@/pages/AuditPage'
-import DashboardPage from '@/pages/DashboardPage'
-import MyInspectionsPage from '@/pages/MyInspectionsPage'
-import AdminPanelPage from '@/pages/AdminPanelPage'
-import AdminSitesPage from '@/pages/AdminSitesPage'
-import AdminChecklistsPage from '@/pages/AdminChecklistsPage'
-import AdminReviewsPage from '@/pages/AdminReviewsPage'
-import AdminIssueControlPage from '@/pages/AdminIssueControlPage'
-import AdminSystemPage from '@/pages/AdminSystemPage'
+
+// Страницы грузятся лениво: каждый роут — отдельный JS-чанк, который Vite
+// отдаёт только при первом переходе. Первый экран (логин) и главный бандл
+// сильно худеют; тяжёлая карта (leaflet) уезжает в свой чанк и не
+// загружается, пока пользователь не открыл карту. Все чанки прекэшируются
+// service worker'ом при первой установке PWA (globPatterns в vite.config.ts),
+// поэтому офлайн-режим после первого запуска не страдает.
+const LoginPage = lazy(() => import('@/pages/LoginPage'))
+const RegisterPage = lazy(() => import('@/pages/RegisterPage'))
+const FeedbackFormPage = lazy(() => import('@/pages/FeedbackFormPage'))
+const AdminFeedbackPage = lazy(() => import('@/pages/AdminFeedbackPage'))
+const ChangePasswordPage = lazy(() => import('@/pages/ChangePasswordPage'))
+const MapPage = lazy(() => import('@/pages/MapPage'))
+const SiteDetailPage = lazy(() => import('@/pages/SiteDetailPage'))
+const InspectionPage = lazy(() => import('@/pages/InspectionPage'))
+const SummaryPage = lazy(() => import('@/pages/SummaryPage'))
+const AdminUsersPage = lazy(() => import('@/pages/AdminUsersPage'))
+const IssuesPage = lazy(() => import('@/pages/IssuesPage'))
+const IssueFixPage = lazy(() => import('@/pages/IssueFixPage'))
+const ProfilePage = lazy(() => import('@/pages/ProfilePage'))
+const AuditPage = lazy(() => import('@/pages/AuditPage'))
+const DashboardPage = lazy(() => import('@/pages/DashboardPage'))
+const MyInspectionsPage = lazy(() => import('@/pages/MyInspectionsPage'))
+const AdminPanelPage = lazy(() => import('@/pages/AdminPanelPage'))
+const AdminSitesPage = lazy(() => import('@/pages/AdminSitesPage'))
+const AdminChecklistsPage = lazy(() => import('@/pages/AdminChecklistsPage'))
+const AdminReviewsPage = lazy(() => import('@/pages/AdminReviewsPage'))
+const AdminIssueControlPage = lazy(() => import('@/pages/AdminIssueControlPage'))
+const AdminSystemPage = lazy(() => import('@/pages/AdminSystemPage'))
+
+// Пока чанк страницы скачивается, показываем аккуратный спиннер вместо
+// пустого экрана. flex-1 — растягивается на оставшуюся высоту под
+// баннером демо-режима.
+function PageFallback() {
+  return (
+    <div className="flex-1 flex items-center justify-center bg-gray-50">
+      <div className="flex flex-col items-center gap-3 text-gray-400">
+        <div className="w-8 h-8 border-2 border-gray-300 border-t-primary-600 rounded-full animate-spin" />
+        <span className="text-sm">Загрузка…</span>
+      </div>
+    </div>
+  )
+}
 
 function ProtectedRoute({ children, roles }: { children: React.ReactNode; roles?: Role[] }) {
   const isAuth = useAuthStore((s) => s.isAuthenticated)
@@ -81,6 +102,7 @@ export default function App() {
             🎬 Демо-режим — изменения не сохраняются
           </div>
         )}
+        <Suspense fallback={<PageFallback />}>
         <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register/:token" element={<RegisterPage />} />
@@ -267,6 +289,7 @@ export default function App() {
         />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </Suspense>
     </div>
     </ErrorBoundary>
   )

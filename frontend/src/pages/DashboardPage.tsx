@@ -7,6 +7,7 @@ import type { DashboardOut, DistrictOut } from '@/types'
 import {
   ArrowLeft, RefreshCw, FileSpreadsheet, Building, ClipboardCheck,
   AlertTriangle, Clock, CheckCircle2, RotateCcw, MapPin,
+  MapPinOff, ThumbsUp, AlertOctagon,
 } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
 
@@ -119,25 +120,26 @@ export default function DashboardPage() {
               <button onClick={() => refetch()} className="underline shrink-0">Обновить</button>
             </div>
           )}
-          {/* KPI cards — totals */}
+          {/* KPI cards — охват и результат обходов */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <KpiCard icon={<ClipboardCheck className="w-5 h-5" />} label="Обходов" value={t?.inspections_total ?? 0} color="bg-blue-500" />
-            <KpiCard icon={<CheckCircle2 className="w-5 h-5" />} label="Завершено" value={t?.inspections_completed ?? 0} color="bg-green-500" />
-            <KpiCard icon={<Clock className="w-5 h-5" />} label="В процессе" value={t?.inspections_in_progress ?? 0} color="bg-yellow-500" />
             <KpiCard icon={<Building className="w-5 h-5" />} label="Площадок" value={t?.total_sites ?? 0} color="bg-indigo-500" />
+            <KpiCard icon={<CheckCircle2 className="w-5 h-5" />} label="Проверено" value={t?.sites_inspected ?? 0} color="bg-green-600" />
+            <KpiCard icon={<MapPinOff className="w-5 h-5" />} label="Не проверено" value={t?.sites_not_inspected ?? 0} color="bg-slate-400" />
+            <KpiCard icon={<ClipboardCheck className="w-5 h-5" />} label="Обходов" value={t?.inspections_total ?? 0} color="bg-blue-500" />
+            <KpiCard icon={<ThumbsUp className="w-5 h-5" />} label="Без нарушений" value={t?.inspections_ok ?? 0} color="bg-emerald-500" />
+            <KpiCard icon={<AlertTriangle className="w-5 h-5" />} label="С нарушениями" value={t?.inspections_with_defects ?? 0} color="bg-rose-600" />
+            <KpiCard icon={<Clock className="w-5 h-5" />} label="В процессе" value={t?.inspections_in_progress ?? 0} color="bg-yellow-500" />
           </div>
 
-          {/* KPI cards — issues */}
-          <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-            {/* Реально найдено при обходе (чек-лист) — не путать с
-                "Замечаний" ниже: оформление замечания отдельный шаг,
-                эти два числа умышленно разные. */}
+          {/* KPI cards — дефекты и жизненный цикл замечаний */}
+          <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
             <KpiCard icon={<AlertTriangle className="w-5 h-5" />} label="Найдено дефектов" value={t?.checklist_defects ?? 0} color="bg-rose-600" />
             <KpiCard icon={<AlertTriangle className="w-5 h-5" />} label="Замечаний" value={t?.issues_total ?? 0} color="bg-red-500" />
-            <KpiCard icon={<AlertTriangle className="w-5 h-5" />} label="Открыто" value={t?.issues_open ?? 0} color="bg-orange-500" />
-            <KpiCard icon={<CheckCircle2 className="w-5 h-5" />} label="Исправлено" value={t?.issues_fixed ?? 0} color="bg-emerald-500" />
+            <KpiCard icon={<AlertTriangle className="w-5 h-5" />} label="В работе" value={t?.issues_open ?? 0} color="bg-orange-500" />
+            <KpiCard icon={<CheckCircle2 className="w-5 h-5" />} label="Устранено" value={t?.issues_fixed ?? 0} color="bg-emerald-500" />
             <KpiCard icon={<RotateCcw className="w-5 h-5" />} label="На доработке" value={t?.issues_revision_needed ?? 0} color="bg-amber-500" />
             <KpiCard icon={<CheckCircle2 className="w-5 h-5" />} label="Принято" value={t?.issues_closed ?? 0} color="bg-green-600" />
+            <KpiCard icon={<AlertOctagon className="w-5 h-5" />} label="Просрочено" value={t?.issues_overdue ?? 0} color="bg-purple-600" />
           </div>
 
           {/* Таблица по районам */}
@@ -152,14 +154,18 @@ export default function DashboardPage() {
                   <tr className="text-left text-gray-500 bg-gray-50">
                     <th className="p-2 font-medium whitespace-nowrap sticky left-0 bg-gray-50">Район</th>
                     <th className="p-2 font-medium text-center">Площадок</th>
+                    <th className="p-2 font-medium text-center">Проверено</th>
+                    <th className="p-2 font-medium text-center">Не проверено</th>
                     <th className="p-2 font-medium text-center">Обходов</th>
-                    <th className="p-2 font-medium text-center">Заверш.</th>
+                    <th className="p-2 font-medium text-center">Без наруш.</th>
+                    <th className="p-2 font-medium text-center">С наруш.</th>
                     <th className="p-2 font-medium text-center">Дефектов</th>
                     <th className="p-2 font-medium text-center">Замечаний</th>
-                    <th className="p-2 font-medium text-center">Открыто</th>
-                    <th className="p-2 font-medium text-center">Исправл.</th>
+                    <th className="p-2 font-medium text-center">В работе</th>
+                    <th className="p-2 font-medium text-center">Устранено</th>
                     <th className="p-2 font-medium text-center">Доработка</th>
                     <th className="p-2 font-medium text-center">Принято</th>
+                    <th className="p-2 font-medium text-center">Просрочено</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -168,25 +174,32 @@ export default function DashboardPage() {
                     <tr className="border-t bg-blue-50 font-semibold text-gray-800">
                       <td className="p-2 sticky left-0 bg-blue-50 whitespace-nowrap">ВСЕГО</td>
                       <td className="p-2 text-center">{t.total_sites}</td>
+                      <td className="p-2 text-center text-green-700">{t.sites_inspected}</td>
+                      <td className="p-2 text-center text-slate-500">{t.sites_not_inspected}</td>
                       <td className="p-2 text-center">{t.inspections_total}</td>
-                      <td className="p-2 text-center">{t.inspections_completed}</td>
+                      <td className="p-2 text-center text-emerald-700">{t.inspections_ok}</td>
+                      <td className="p-2 text-center text-rose-700">{t.inspections_with_defects}</td>
                       <td className="p-2 text-center text-rose-700">{t.checklist_defects}</td>
                       <td className="p-2 text-center">{t.issues_total}</td>
-                      <td className="p-2 text-center">{t.issues_open}</td>
+                      <td className="p-2 text-center text-orange-600">{t.issues_open}</td>
                       <td className="p-2 text-center">{t.issues_fixed}</td>
                       <td className="p-2 text-center">{t.issues_revision_needed}</td>
-                      <td className="p-2 text-center">{t.issues_closed}</td>
+                      <td className="p-2 text-center text-green-700">{t.issues_closed}</td>
+                      <td className="p-2 text-center text-purple-700">{t.issues_overdue}</td>
                     </tr>
                   )}
                   {data?.districts.map((d, i) => (
                     <tr key={d.district_id} className={`border-t ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
                       <td className="p-2 sticky left-0 bg-inherit whitespace-nowrap text-gray-700">{d.district_name}</td>
                       <td className="p-2 text-center text-gray-600">{d.total_sites}</td>
+                      <td className="p-2 text-center text-green-700">{d.sites_inspected || '-'}</td>
+                      <td className="p-2 text-center text-slate-500">{d.sites_not_inspected || '-'}</td>
                       <td className="p-2 text-center">{d.inspections_total || '-'}</td>
-                      <td className="p-2 text-center text-green-700">{d.inspections_completed || '-'}</td>
+                      <td className="p-2 text-center text-emerald-700">{d.inspections_ok || '-'}</td>
+                      <td className="p-2 text-center text-rose-700 font-medium">{d.inspections_with_defects || '-'}</td>
                       <td className="p-2 text-center text-rose-700 font-medium">{d.checklist_defects || '-'}</td>
                       <td className="p-2 text-center font-medium">{d.issues_total || '-'}</td>
-                      <td className="p-2 text-center text-red-600">{d.issues_open || '-'}</td>
+                      <td className="p-2 text-center text-orange-600">{d.issues_open || '-'}</td>
                       <td className="p-2 text-center text-emerald-600">{d.issues_fixed || '-'}</td>
                       <td className="p-2 text-center">
                         {d.issues_revision_needed > 0 ? (
@@ -194,6 +207,7 @@ export default function DashboardPage() {
                         ) : '-'}
                       </td>
                       <td className="p-2 text-center text-green-700">{d.issues_closed || '-'}</td>
+                      <td className="p-2 text-center text-purple-700">{d.issues_overdue || '-'}</td>
                     </tr>
                   ))}
                 </tbody>

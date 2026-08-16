@@ -57,8 +57,11 @@ async def weekly_report(
             )
         )).scalar_one() or 0
 
+        # distinct site_id: inspected_sites — это «сколько РАЗНЫХ площадок
+        # обойдено», а не число строк обходов (раньше считались строки,
+        # повторный обход той же площадки задваивал «проверено»).
         inspected = (await db.execute(
-            select(func.count()).select_from(Inspection).where(
+            select(func.count(func.distinct(Inspection.site_id))).select_from(Inspection).where(
                 Inspection.site_id.in_(
                     select(Site.id).where(Site.courtyard_id.in_(court_ids))
                 ),
@@ -125,8 +128,10 @@ async def monthly_report(
             select(func.count()).select_from(Site).where(Site.courtyard_id.in_(court_ids), Site.is_active)
         )).scalar_one() or 0
 
+        # distinct site_id — см. комментарий в weekly_report: поле называется
+        # inspected_sites, а раньше считало строки обходов, а не площадки.
         inspected = (await db.execute(
-            select(func.count()).select_from(Inspection).where(
+            select(func.count(func.distinct(Inspection.site_id))).select_from(Inspection).where(
                 Inspection.site_id.in_(site_sub),
                 Inspection.created_at >= month_ago,
             )
@@ -195,11 +200,13 @@ async def admin_dashboard(
     rows: list[DashboardDistrictRow] = []
     total_row = DashboardDistrictRow(
         district_id=UUID("00000000-0000-0000-0000-000000000000"),
-        district_name="ВСЕГО", total_sites=0, inspections_total=0,
-        inspections_completed=0, inspections_in_progress=0,
+        district_name="ВСЕГО", total_sites=0,
+        sites_inspected=0, sites_not_inspected=0,
+        inspections_total=0, inspections_completed=0, inspections_in_progress=0,
+        inspections_ok=0, inspections_with_defects=0,
         checklist_defects=0,
         issues_total=0, issues_open=0, issues_fixed=0,
-        issues_revision_needed=0, issues_closed=0,
+        issues_revision_needed=0, issues_closed=0, issues_overdue=0,
     )
 
     for d in districts:
@@ -224,6 +231,37 @@ async def admin_dashboard(
             Inspection.created_at,
         ))).scalar_one() or 0
 
+        # Охват: сколько РАЗНЫХ площадок доведено до финального статуса за
+        # период, а не сколько обходов записано. Это «проверено площадок» —
+        # сюда идут и полностью «зелёные» обходы (0 дефектов), которые иначе
+        # нигде не отражались бы, и район с идеальным порядком не выглядел бы
+        # так же, как район, где вообще не обходили.
+        sites_inspected = (await db.execute(period(
+            select(func.count(func.distinct(Inspection.site_id)))
+            .select_from(Inspection)
+            .where(Inspection.site_id.in_(site_sub), Inspection.status.in_(INSPECTION_DONE_STATUSES)),
+            Inspection.created_at,
+        ))).scalar_one() or 0
+        sites_not_inspected = max(total_sites - sites_inspected, 0)
+
+        # Результат завершённых обходов: «с нарушениями» — если в обходе есть
+        # хотя бы один defect-пункт чек-листа; «без» — все остальные
+        # завершённые. Дефект виден сразу в момент обхода, не дожидаясь, пока
+        # кто-то прикрепит фото исправления и закроет замечание (раньше для
+        # таких обходов «что-то менялось» только после закрытия issue).
+        inspections_with_defects = (await db.execute(period(
+            select(func.count(func.distinct(Inspection.id)))
+            .select_from(Inspection)
+            .join(ChecklistAnswer, ChecklistAnswer.inspection_id == Inspection.id)
+            .where(
+                Inspection.site_id.in_(site_sub),
+                Inspection.status.in_(INSPECTION_DONE_STATUSES),
+                ChecklistAnswer.result == "defect",
+            ),
+            Inspection.created_at,
+        ))).scalar_one() or 0
+        inspections_ok = max(inspections_completed - inspections_with_defects, 0)
+
         # Реально выявлено при обходе — по чек-листу, независимо от того,
         # оформил ли инспектор отдельное замечание (см. комментарий у поля
         # в schemas.py). Именно это число надо использовать для оценки
@@ -242,8 +280,11 @@ async def admin_dashboard(
                 Issue.site_id.in_(site_sub), Issue.status.in_(["open", "assigned", "in_work"])
             ), Issue.created_at,
         ))).scalar_one() or 0
+        # «fixed» + «control»: исправлено и ждёт приёмки / на контроле —
+        # обе стадии означают «устранено, но ещё не принято», раньше «control»
+        # выпадал из всех вёдер дашборда и такие замечания «терялись».
         issues_fixed = (await db.execute(period(
-            select(func.count()).select_from(Issue).where(Issue.site_id.in_(site_sub), Issue.status == "fixed"),
+            select(func.count()).select_from(Issue).where(Issue.site_id.in_(site_sub), Issue.status.in_(["fixed", "control"])),
             Issue.created_at,
         ))).scalar_one() or 0
         issues_revision_needed = (await db.execute(period(
@@ -254,29 +295,40 @@ async def admin_dashboard(
             select(func.count()).select_from(Issue).where(Issue.site_id.in_(site_sub), Issue.status == "closed"),
             Issue.created_at,
         ))).scalar_one() or 0
+        issues_overdue = (await db.execute(period(
+            select(func.count()).select_from(Issue).where(Issue.site_id.in_(site_sub), Issue.status == "overdue"),
+            Issue.created_at,
+        ))).scalar_one() or 0
 
         row = DashboardDistrictRow(
             district_id=d.id, district_name=d.name, total_sites=total_sites,
+            sites_inspected=sites_inspected, sites_not_inspected=sites_not_inspected,
             inspections_total=inspections_total, inspections_completed=inspections_completed,
             inspections_in_progress=inspections_in_progress,
+            inspections_ok=inspections_ok, inspections_with_defects=inspections_with_defects,
             checklist_defects=checklist_defects,
             issues_total=issues_total, issues_open=issues_open,
             issues_fixed=issues_fixed, issues_revision_needed=issues_revision_needed,
-            issues_closed=issues_closed,
+            issues_closed=issues_closed, issues_overdue=issues_overdue,
         )
         rows.append(row)
 
         # суммируем в totals
         total_row.total_sites += total_sites
+        total_row.sites_inspected += sites_inspected
+        total_row.sites_not_inspected += sites_not_inspected
         total_row.inspections_total += inspections_total
         total_row.inspections_completed += inspections_completed
         total_row.inspections_in_progress += inspections_in_progress
+        total_row.inspections_ok += inspections_ok
+        total_row.inspections_with_defects += inspections_with_defects
         total_row.checklist_defects += checklist_defects
         total_row.issues_total += issues_total
         total_row.issues_open += issues_open
         total_row.issues_fixed += issues_fixed
         total_row.issues_revision_needed += issues_revision_needed
         total_row.issues_closed += issues_closed
+        total_row.issues_overdue += issues_overdue
 
     return DashboardOut(districts=rows, totals=total_row)
 
@@ -610,24 +662,79 @@ async def export_xlsx(
                 Site.id.in_(site_sub), Site.is_active
             )
         )).scalar_one() or 0
+
+        # Охват и результат — те же определения, что на дашборде
+        # (admin_dashboard): «проверено» = РАЗНЫЕ площадки с завершённым
+        # обходом за период, «без/с нарушениями» — по наличию defect-пунктов
+        # в завершённом обходе. «Зелёные» обходы входят в «проверено» и
+        # «без нарушений» и никуда не теряются.
+        sites_inspected = (await db.execute(period(
+            select(func.count(func.distinct(Inspection.site_id)))
+            .select_from(Inspection)
+            .where(Inspection.site_id.in_(site_sub), Inspection.status.in_(INSPECTION_DONE_STATUSES)),
+            Inspection.created_at,
+        ))).scalar_one() or 0
+        sites_not_inspected = max(total_sites - sites_inspected, 0)
+
         inspected = (await db.execute(period(
             select(func.count()).select_from(Inspection).where(Inspection.site_id.in_(site_sub)),
             Inspection.created_at,
         ))).scalar_one() or 0
+
+        inspections_with_defects = (await db.execute(period(
+            select(func.count(func.distinct(Inspection.id)))
+            .select_from(Inspection)
+            .join(ChecklistAnswer, ChecklistAnswer.inspection_id == Inspection.id)
+            .where(
+                Inspection.site_id.in_(site_sub),
+                Inspection.status.in_(INSPECTION_DONE_STATUSES),
+                ChecklistAnswer.result == "defect",
+            ),
+            Inspection.created_at,
+        ))).scalar_one() or 0
+        inspections_completed = (await db.execute(period(
+            select(func.count()).select_from(Inspection).where(
+                Inspection.site_id.in_(site_sub), Inspection.status.in_(INSPECTION_DONE_STATUSES)
+            ),
+            Inspection.created_at,
+        ))).scalar_one() or 0
+        inspections_ok = max(inspections_completed - inspections_with_defects, 0)
+
         # Реально выявлено при обходе (чек-лист, result='defect') — то же
-        # число, что и checklist_defects на дешборде (см. admin_dashboard
-        # выше). Оформление замечания — отдельный необязательный шаг, эти
-        # два числа умышленно расходятся и оба нужны рядом в отчёте, иначе
-        # руководство снова будет судить о районе по неполной цифре (см.
-        # аудит статистики — районам выносили выговоры именно за это).
+        # число, что и checklist_defects на дашборде. Оформление замечания —
+        # отдельный необязательный шаг, эти два числа умышленно расходятся.
         checklist_defects = (await db.execute(period(
             select(func.count()).select_from(ChecklistAnswer)
             .join(Inspection, ChecklistAnswer.inspection_id == Inspection.id)
             .where(Inspection.site_id.in_(site_sub), ChecklistAnswer.result == "defect"),
             ChecklistAnswer.created_at,
         ))).scalar_one() or 0
+
+        # Жизненный цикл замечаний — все счётчики за период (как на дашборде),
+        # без смешивания «за период» и «сейчас»: раньше «Открыто сейчас»
+        # считалось без фильтра периода и не сходилось с «Замечаний
+        # оформлено», что выглядело как расхождение в данных.
         created = (await db.execute(period(
             select(func.count()).select_from(Issue).where(Issue.site_id.in_(site_sub)),
+            Issue.created_at,
+        ))).scalar_one() or 0
+        open_now = (await db.execute(period(
+            select(func.count()).select_from(Issue).where(
+                Issue.site_id.in_(site_sub),
+                Issue.status.in_(["open", "assigned", "in_work"]),
+            ),
+            Issue.created_at,
+        ))).scalar_one() or 0
+        fixed = (await db.execute(period(
+            select(func.count()).select_from(Issue).where(
+                Issue.site_id.in_(site_sub), Issue.status.in_(["fixed", "control"])
+            ),
+            Issue.created_at,
+        ))).scalar_one() or 0
+        revision = (await db.execute(period(
+            select(func.count()).select_from(Issue).where(
+                Issue.site_id.in_(site_sub), Issue.status == "revision_needed"
+            ),
             Issue.created_at,
         ))).scalar_one() or 0
         closed = (await db.execute(period(
@@ -636,18 +743,17 @@ async def export_xlsx(
             ),
             Issue.created_at,
         ))).scalar_one() or 0
-        open_now = (await db.execute(
-            select(func.count()).select_from(Issue).where(
-                Issue.site_id.in_(site_sub),
-                Issue.status.in_(["open", "assigned", "in_work"]),
-            )
-        )).scalar_one() or 0
-        overdue = (await db.execute(
+        overdue = (await db.execute(period(
             select(func.count()).select_from(Issue).where(
                 Issue.site_id.in_(site_sub), Issue.status == "overdue"
-            )
-        )).scalar_one() or 0
-        summary_data.append((d.name, total_sites, inspected, checklist_defects, created, closed, open_now, overdue))
+            ),
+            Issue.created_at,
+        ))).scalar_one() or 0
+        summary_data.append((
+            d.name, total_sites, sites_inspected, sites_not_inspected,
+            inspected, inspections_ok, inspections_with_defects,
+            checklist_defects, created, open_now, fixed, revision, closed, overdue,
+        ))
 
     # ── Динамика по дням (инспектор × дата) ──
     # Группируем по User.id, а не по ФИО — у full_name нет уникальности в
@@ -730,12 +836,29 @@ async def export_xlsx(
     # ── Обзор — тот же лист, что в generate_summary_report.py (раньше
     # доступен только через ручной запуск скрипта на сервере) ──
     now_str = datetime.now(MSK).strftime("%d.%m.%Y %H:%M")
-    total_sites_all = sum(x[1] for x in summary_data) if summary_data else 0
-    total_checklist_defects_all = sum(x[3] for x in summary_data) if summary_data else 0
-    total_insp_all = len(insp_data)
-    total_insp_done_all = sum(1 for r in insp_data if r[6] != "В процессе")
-    total_iss_all = len(iss_data)
-    total_iss_closed_all = sum(1 for r in iss_data if r[6] == "Закрыто")
+    # Индексы кортежей summary_data (0-based):
+    # 0 name, 1 total_sites, 2 sites_inspected, 3 sites_not_inspected,
+    # 4 inspected, 5 inspections_ok, 6 inspections_with_defects,
+    # 7 checklist_defects, 8 created, 9 open, 10 fixed, 11 revision,
+    # 12 closed, 13 overdue
+    def _sum(idx):
+        return sum(x[idx] for x in summary_data) if summary_data else 0
+
+    total_sites_all = _sum(1)
+    sites_inspected_all = _sum(2)
+    sites_not_inspected_all = _sum(3)
+    total_insp_all = _sum(4)
+    inspections_ok_all = _sum(5)
+    inspections_with_defects_all = _sum(6)
+    total_checklist_defects_all = _sum(7)
+    total_iss_all = _sum(8)
+    total_iss_open_all = _sum(9)
+    total_iss_fixed_all = _sum(10)
+    total_iss_revision_all = _sum(11)
+    total_iss_closed_all = _sum(12)
+    total_iss_overdue_all = _sum(13)
+    total_insp_done_all = inspections_ok_all + inspections_with_defects_all
+    total_insp_in_progress_all = total_insp_all - total_insp_done_all
 
     ov = wb.active
     ov.title = "Обзор"
@@ -774,10 +897,12 @@ async def export_xlsx(
     _row("Ключевые цифры", style="header")
     _row("Регистрация", f"{total_reg} / {total_all_invited} ({overall_reg_pct:.0%})", style="data")
     _row("Площадок в системе", total_sites_all, style="data")
-    _row("Обходов всего / завершено", f"{total_insp_all} / {total_insp_done_all} (в процессе: {total_insp_all - total_insp_done_all})", style="data")
+    _row("Проверено площадок / не проверено", f"{sites_inspected_all} / {sites_not_inspected_all}", style="data")
+    _row("Обходов всего / завершено", f"{total_insp_all} / {total_insp_done_all} (в процессе: {total_insp_in_progress_all})", style="data")
+    _row("Обходов без нарушений / с нарушениями", f"{inspections_ok_all} / {inspections_with_defects_all}", style="data")
     _row("Найдено дефектов по чек-листу / замечаний оформлено", f"{total_checklist_defects_all} / {total_iss_all}", style="data")
-    _row("Замечаний открыто сейчас / закрыто", f"{total_iss_all - total_iss_closed_all} / {total_iss_closed_all}", style="data")
-    _row("Оформление замечания — отдельный шаг сверх чек-листа, не то же самое, что число найденных дефектов.", style="data")
+    _row("Замечаний: в работе / устранено / принято / просрочено", f"{total_iss_open_all} / {total_iss_fixed_all} / {total_iss_closed_all} / {total_iss_overdue_all}", style="data")
+    _row("«Проверено» считает площадки, а не записи обходов; «без нарушений» — завершённые обходы без дефектов: «зелёные» обходы входят сюда и никуда не теряются.", style="data")
     _row()
     _row("Требуют внимания в первую очередь", style="header")
 
@@ -808,7 +933,7 @@ async def export_xlsx(
     for name, desc in [
         ("Регистрация", "Кто зарегистрирован/нет по районам, поимённо, худшие районы сверху"),
         ("Задания", "Снимок сейчас: кто отвечает за площадку и когда там были в последний раз"),
-        ("Сводка по районам", "Площадки/обходы, найденные дефекты и оформленные замечания за период, в одной таблице"),
+        ("Сводка по районам", "Охват (проверено/не проверено), результат обходов (без/с нарушениями) и жизненный цикл замечаний за период, в одной таблице"),
         ("Обходы", "Детальный лог всех обходов: инспектор, площадка, статус, ОК/дефектов/фото"),
         ("Нарушения по чек-листу", "Разбивка нарушений по категориям и конкретным пунктам чек-листа"),
         ("Замечания", "Все зафиксированные замечания с критичностью и статусом"),
@@ -820,28 +945,39 @@ async def export_xlsx(
     for col, w in zip("ABCDEF", (55, 30, 20, 15, 15, 15)):
         ov.column_dimensions[col].width = w
 
-    ov["H1"] = "Обходы"
+    ov["H1"] = "Площадки"
     style_header_cell(ov["H1"], fill=False)
     style_header_cell(ov["I1"], fill=False)
     ov.merge_cells("H1:I1")
-    ov["H2"], ov["I2"] = "Завершено", total_insp_done_all
-    ov["H3"], ov["I3"] = "В процессе", total_insp_all - total_insp_done_all
+    ov["H2"], ov["I2"] = "Проверено", sites_inspected_all
+    ov["H3"], ov["I3"] = "Не проверено", sites_not_inspected_all
     for cell in (ov["H2"], ov["I2"], ov["H3"], ov["I3"]):
         style_data_cell(cell)
-    ov["H5"] = "Замечания"
+    ov["H5"] = "Обходы"
     style_header_cell(ov["H5"], fill=False)
     style_header_cell(ov["I5"], fill=False)
     ov.merge_cells("H5:I5")
-    ov["H6"], ov["I6"] = "Открыто", total_iss_all - total_iss_closed_all
-    ov["H7"], ov["I7"] = "Закрыто", total_iss_closed_all
+    ov["H6"], ov["I6"] = "Без нарушений", inspections_ok_all
+    ov["H7"], ov["I7"] = "С нарушениями", inspections_with_defects_all
     for cell in (ov["H6"], ov["I6"], ov["H7"], ov["I7"]):
         style_data_cell(cell)
-    if total_insp_all > 0:
-        _pie(ov, "Обходы: завершено / в процессе",
+    ov["H9"] = "Замечания"
+    style_header_cell(ov["H9"], fill=False)
+    style_header_cell(ov["I9"], fill=False)
+    ov.merge_cells("H9:I9")
+    ov["H10"], ov["I10"] = "В работе", total_iss_open_all
+    ov["H11"], ov["I11"] = "Принято", total_iss_closed_all
+    for cell in (ov["H10"], ov["I10"], ov["H11"], ov["I11"]):
+        style_data_cell(cell)
+    if sites_inspected_all + sites_not_inspected_all > 0:
+        _pie(ov, "Площадки: проверено / не проверено",
              Reference(ov, min_col=8, min_row=2, max_row=3), Reference(ov, min_col=9, min_row=2, max_row=3), "K2")
-    if total_iss_all > 0:
-        _pie(ov, "Замечания: открыто / закрыто",
+    if inspections_ok_all + inspections_with_defects_all > 0:
+        _pie(ov, "Обходы: без / с нарушениями",
              Reference(ov, min_col=8, min_row=6, max_row=7), Reference(ov, min_col=9, min_row=6, max_row=7), "K16")
+    if total_iss_open_all + total_iss_closed_all > 0:
+        _pie(ov, "Замечания: в работе / принято",
+             Reference(ov, min_col=8, min_row=10, max_row=11), Reference(ov, min_col=9, min_row=10, max_row=11), "K30")
 
     # ── Регистрация ──
     reg_ws = wb.create_sheet("Регистрация")
@@ -924,8 +1060,10 @@ async def export_xlsx(
         ["Район", "Двор", "Тип площадки", "Назначенный инспектор", "Телефон", "Последний обход", "Статус последнего обхода"],
         assignment_data, [24, 40, 20, 26, 16, 18, 22])
     _sheet(wb, "Сводка по районам",
-        ["Район", "Всего площадок", "Обходов за период", "Найдено дефектов (чек-лист)", "Замечаний оформлено", "Закрыто", "Открыто сейчас", "Просрочено"],
-        summary_data, [24, 15, 17, 24, 18, 10, 14, 12])
+        ["Район", "Всего площадок", "Проверено", "Не проверено", "Обходов",
+         "Без нарушений", "С нарушениями", "Дефектов", "Замечаний",
+         "В работе", "Устранено", "Доработка", "Принято", "Просрочено"],
+        summary_data, [24, 15, 12, 12, 10, 12, 13, 10, 11, 10, 11, 10, 10, 11])
     _sheet(wb, "Обходы",
         ["Дата", "Район", "Двор", "Тип площадки", "Инспектор", "Телефон", "Статус", "Начат", "Завершён", "Пунктов ОК", "Дефектов", "Фото", "Комментарий"],
         insp_data, [16, 20, 40, 20, 24, 16, 14, 16, 16, 12, 10, 7, 40])

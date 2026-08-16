@@ -243,9 +243,16 @@ export interface DashboardDistrictRow {
   district_id: string
   district_name: string
   total_sites: number
+  // Охват: сколько РАЗНЫХ площадок доведено до финального статуса за период.
+  // «Зелёные» обходы идут в «проверено», даже если дефектов ноль.
+  sites_inspected: number
+  sites_not_inspected: number
   inspections_total: number
   inspections_completed: number
   inspections_in_progress: number
+  // Результат завершённых обходов: без нарушений vs с нарушениями.
+  inspections_ok: number
+  inspections_with_defects: number
   // Реально выявлено при обходе (чек-лист, result='defect') — не зависит от
   // того, оформлено ли отдельное замечание. См. issues_total ниже.
   checklist_defects: number
@@ -254,6 +261,7 @@ export interface DashboardDistrictRow {
   issues_fixed: number
   issues_revision_needed: number
   issues_closed: number
+  issues_overdue: number
 }
 
 export interface DashboardOut {

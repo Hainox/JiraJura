@@ -406,9 +406,19 @@ class DashboardDistrictRow(BaseModel):
     district_id: UUID
     district_name: str
     total_sites: int
+    # Охват: сколько РАЗНЫХ площадок доведено до финального статуса за период
+    # (а не сколько обходов записано). «Зелёные» обходы никуда не теряются —
+    # они дают +1 к «проверено», даже если дефектов ноль.
+    sites_inspected: int
+    sites_not_inspected: int
     inspections_total: int
     inspections_completed: int
     inspections_in_progress: int
+    # Результат завершённых обходов: без нарушений vs с нарушениями (есть
+    # хотя бы один defect-пункт чек-листа). Виден сразу в момент обхода, не
+    # дожидаясь, пока прикрепят фото исправления и закроют замечание.
+    inspections_ok: int
+    inspections_with_defects: int
     # Реально выявлено при обходе (чек-лист, result='defect') — не зависит от
     # того, оформил ли инспектор отдельное замечание. См. issues_total ниже:
     # оформление замечания — необязательный второй шаг, и по нему одному
@@ -419,6 +429,7 @@ class DashboardDistrictRow(BaseModel):
     issues_fixed: int
     issues_revision_needed: int
     issues_closed: int
+    issues_overdue: int
 
 
 class DashboardOut(BaseModel):

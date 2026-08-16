@@ -31,6 +31,7 @@ const routes: Array<{ pattern: string; load: RouteLoader }> = [
   { pattern: '/admin/dashboard', load: () => import('@/pages/DashboardPage') },
   { pattern: '/admin/feedback', load: () => import('@/pages/AdminFeedbackPage') },
   { pattern: '/admin/audit', load: () => import('@/pages/AuditPage') },
+  { pattern: '/admin/login-history', load: () => import('@/pages/LoginHistoryPage') },
   { pattern: '/admin/system', load: () => import('@/pages/AdminSystemPage') },
 ]
 

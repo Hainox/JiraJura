@@ -29,6 +29,14 @@ class Settings(BaseSettings):
     # публичный эндпоинт, спамер мог бы без лимита плодить строки в БД.
     FEEDBACK_SUBMIT_MAX_PER_WINDOW: int = 10
     FEEDBACK_SUBMIT_RATE_WINDOW_SECONDS: int = 60
+    # Rate-limit и lockout для POST /auth/login. Считаем только НЕУДАЧНЫЕ
+    # попытки (успех сбрасывает счётчик аккаунта), окно — 15 минут: защита от
+    # перебора паролей без блокировки обычного утреннего входа 200+ человек.
+    # Два измерения в одном окне: по аккаунту (не дать долбить один логин) и
+    # по IP (не дать перебирать много логинов с одного адреса).
+    LOGIN_MAX_ATTEMPTS_PER_LOGIN: int = 5
+    LOGIN_MAX_ATTEMPTS_PER_IP: int = 20
+    LOGIN_RATE_WINDOW_SECONDS: int = 900
 
     model_config = {"env_file": ".env"}
 

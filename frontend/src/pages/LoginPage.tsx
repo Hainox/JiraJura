@@ -35,9 +35,12 @@ export default function LoginPage() {
       if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'ECONNABORTED') {
         toast.error('Сервер не отвечает. Проверьте подключение к интернету и попробуйте снова.')
       } else if (err && typeof err === 'object' && 'response' in err) {
-        const httpErr = err as { response?: { status: number } }
+        const httpErr = err as { response?: { status: number; data?: { detail?: string } } }
         if (httpErr.response?.status === 401) {
           toast.error('Неверный логин или пароль')
+        } else if (httpErr.response?.status === 429) {
+          // rate-limit/lockout входа — показываем человеческий текст с бэка
+          toast.error(httpErr.response.data?.detail || 'Слишком много попыток входа — попробуйте позже')
         } else {
           toast.error('Ошибка сервера. Попробуйте позже.')
         }

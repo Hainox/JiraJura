@@ -3,10 +3,11 @@ import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.models import User, UserInvite, Site, Courtyard
 from app.schemas import (
@@ -16,9 +17,11 @@ from app.schemas import (
 )
 from app.services.auth import (
     verify_password, hash_password, create_access_token, get_current_user,
+    validate_password_strength,
 )
 from app.services.permissions import require_role
 from app.services.audit import log_action
+from app.services.rate_limit import RateLimiter
 
 router = APIRouter()
 
@@ -32,6 +35,31 @@ ROLES = ("inspector", "reviewer", "admin")
 # при перепечатывании/чтении, а не гипотетический краевой случай.
 _PASSWORD_ALPHABET = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789"
 
+# Lockout на /login: считаем только неудачные попытки (успех сбрасывает
+# счётчик аккаунта, но не IP). Синглтоны в памяти процесса — на проде api
+# один uvicorn-воркер (см. app/services/rate_limit.py).
+_login_ip_limiter = RateLimiter(
+    max_requests=settings.LOGIN_MAX_ATTEMPTS_PER_IP,
+    window_seconds=settings.LOGIN_RATE_WINDOW_SECONDS,
+)
+_login_account_limiter = RateLimiter(
+    max_requests=settings.LOGIN_MAX_ATTEMPTS_PER_LOGIN,
+    window_seconds=settings.LOGIN_RATE_WINDOW_SECONDS,
+)
+
+
+def _client_ip(request: Request) -> str:
+    """X-Real-IP выставляет nginx как $remote_addr (не берёт заголовок от
+    клиента), поэтому он точнее X-Forwarded-For. Дублирует helper из
+    feedback.py — логика одинаковая, а тащить сюда роутер обращений не стоит.
+    """
+    x_real_ip = request.headers.get("x-real-ip")
+    if x_real_ip:
+        return x_real_ip.strip()
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
+
 
 def _gen_readable_password(length: int = 12) -> str:
     return "".join(secrets.choice(_PASSWORD_ALPHABET) for _ in range(length))
@@ -42,22 +70,75 @@ def _hash_token(token: str) -> str:
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
-    # логин без учёта регистра: логины вида "AbdulloevRM" легко превращаются
+async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    # Логин без учёта регистра: логины вида "AbdulloevRM" легко превращаются
     # в "abdulloevrm" из-за автокапитализации/автозамены на телефоне —
-    # это не должно приводить к "неверный логин или пароль"
-    result = await db.execute(
-        select(User).where(func.lower(User.login) == data.login.strip().lower(), User.is_active)
-    )
-    user = result.scalar_one_or_none()
-    if not user or not verify_password(data.password, user.password_hash):
+    # это не должно приводить к "неверный логин или пароль". Пробелы по
+    # краям уже убраны схемой (strip_whitespace).
+    login_norm = data.login.strip().lower()
+    ip = _client_ip(request)
+    ip_key = f"login:ip:{ip}"
+    acct_key = f"login:acct:{login_norm}"
+
+    # Lockout проверяем ДО проверки пароля: пока окно не истекло, отклоняем
+    # даже верный пароль — иначе перебор продолжился бы в обход лимита.
+    if _login_ip_limiter.is_blocked(ip_key) or _login_account_limiter.is_blocked(acct_key):
+        raise HTTPException(
+            429,
+            "Слишком много попыток входа — попробуйте позже",
+            headers={"Retry-After": str(settings.LOGIN_RATE_WINDOW_SECONDS)},
+        )
+
+    # Без фильтра is_active: деактивированный аккаунт логируем отдельно от
+    # «не существует», но клиенту отдаём тот же общий ответ — не раскрываем,
+    # существует ли логин и активен ли он.
+    user = (await db.execute(
+        select(User).where(func.lower(User.login) == login_norm)
+    )).scalar_one_or_none()
+
+    if user is None:
+        reason = "user_not_found"
+    elif not user.is_active:
+        reason = "inactive"
+    elif not verify_password(data.password, user.password_hash):
+        reason = "bad_password"
+    else:
+        reason = None
+
+    if reason is not None:
+        _login_ip_limiter.record(ip_key)
+        _login_account_limiter.record(acct_key)
+        await log_action(
+            db,
+            str(user.id) if user else None,
+            "login_failed",
+            "auth",
+            str(user.id) if user else None,
+            {"login": login_norm, "ip": ip, "reason": reason},
+        )
+        await db.commit()
         raise HTTPException(status_code=401, detail="Неверный логин или пароль")
 
+    # Успех: снимаем lockout аккаунта. IP-счётчик не трогаем — один успешный
+    # вход не должен «обнулять» перебирающий адрес.
+    _login_account_limiter.reset(acct_key)
+
     token = create_access_token(str(user.id), user.role)
+    user_out = UserOut.model_validate(user)
+    must_change = bool(user.must_change_password)
+    await log_action(
+        db,
+        str(user.id),
+        "login_success",
+        "auth",
+        str(user.id),
+        {"login": login_norm, "ip": ip},
+    )
+    await db.commit()
     return TokenResponse(
         access_token=token,
-        user=UserOut.model_validate(user),
-        must_change_password=bool(user.must_change_password),
+        user=user_out,
+        must_change_password=must_change,
     )
 
 
@@ -128,7 +209,7 @@ async def create_invite(
     expires_at = datetime.now(timezone.utc) + INVITE_EXPIRY
 
     invite = UserInvite(
-        login=data.login,
+        login=data.login.strip(),
         full_name=data.full_name,
         role=data.role,
         district_id=data.district_id,
@@ -203,6 +284,10 @@ async def complete_invite(
     db: AsyncSession = Depends(get_db),
 ):
     invite = await _get_valid_invite(token, db)
+
+    err = validate_password_strength(data.password, login=invite.login)
+    if err:
+        raise HTTPException(400, err)
 
     user = User(
         login=invite.login,
@@ -378,6 +463,11 @@ async def change_password(
     if not current_user.must_change_password:
         if not data.current_password or not verify_password(data.current_password, current_user.password_hash):
             raise HTTPException(status_code=401, detail="Неверный текущий пароль")
+    err = validate_password_strength(data.new_password, login=current_user.login)
+    if err:
+        raise HTTPException(400, err)
+    if verify_password(data.new_password, current_user.password_hash):
+        raise HTTPException(400, "Новый пароль должен отличаться от текущего")
     current_user.password_hash = hash_password(data.new_password)
     current_user.must_change_password = False
     await db.commit()

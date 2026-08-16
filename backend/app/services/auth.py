@@ -62,6 +62,44 @@ def verify_password(plain: str, hashed: str) -> bool:
         return False
 
 
+MIN_PASSWORD_LENGTH = 8
+MAX_PASSWORD_LENGTH = 72  # bcrypt учитывает только первые 72 байта — длиннее бессмысленно и опасно
+
+# Логины в этой системе — транслитерация ФИО, поэтому самый вероятный слабый
+# пароль — «то же самое, что логин» или очевидная заготовка. Полный словарь
+# не тянем (для полевых пользователей важнее не заблокировать вход), но
+# самые тривиальные заготовки отсекаем.
+_COMMON_PASSWORDS = frozenset({
+    "password", "пароль", "пароль123", "qwerty", "qwerty123", "qwerty1234",
+    "12345678", "123456789", "1234567890", "11111111", "abcdefgh",
+    "admin123", "adminadmin", "letmein", "iloveyou", "dragon123",
+})
+
+
+def validate_password_strength(password: str, login: str | None = None) -> str | None:
+    """Проверка стойкости пароля; возвращает текст ошибки или None, если ок.
+
+    Сознательно не требует спецсимволы: пароли вводят на телефонах в поле, и
+    жёсткая политика порождает «P@ssw0rd1» на стикерах. Вместо этого — длина
+    (NIST: длина важнее сложности), запрет совпадения с логином и отсев
+    тривиальных заготовок.
+    """
+    pw = password.strip()
+    if len(pw) < MIN_PASSWORD_LENGTH:
+        return f"Пароль должен быть не короче {MIN_PASSWORD_LENGTH} символов"
+    if len(pw) > MAX_PASSWORD_LENGTH:
+        return f"Пароль должен быть не длиннее {MAX_PASSWORD_LENGTH} символов"
+    if login and pw.lower() == login.strip().lower():
+        return "Пароль не должен совпадать с логином"
+    if pw.lower() in _COMMON_PASSWORDS:
+        return "Слишком простой пароль — выберите другой"
+    has_letter = any(ch.isalpha() for ch in pw)
+    has_digit = any(ch.isdigit() for ch in pw)
+    if len(pw) < 12 and not (has_letter and has_digit):
+        return "Короткий пароль должен содержать и буквы, и цифры (или увеличьте длину до 12 символов)"
+    return None
+
+
 def create_access_token(user_id: str, role: str) -> str:
     payload = {
         "sub": user_id,

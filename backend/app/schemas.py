@@ -2,17 +2,25 @@
 from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Literal, Optional
+from typing import Annotated, Literal, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 
 
 # ── Аутентификация ─────────────────────────────────────────────
 
+# Логин: обрезаем случайные пробелы по краям (копипаст), 3..50 символов.
+# Сознательно НЕ ограничиваем алфавит: в истории есть логины-кириллица и
+# логины-транслитерации, жёсткий regex залочил бы уже существующие аккаунты.
+Login = Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=50)]
+
+
 class LoginRequest(BaseModel):
-    login: str
-    password: str
+    login: Login
+    # max_length — только против гигантского тела запроса; проверку пароля
+    # делаем как и раньше (bcrypt учитывает первые 72 байта).
+    password: str = Field(min_length=1, max_length=200)
 
 
 class TokenResponse(BaseModel):
@@ -61,7 +69,7 @@ class PasswordResetOut(BaseModel):
 
 
 class ChangePasswordRequest(BaseModel):
-    new_password: str = Field(min_length=8, max_length=200)
+    new_password: str = Field(min_length=8, max_length=72)
     # Не нужен при принудительной смене после сброса админом — пользователь
     # только что подтвердил временный пароль самим входом. Обязателен при
     # обычной самостоятельной смене (см. change_password) — иначе кто угодно
@@ -73,7 +81,7 @@ class ChangePasswordRequest(BaseModel):
 # ── Приглашения на регистрацию ────────────────────────────────
 
 class UserInviteCreate(BaseModel):
-    login: str = Field(min_length=3, max_length=50)
+    login: Login
     full_name: str = Field(min_length=1, max_length=200)
     role: str
     district_id: Optional[UUID] = None
@@ -111,7 +119,7 @@ class UserInvitePreview(BaseModel):
 
 
 class InviteCompleteRequest(BaseModel):
-    password: str = Field(min_length=8, max_length=200)
+    password: str = Field(min_length=8, max_length=72)
 
 
 # ── Районы ─────────────────────────────────────────────────────

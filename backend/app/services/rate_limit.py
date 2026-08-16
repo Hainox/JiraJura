@@ -76,3 +76,33 @@ class RateLimiter:
                 return False
             self._windows[key] = (start, count, acc + nbytes)
             return True
+
+    def is_blocked(self, key: str) -> bool:
+        """True, если по ключу уже исчерпан лимит в текущем окне — без учёта
+        самого вызова (peek). Используется для lockout-схемы входа: сначала
+        смотрим «заблокирован ли?», а счётчик увеличиваем только на
+        фактической неудаче через record() ниже.
+        """
+        now = time.monotonic()
+        with self._lock:
+            start, count, _ = self._windows.get(key, (now, 0, 0))
+            if now - start >= self.window_seconds:
+                return False
+            return count >= self.max_requests
+
+    def record(self, key: str) -> None:
+        """Зафиксировать событие (например, неудачную попытку входа) —
+        увеличивает счётчик окна, не отклоняя сам вызов.
+        """
+        now = time.monotonic()
+        with self._lock:
+            start, count, nbytes = self._windows.get(key, (now, 0, 0))
+            if now - start >= self.window_seconds:
+                start, count, nbytes = now, 0, 0
+            self._windows[key] = (start, count + 1, nbytes)
+            self._purge_locked(now)
+
+    def reset(self, key: str) -> None:
+        """Сбросить счётчик ключа (успешный вход снимает lockout аккаунта)."""
+        with self._lock:
+            self._windows.pop(key, None)

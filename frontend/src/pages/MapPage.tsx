@@ -241,7 +241,7 @@ export default function MapPage() {
         </div>
         <div className="flex gap-1">
           {user?.role === 'inspector' && (
-            <button onClick={() => navigate('/my-inspections')} className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="История обходов">
+            <button onClick={() => navigate('/my-inspections')} data-prefetch="/my-inspections" className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="История обходов">
               <History className="w-5 h-5" />
             </button>
           )}
@@ -250,16 +250,16 @@ export default function MapPage() {
               роуты /dashboard и /issues (roles={['reviewer']} в App.tsx). */}
           {user?.role === 'reviewer' && (
             <>
-              <button onClick={() => navigate('/dashboard')} className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="Дашборд">
+              <button onClick={() => navigate('/dashboard')} data-prefetch="/dashboard" className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="Дашборд">
                 <BarChart3 className="w-5 h-5" />
               </button>
-              <button onClick={() => navigate('/issues')} className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="Замечания">
+              <button onClick={() => navigate('/issues')} data-prefetch="/issues" className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="Замечания">
                 <AlertCircle className="w-5 h-5" />
               </button>
             </>
           )}
           {user?.role === 'admin' && (
-            <button onClick={() => navigate('/admin')} className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="Админ-панель">
+            <button onClick={() => navigate('/admin')} data-prefetch="/admin" className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="Админ-панель">
               <Users className="w-5 h-5" />
             </button>
           )}
@@ -275,7 +275,7 @@ export default function MapPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
             </svg>
           </button>
-          <button onClick={() => navigate('/profile')} className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="Профиль">
+          <button onClick={() => navigate('/profile')} data-prefetch="/profile" className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="Профиль">
             <UserCircle className="w-5 h-5" />
           </button>
           <button onClick={() => { logoutStore(); navigate('/login') }} className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="Выйти">
@@ -578,7 +578,7 @@ export default function MapPage() {
                           Обошёл: {coverage.inspectorName}, {new Date(coverage.date).toLocaleDateString('ru')}
                         </div>
                       )}
-                      <button onClick={() => navigate(`/sites/${s.id}`)} className="mt-2 text-xs btn-primary py-1 px-3 w-full flex items-center justify-center gap-1">
+                      <button onClick={() => navigate(`/sites/${s.id}`)} data-prefetch={`/sites/${s.id}`} className="mt-2 text-xs btn-primary py-1 px-3 w-full flex items-center justify-center gap-1">
                         Открыть <ChevronRight className="w-3 h-3" />
                       </button>
                     </div>
@@ -590,7 +590,7 @@ export default function MapPage() {
         ) : (
           <div ref={listRef} onScroll={handleListScroll} className="overflow-y-auto h-full p-3 space-y-2">
             {sites.map((s) => (
-              <button key={s.id} onClick={() => navigate(`/sites/${s.id}`)} className="card w-full text-left hover:border-primary-300 transition-colors">
+              <button key={s.id} onClick={() => navigate(`/sites/${s.id}`)} data-prefetch={`/sites/${s.id}`} className="card w-full text-left hover:border-primary-300 transition-colors">
                 <div className="flex items-start gap-3">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white text-lg shrink-0 ${s.type === CHILD_TYPE ? 'bg-blue-600' : 'bg-green-600'}`}>
                     {s.type === CHILD_TYPE ? 'Д' : 'С'}

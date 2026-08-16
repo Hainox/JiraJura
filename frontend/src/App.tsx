@@ -6,6 +6,8 @@ import { useDemoModeStore } from '@/stores/demoMode'
 import { authApi } from '@/lib/api'
 import type { Role } from '@/types'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
+import RoutePrefetcher from '@/components/RoutePrefetcher'
+import { routeLoaders } from '@/lib/routePreload'
 
 // Страницы грузятся лениво: каждый роут — отдельный JS-чанк, который Vite
 // отдаёт только при первом переходе. Первый экран (логин) и главный бандл
@@ -13,28 +15,28 @@ import { ErrorBoundary } from '@/components/ErrorBoundary'
 // загружается, пока пользователь не открыл карту. Все чанки прекэшируются
 // service worker'ом при первой установке PWA (globPatterns в vite.config.ts),
 // поэтому офлайн-режим после первого запуска не страдает.
-const LoginPage = lazy(() => import('@/pages/LoginPage'))
-const RegisterPage = lazy(() => import('@/pages/RegisterPage'))
-const FeedbackFormPage = lazy(() => import('@/pages/FeedbackFormPage'))
-const AdminFeedbackPage = lazy(() => import('@/pages/AdminFeedbackPage'))
-const ChangePasswordPage = lazy(() => import('@/pages/ChangePasswordPage'))
-const MapPage = lazy(() => import('@/pages/MapPage'))
-const SiteDetailPage = lazy(() => import('@/pages/SiteDetailPage'))
-const InspectionPage = lazy(() => import('@/pages/InspectionPage'))
-const SummaryPage = lazy(() => import('@/pages/SummaryPage'))
-const AdminUsersPage = lazy(() => import('@/pages/AdminUsersPage'))
-const IssuesPage = lazy(() => import('@/pages/IssuesPage'))
-const IssueFixPage = lazy(() => import('@/pages/IssueFixPage'))
-const ProfilePage = lazy(() => import('@/pages/ProfilePage'))
-const AuditPage = lazy(() => import('@/pages/AuditPage'))
-const DashboardPage = lazy(() => import('@/pages/DashboardPage'))
-const MyInspectionsPage = lazy(() => import('@/pages/MyInspectionsPage'))
-const AdminPanelPage = lazy(() => import('@/pages/AdminPanelPage'))
-const AdminSitesPage = lazy(() => import('@/pages/AdminSitesPage'))
-const AdminChecklistsPage = lazy(() => import('@/pages/AdminChecklistsPage'))
-const AdminReviewsPage = lazy(() => import('@/pages/AdminReviewsPage'))
-const AdminIssueControlPage = lazy(() => import('@/pages/AdminIssueControlPage'))
-const AdminSystemPage = lazy(() => import('@/pages/AdminSystemPage'))
+const LoginPage = lazy(routeLoaders['/login'])
+const RegisterPage = lazy(routeLoaders['/register/:token'])
+const FeedbackFormPage = lazy(routeLoaders['/feedback'])
+const AdminFeedbackPage = lazy(routeLoaders['/admin/feedback'])
+const ChangePasswordPage = lazy(routeLoaders['/change-password'])
+const MapPage = lazy(routeLoaders['/'])
+const SiteDetailPage = lazy(routeLoaders['/sites/:id'])
+const InspectionPage = lazy(routeLoaders['/inspections/:id'])
+const SummaryPage = lazy(routeLoaders['/inspections/:id/summary'])
+const AdminUsersPage = lazy(routeLoaders['/admin/users'])
+const IssuesPage = lazy(routeLoaders['/issues'])
+const IssueFixPage = lazy(routeLoaders['/issues/:id'])
+const ProfilePage = lazy(routeLoaders['/profile'])
+const AuditPage = lazy(routeLoaders['/admin/audit'])
+const DashboardPage = lazy(routeLoaders['/dashboard'])
+const MyInspectionsPage = lazy(routeLoaders['/my-inspections'])
+const AdminPanelPage = lazy(routeLoaders['/admin'])
+const AdminSitesPage = lazy(routeLoaders['/admin/sites'])
+const AdminChecklistsPage = lazy(routeLoaders['/admin/checklists'])
+const AdminReviewsPage = lazy(routeLoaders['/admin/reviews'])
+const AdminIssueControlPage = lazy(routeLoaders['/admin/control'])
+const AdminSystemPage = lazy(routeLoaders['/admin/system'])
 
 // Пока чанк страницы скачивается, показываем аккуратный спиннер вместо
 // пустого экрана. flex-1 — растягивается на оставшуюся высоту под
@@ -96,6 +98,7 @@ export default function App() {
   const demoMode = useDemoModeStore((s) => s.enabled)
   return (
     <ErrorBoundary>
+      <RoutePrefetcher />
       <div className="h-full flex flex-col bg-gray-50">
         {demoMode && (
           <div className="bg-amber-500 text-amber-950 text-xs font-semibold text-center py-1 shrink-0">

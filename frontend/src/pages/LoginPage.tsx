@@ -86,7 +86,7 @@ export default function LoginPage() {
               required
             />
           </div>
-          <button type="submit" disabled={loading} className="btn-primary w-full">
+          <button type="submit" disabled={loading} data-prefetch="/" className="btn-primary w-full">
             {loading ? 'Вход...' : 'Войти'}
           </button>
         </form>
@@ -96,6 +96,7 @@ export default function LoginPage() {
             другим способом, если человек ещё не залогинен. */}
         <button
           onClick={() => navigate('/feedback')}
+          data-prefetch="/feedback"
           className="w-full mt-4 flex items-center justify-center gap-1.5 text-sm font-medium text-white bg-white/15 hover:bg-white/25 border border-white/30 rounded-lg py-2.5 transition-colors"
         >
           <MessageSquareWarning className="w-4 h-4" />

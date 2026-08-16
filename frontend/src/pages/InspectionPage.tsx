@@ -378,7 +378,7 @@ export default function InspectionPage() {
     <div className="h-full flex flex-col bg-gray-50">
       {/* Header */}
       <div className="bg-primary-800 text-white px-4 py-3 flex items-center gap-3 shrink-0">
-        <button onClick={() => navigate(`/sites/${inspection.site_id}`)} className="p-1 -ml-1 hover:bg-primary-700 rounded-lg">
+        <button onClick={() => navigate(`/sites/${inspection.site_id}`)} data-prefetch={`/sites/${inspection.site_id}`} className="p-1 -ml-1 hover:bg-primary-700 rounded-lg">
           <ArrowLeft className="w-5 h-5" />
         </button>
         <div className="flex-1 min-w-0">

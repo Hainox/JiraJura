@@ -105,7 +105,7 @@ export default function SiteDetailPage() {
     <div className="h-full flex flex-col bg-gray-50">
       {/* Header */}
       <div className="bg-primary-800 text-white px-4 py-3 flex items-center gap-3 shrink-0">
-        <button onClick={() => navigate('/')} className="p-1 -ml-1 hover:bg-primary-700 rounded-lg">
+        <button onClick={() => navigate('/')} data-prefetch="/" className="p-1 -ml-1 hover:bg-primary-700 rounded-lg">
           <ArrowLeft className="w-5 h-5" />
         </button>
         <div className="flex-1 min-w-0">
@@ -203,7 +203,7 @@ export default function SiteDetailPage() {
               {inspections.map((insp) => (
                 <button
                   key={insp.id}
-                  onClick={() => navigate(`/inspections/${insp.id}`)}
+                  onClick={() => navigate(`/inspections/${insp.id}`)} data-prefetch={`/inspections/${insp.id}`}
                   className="w-full text-left p-3 rounded-lg border border-gray-200 hover:border-primary-300 transition-colors"
                 >
                   <div className="flex items-center justify-between">

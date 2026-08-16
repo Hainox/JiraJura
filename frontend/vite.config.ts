@@ -45,11 +45,18 @@ export default defineConfig({
             handler: 'NetworkOnly',
           },
           {
+            // Офлайн-кэш тайлов OSM: тайлы неизменяемы, поэтому CacheFirst
+            // (отдаём из кэша, в сеть не ходим) — карта продолжает
+            // отрисовываться по уже посещённым областям без интернета.
             urlPattern: /^https:\/\/.*\.tile\.openstreetmap\.org\/.*/i,
             handler: 'CacheFirst',
             options: {
               cacheName: 'tile-cache',
-              expiration: { maxEntries: 5000, maxAgeSeconds: 60 * 60 * 24 * 30 }
+              // Кэшируем только реально отданные тайлы (200), а не 404/5xx
+              // от тайл-сервера — иначе ошибка могла бы "заморозиться" в
+              // кэше и оставить область пустой до истечения TTL.
+              cacheableResponse: { statuses: [200] },
+              expiration: { maxEntries: 5000, maxAgeSeconds: 60 * 60 * 24 * 90 }
             }
           }
         ]

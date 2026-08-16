@@ -502,7 +502,17 @@ export default function MapPage() {
             <FitBounds data={sites} />
             {/* Кластеризация — при 3800+ площадках плоский список меток
                 делал карту нечитаемой и тяжёлой при отдалении. */}
-            <MarkerClusterGroup chunkedLoading maxClusterRadius={60} spiderfyOnMaxZoom>
+            <MarkerClusterGroup
+              chunkedLoading
+              maxClusterRadius={60}
+              spiderfyOnMaxZoom
+              // На большом зуме площадки уже различимы по отдельности —
+              // кластеризация там только мешает выбору конкретной метки.
+              disableClusteringAtZoom={17}
+              // Не рисуем полупрозрачный полигон зоны охвата кластера при
+              // наведении — на карте с 3800+ площадками это визуальный шум.
+              showCoverageOnHover={false}
+            >
               {sites.filter((s) => !myInspOnly || !siteStatusMap[s.id] || siteStatusMap[s.id].status !== 'completed').map((s) => {
                 const coverage = (user?.role === 'inspector' || isReviewerLike) ? siteStatusMap[s.id] : undefined
                 const icon = s.type === CHILD_TYPE ? childIcon(coverage?.status) : sportIcon(coverage?.status)

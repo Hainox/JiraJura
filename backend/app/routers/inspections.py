@@ -28,6 +28,13 @@ from app.services.audit import log_action
 
 router = APIRouter()
 
+# Белый список расширений фото (как в feedback.py) — защита от stored-XSS:
+# uploads/ раздаётся наружу БЕЗ авторизации (app.mount("/uploads", ...) в
+# main.py), Content-Type берётся по расширению, поэтому без этого любой
+# авторизованный инспектор мог бы залить .html/.svg и получить исполнение
+# скрипта в origin приложения у того, кто откроет ссылку напрямую.
+_ALLOWED_PHOTO_EXTENSIONS = {"jpg", "jpeg", "png", "heic", "heif", "webp", "gif"}
+
 
 @router.post("/", response_model=InspectionOut)
 async def create_inspection(
@@ -490,8 +497,10 @@ async def upload_inspection_photo(
 
     # Сохраняем файл (потоково, с проверкой размера — file.size ненадёжен,
     # если клиент не прислал Content-Length)
-    ext = file.filename.rsplit(".", 1)[-1] if file.filename and "." in file.filename else "jpg"
-    safe_ext = ext.lower()[:5]
+    ext = file.filename.rsplit(".", 1)[-1].lower() if file.filename and "." in file.filename else ""
+    if ext and ext not in _ALLOWED_PHOTO_EXTENSIONS:
+        raise HTTPException(400, f"Недопустимый тип файла: .{ext}")
+    safe_ext = ext or "jpg"
     filename = f"{_uuid.uuid4()}.{safe_ext}"
     rel_path = os.path.join("inspections", filename)
     abs_path = os.path.join(UPLOAD_DIR, rel_path)

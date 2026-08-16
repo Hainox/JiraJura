@@ -57,6 +57,10 @@ function useSyncUserFromServer() {
     queryFn: authApi.me,
     enabled: isAuth,
     staleTime: 5 * 60 * 1000,
+    // Глобальный defaultOptions ставит refetchOnWindowFocus=false (main.tsx),
+    // а комментарий выше обещает ровно это поведение "подтянуть актуальные
+    // роль/район при возврате в приложение" — включаем явно для этого запроса.
+    refetchOnWindowFocus: true,
   })
   useEffect(() => {
     if (data) setUser(data)

@@ -41,20 +41,24 @@ export default function MyInspectionsPage() {
 
   const inspections = data?.items ?? []
 
+  // Зависим от data?.items, а не от производного `inspections ?? []`: тот
+  // пересоздаётся каждый рендер (новый [] при каждом обращении), и useMemo
+  // с таким списком зависимостей пересчитывался бы на каждый рендер впустую.
+  // data из react-query ссылочно стабилен между рендерами.
   const todayCount = useMemo(() => {
     const today = new Date().toDateString()
-    return inspections.filter((i) => new Date(i.created_at).toDateString() === today).length
-  }, [inspections])
+    return (data?.items ?? []).filter((i) => new Date(i.created_at).toDateString() === today).length
+  }, [data?.items])
 
   const grouped = useMemo(() => {
     const groups: Record<string, InspectionOut[]> = {}
-    for (const insp of inspections) {
+    for (const insp of data?.items ?? []) {
       const key = dayLabel(insp.created_at)
       if (!groups[key]) groups[key] = []
       groups[key].push(insp)
     }
     return groups
-  }, [inspections])
+  }, [data?.items])
 
   return (
     <div className="h-full flex flex-col bg-gray-50">

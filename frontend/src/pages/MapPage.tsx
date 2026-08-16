@@ -193,15 +193,18 @@ export default function MapPage() {
 
   // Карта: site_id → последний обход (статус + кто/когда, чтобы инспектор
   // видел не только "обойдено", но и кем — включая себя самого).
+  // Зависимость от districtInspectionsData?.items, а не от производного
+  // `myInspections ?? []` — тот новый массив на каждый рендер, useMemo
+  // пересчитывался бы впустую (см. тот же паттерн в MyInspectionsPage).
   const siteStatusMap = useMemo(() => {
     const map: Record<string, { status: string; inspectorName: string; date: string }> = {}
-    for (const insp of myInspections) {
+    for (const insp of districtInspectionsData?.items ?? []) {
       if (!map[insp.site_id] || insp.created_at > map[insp.site_id].date) {
         map[insp.site_id] = { status: insp.status, inspectorName: insp.inspector.full_name, date: insp.created_at }
       }
     }
     return map
-  }, [myInspections])
+  }, [districtInspectionsData?.items])
 
   // Фильтруем обходы по статусу
   const filteredInspections = allInspections.filter((insp) => {

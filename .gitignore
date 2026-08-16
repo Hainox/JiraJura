@@ -55,6 +55,9 @@ deploy/certbot/www/*
 !deploy/certbot/www/.gitkeep
 /backups/
 
+# === Freebuff (локальное состояние агента) ===
+.freebuff/
+
 # === Editor / OS ===
 .vscode/*
 !.vscode/extensions.json

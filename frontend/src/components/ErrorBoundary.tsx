@@ -25,7 +25,9 @@ export class ErrorBoundary extends Component<Props, State> {
             <AlertTriangle className="w-16 h-16 text-red-400 mx-auto mb-4" />
             <h1 className="text-xl font-bold text-gray-800 mb-2">Что-то пошло не так</h1>
             <p className="text-sm text-gray-500 mb-4">
-              Произошла непредвиденная ошибка. Данные обхода сохранены — вы можете перезагрузить страницу.
+              Произошла непредвиденная ошибка. Всё, что вы уже успели сохранить кнопкой
+              «Сохранить» — на месте; несохранённые правки на этом экране могли не дойти
+              до сервера. Перезагрузите страницу и проверьте обход.
             </p>
             {this.state.error && (
               <details className="mb-4 text-left">

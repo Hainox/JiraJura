@@ -256,6 +256,10 @@ async def bulk_accept_inspections(
             and obj.reviewed_by is None
             and issue_counts.get(obj.id, 0) == 0
             and in_district_scope(current_user, district_id)
+            # Самопроверка запрещена и здесь — иначе проверяющий/админ,
+            # владеющий собственным "зелёным" обходом, мог бы принять его
+            # одним движением в массовой приёмке.
+            and str(obj.inspector_id) != str(current_user.id)
         )
         if not eligible:
             skipped += 1
@@ -324,6 +328,27 @@ async def update_inspection(
         if not in_district_scope(current_user, district_id):
             raise HTTPException(403, "Обход вне вашего района")
 
+    is_owner = str(current_user.id) == str(obj.inspector_id)
+
+    # Обход уже проверен (reviewed_by проставлен) — владелец больше не может
+    # задним числом поменять ответы чек-листа или статус, иначе отметка
+    # "проверено" перестаёт что-либо гарантировать (проверяющий одобрил один
+    # контент, а в базе задним числом оказывается другой). Правки после
+    # проверки — только через официальный цикл "вернуть на доработку", тот
+    # сбрасывает reviewed_by ниже и снова открывает запись для правок.
+    if obj.reviewed_by is not None and is_owner and (data.answers is not None or data.status is not None):
+        raise HTTPException(
+            409,
+            "Обход уже проверен — менять чек-лист или статус после проверки нельзя. "
+            "Дождитесь возврата на доработку от проверяющего.",
+        )
+
+    # Возврат на доработку без комментария бессмысленен для инспектора —
+    # тот же гейт, что уже есть для замечаний (issues.py, revision_needed).
+    if (data.status == "in_progress" and current_user.role in ("reviewer", "admin")
+            and not (data.reviewer_comment or "").strip()):
+        raise HTTPException(400, "Укажите комментарий — что нужно доработать")
+
     if data.status:
         # Фото общего вида площадки обязательно при завершении обхода самим
         # инспектором — это чек-листовый пункт "Общий вид / Фото общего
@@ -351,10 +376,23 @@ async def update_inspection(
     if data.gps_lon is not None:
         obj.gps_lon = data.gps_lon
 
-    # Если reviewer/admin меняет статус — фиксируем кто и когда проверил
+    # Если reviewer/admin меняет статус — фиксируем кто и когда проверил.
+    # Два исключения:
+    #  - status == "in_progress" (возврат на доработку) — это тоже решение
+    #    проверяющего, но не финальное одобрение: снимаем "проверено",
+    #    чтобы пересданный обход снова считался непроверенным и не висел
+    #    с чужим "✓ Проверен" поверх ещё не осмотренного контента.
+    #  - is_owner (проверяющий/админ проверяет СВОЙ ЖЕ обход — например,
+    #    был повышен из инспектора и открыл старую запись) — самопроверка
+    #    запрещена: отметка "проверено" не проставляется, обход остаётся
+    #    в очереди для реального стороннего проверяющего.
     if current_user.role in ("reviewer", "admin") and data.status:
-        obj.reviewed_by = current_user.id
-        obj.reviewed_at = datetime.now(timezone.utc)
+        if data.status == "in_progress":
+            obj.reviewed_by = None
+            obj.reviewed_at = None
+        elif not is_owner:
+            obj.reviewed_by = current_user.id
+            obj.reviewed_at = datetime.now(timezone.utc)
         await log_action(db, str(current_user.id), "inspection_review", "inspection", inspection_id, {
             "status": data.status, "reviewer_comment": data.reviewer_comment,
         })

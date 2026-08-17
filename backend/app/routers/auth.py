@@ -28,6 +28,12 @@ router = APIRouter()
 INVITE_EXPIRY = timedelta(hours=72)
 ROLES = ("inspector", "reviewer", "admin")
 
+# Фиктивный, но валидный по формату bcrypt-хэш ($2b$, тот же cost=12, что и
+# у hash_password) — не пароль реального аккаунта, нужен только чтобы
+# сжечь на "user_not_found" столько же времени на bcrypt, сколько уходит
+# на реальную проверку пароля существующего пользователя (см. login()).
+_DUMMY_PASSWORD_HASH = "$2b$12$C6UzMDM.H6dfI/f/IKcEeO1YdIsCyPQMSMVwv55g8gj/l3zA6dFO."
+
 # Без 0/O/1/l/I и других визуально похожих символов — этот пароль почти
 # всегда передаётся человеку на словах или сообщением в мессенджере
 # ("Передайте его пользователю лично"), а не вводится напрямую самим
@@ -97,6 +103,13 @@ async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends
     )).scalar_one_or_none()
 
     if user is None:
+        # Всё равно гоняем bcrypt против фиктивного хэша: bcrypt.checkpw —
+        # это ~десятки мс, а "нет такого логина" без него отвечает почти
+        # мгновенно. Разница в задержке между "логина не существует" и
+        # "логин есть, пароль неверный" — таймингова утечка, по которой
+        # можно перебором узнавать существующие логины ещё до всякого
+        # lockout (тот считает попытки, а не защищает от самого замера).
+        verify_password(data.password, _DUMMY_PASSWORD_HASH)
         reason = "user_not_found"
     elif not user.is_active:
         reason = "inactive"

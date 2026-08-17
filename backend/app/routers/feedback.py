@@ -200,7 +200,12 @@ async def list_feedback(
     status: Optional[str] = Query(None),
     report_type: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("reviewer", "admin")),
+    # Только admin: FeedbackReport не привязан к району (нет district_id),
+    # поэтому "reviewer" здесь означал бы обращения ВСЕГО округа, а не
+    # своего района — шире, чем reviewer видит где-либо ещё в приложении.
+    # Фронтенд и так открывает /admin/feedback только admin (App.tsx) —
+    # держим бэкенд в соответствии с этим, а не шире.
+    current_user: User = Depends(require_role("admin")),
 ):
     filters = []
     if status:
@@ -224,7 +229,7 @@ async def export_feedback_xlsx(
     status: Optional[str] = Query(None),
     report_type: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("reviewer", "admin")),
+    current_user: User = Depends(require_role("admin")),  # см. list_feedback
 ):
     """Выгрузка обращений в Excel — для админа/разработчика, покрывает и
     жалобы на площадки, и технические проблемы (report_type='app'), и
@@ -232,7 +237,7 @@ async def export_feedback_xlsx(
     """
     from openpyxl import Workbook
     from openpyxl.utils import get_column_letter
-    from app.services.xlsx_style import style_header_row, style_data_row
+    from app.services.xlsx_style import style_header_row, style_data_row, safe_append
 
     filters = []
     if status:
@@ -259,7 +264,10 @@ async def export_feedback_xlsx(
     ws.append(headers)
     style_header_row(ws, 1, len(headers))
     for r in rows:
-        ws.append([
+        # safe_append — обращения приходят с публичной формы БЕЗ авторизации
+        # и без премодерации (message/full_name/location_text/admin_comment
+        # могут начинаться с "=" и т.п.), см. app/services/xlsx_style.py.
+        safe_append(ws, [
             _fmt_dt(r.created_at),
             TYPE_LABELS_RU.get(r.report_type, r.report_type),
             STATUS_LABELS_RU.get(r.status, r.status),
@@ -292,7 +300,7 @@ async def update_feedback(
     report_id: str,
     data: FeedbackReportUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("reviewer", "admin")),
+    current_user: User = Depends(require_role("admin")),  # см. list_feedback
 ):
     report = (await db.execute(
         select(FeedbackReport).where(FeedbackReport.id == report_id)

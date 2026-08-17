@@ -22,6 +22,14 @@ server {
         # при переменной в хосте proxy_pass, иначе всегда шлётся "/api/v1/".
         proxy_pass http://$api_upstream$request_uri;
         proxy_set_header Host $host;
+        # Без X-Real-IP бэкенд (_client_ip() в auth.py/feedback.py) видит
+        # вместо реального адреса клиента внутренний IP nginx-контейнера —
+        # IP-based lockout логина и rate-limit обращений становятся общими
+        # на ВСЕХ, кто ходит через bootstrap-конфиг, а не персональными.
+        # Тот же заголовок уже стоит в proxy.conf.template — здесь его не
+        # хватало, раз этот конфиг активен только до выпуска сертификата.
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 

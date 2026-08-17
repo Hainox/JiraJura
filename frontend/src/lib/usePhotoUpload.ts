@@ -2,7 +2,10 @@ import { useState, useCallback } from 'react'
 import { notify as toast } from '@/lib/toast'
 import { describeUploadError } from '@/lib/api'
 
-const MAX_SIZE_MB = 10
+// Синхронно с backend MAX_PHOTO_SIZE_MB (app/config.py) — раньше здесь
+// стояло 10, а сервер реально принимал до 20: пользователей просили сжать
+// фото, которое бэкенд и так бы принял без вопросов.
+const MAX_SIZE_MB = 20
 const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024
 
 export function usePhotoUpload(onUpload: (file: File) => Promise<unknown>) {

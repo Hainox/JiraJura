@@ -43,6 +43,34 @@ def style_data_row(ws, row_idx: int, ncols: int) -> None:
         style_data_cell(ws.cell(row_idx, col))
 
 
+# Excel/openpyxl формула-инъекция (CWE-1236): openpyxl сам детектит "=" в
+# начале строкового значения и пишет ячейку как формулу (data_type='f'), а
+# не как текст — открытие такого файла в Excel/Google Sheets ИСПОЛНЯЕТ её
+# (например =HYPERLINK(...) со ссылкой на фишинг). Во все наши выгрузки
+# попадает текст, который вводят пользователи без всякой премодерации
+# (замечания инспектора, комментарии чек-листа, анонимные обращения с
+# публичной формы) — без этой защиты любой из них мог подложить формулу,
+# которая сработает у админа при открытии отчёта.
+_FORMULA_TRIGGER_CHARS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _is_risky(value) -> bool:
+    return isinstance(value, str) and value[:1] in _FORMULA_TRIGGER_CHARS
+
+
+def safe_append(ws, row) -> None:
+    """ws.append(row), но принудительно помечает как ТЕКСТ (data_type='s')
+    любую ячейку строки, чьё значение похоже на формулу — вместо '=...'
+    openpyxl закодировал бы её как реальную формулу. Использовать вместо
+    ws.append(...) везде, где в строку могут попасть данные, введённые
+    пользователем (а не только вычисленные приложением значения)."""
+    ws.append(row)
+    r = ws.max_row
+    for i, v in enumerate(row, start=1):
+        if _is_risky(v):
+            ws.cell(r, i).data_type = "s"
+
+
 SPACER_ROW_HEIGHT = 8
 
 

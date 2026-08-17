@@ -87,14 +87,25 @@ def main():
 
     conn = psycopg2.connect(args.db_url)
     cur = conn.cursor()
-    # площадки с уже проведёнными обходами разбирают слоты первыми
+    # площадки с уже проведёнными обходами разбирают слоты первыми; среди
+    # них — площадки с обходом, который прямо сейчас не завершён (kто-то
+    # реально ходит по ней в поле) в первую очередь. Без has_active_insp
+    # площадка с одним старым обходом и площадка, по которой инспектор
+    # СЕЙЧАС идёт (но обходов у неё пока накопилось меньше), сравнивались
+    # только по insp_cnt — вторую могло отключить, осиротив текущий обход
+    # (is_active=FALSE прячет площадку из GET /sites/, а сам Inspection не
+    # удаляется — инспектор физически не находит, чем завершить обход).
     cur.execute("""
         SELECT s.id, s.kml_original_id, s.type, c.name, d.name,
-               (SELECT count(*) FROM inspections i WHERE i.site_id = s.id) AS insp_cnt
+               (SELECT count(*) FROM inspections i WHERE i.site_id = s.id) AS insp_cnt,
+               EXISTS (
+                   SELECT 1 FROM inspections i
+                   WHERE i.site_id = s.id AND i.status IN ('planned', 'in_progress')
+               ) AS has_active_insp
         FROM sites s
         JOIN courtyards c ON c.id = s.courtyard_id
         JOIN districts d ON d.id = c.district_id
-        ORDER BY insp_cnt DESC, s.id
+        ORDER BY has_active_insp DESC, insp_cnt DESC, s.id
     """)
     sites = cur.fetchall()
 
@@ -117,7 +128,7 @@ def main():
     # этап 1: точное совпадение ID из KML
     unpaired = []
     for s in sites:
-        sid, kml_id, stype, court, district, insp = s
+        sid, kml_id, stype, court, district, insp, has_active = s
         i = pop_free(by_id_idx.get((kml_id or "").strip(), deque()))
         if i is not None:
             reg_rows[i]["site"] = s
@@ -128,7 +139,7 @@ def main():
     # этап 2: точный нормализованный адрес + тип
     still = []
     for s in unpaired:
-        sid, kml_id, stype, court, district, insp = s
+        sid, kml_id, stype, court, district, insp, has_active = s
         i = pop_free(exact_idx.get((stype, addr_key(court)), deque()))
         if i is not None:
             reg_rows[i]["site"] = s
@@ -146,7 +157,7 @@ def main():
 
     drop = []
     for s in still:
-        sid, kml_id, stype, court, district, insp = s
+        sid, kml_id, stype, court, district, insp, has_active = s
         c = Counter(addr_key(court))
         found = None
         for i in free_by_type.get(stype, ()):
@@ -189,10 +200,16 @@ def main():
         drop_with_hist = [s for s in drop if s[5]]
         if drop_with_hist:
             print(f"\n⚠ Отключаемых с уже проведёнными обходами: {len(drop_with_hist)}")
-            for sid, _, stype, court, district, insp in drop_with_hist[:10]:
+            for sid, _, stype, court, district, insp, has_active in drop_with_hist[:10]:
                 print(f"  [{district}] {stype}: {court} (обходов: {insp})")
+        drop_with_active = [s for s in drop if s[6]]
+        if drop_with_active:
+            print(f"\n⚠⚠ Отключаемых с НЕЗАВЕРШЁННЫМ обходом прямо сейчас: {len(drop_with_active)} "
+                  f"— инспектор потеряет доступ к своему текущему обходу:")
+            for sid, _, stype, court, district, insp, has_active in drop_with_active:
+                print(f"  [{district}] {stype}: {court}")
         print("\nПримеры отключаемых (первые 15):")
-        for sid, kml_id, stype, court, district, insp in drop[:15]:
+        for sid, kml_id, stype, court, district, insp, has_active in drop[:15]:
             print(f"  [{district}] {stype}: {court}")
 
     if not args.apply:

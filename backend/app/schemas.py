@@ -259,8 +259,11 @@ class ChecklistAnswerIn(BaseModel):
     comment: Optional[str] = None
 
 
+INSPECTION_STATUSES = ("planned", "in_progress", "completed", "issues_found", "critical")
+
+
 class InspectionUpdate(BaseModel):
-    status: Optional[str] = None
+    status: Optional[Literal[INSPECTION_STATUSES]] = None
     comment: Optional[str] = None
     reviewer_comment: Optional[str] = None
     gps_lat: Optional[float] = None
@@ -340,8 +343,11 @@ class IssueCreate(BaseModel):
     criticality: str = "medium"
 
 
+ISSUE_STATUSES = ("open", "assigned", "in_work", "fixed", "control", "closed", "overdue", "revision_needed")
+
+
 class IssueUpdate(BaseModel):
-    status: Optional[str] = None
+    status: Optional[Literal[ISSUE_STATUSES]] = None
     assigned_to: Optional[UUID] = None
     due_date: Optional[date] = None
     comment: Optional[str] = None  # для истории статуса

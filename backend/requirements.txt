@@ -1,17 +1,24 @@
-fastapi==0.115.0
-uvicorn[standard]==0.34.0
-sqlalchemy[asyncio]==2.0.35
-asyncpg==0.30.0
-psycopg2-binary==2.9.10
-geoalchemy2==0.15.2
+fastapi==0.141.1
+uvicorn[standard]==0.52.3
+sqlalchemy[asyncio]==2.0.52
+asyncpg==0.31.0
+psycopg2-binary==2.9.12
+geoalchemy2==0.20.0
 python-jose[cryptography]==3.5.0
+# passlib+bcrypt пока НЕ трогаем этой правкой: passlib не обновлялся с 2020,
+# но снятие его требует переписать не только app/services/auth.py, а ещё
+# несколько независимых ops-скриптов (fix_passwords.py, reset_shared_
+# passwords.py, diagnose_logins.py и др.), которые сознательно не тянут
+# app.* и держат свой собственный passlib.CryptContext — с паролями
+# реальных пользователей на проде ошибка здесь стоит дорого. Оставлено как
+# отдельная задача с более узким и тестируемым скоупом (см. отчёт аудита).
 passlib[bcrypt]==1.7.4
 bcrypt==4.0.1
-python-multipart==0.0.18
-pydantic==2.10.0
-pydantic-settings==2.7.0
-alembic==1.14.0
-sqlparse==0.5.3
+python-multipart==0.0.32
+pydantic==2.13.4
+pydantic-settings==2.15.0
+alembic==1.19.1
+sqlparse==0.5.4
 openpyxl==3.1.5
-python-dotenv==1.0.1
-aiofiles==24.1.0
+python-dotenv==1.2.2
+aiofiles==25.1.0

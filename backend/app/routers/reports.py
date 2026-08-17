@@ -357,13 +357,13 @@ def _fmt_dt(value) -> str:
 
 def _sheet(wb, title: str, headers: list[str], rows: list[tuple], widths: list[int]):
     from openpyxl.utils import get_column_letter
-    from app.services.xlsx_style import style_header_row, style_data_row
+    from app.services.xlsx_style import style_header_row, style_data_row, safe_append
 
     ws = wb.create_sheet(title)
     ws.append(headers)
     style_header_row(ws, 1, len(headers))
     for row in rows:
-        ws.append(row)
+        safe_append(ws, row)
         style_data_row(ws, ws.max_row, len(headers))
     for i, w in enumerate(widths, start=1):
         ws.column_dimensions[get_column_letter(i)].width = w
@@ -390,7 +390,7 @@ async def export_xlsx(
     from openpyxl.chart.label import DataLabelList
     from app.services.xlsx_style import (
         style_header_row, style_data_row, style_header_cell, style_data_cell,
-        style_merged_label, CENTER_WRAP, SPACER_ROW_HEIGHT,
+        style_merged_label, safe_append, CENTER_WRAP, SPACER_ROW_HEIGHT,
     )
 
     if current_user.role == "reviewer" and current_user.district_id is not None:
@@ -759,17 +759,32 @@ async def export_xlsx(
     # Группируем по User.id, а не по ФИО — у full_name нет уникальности в
     # базе, и два инспектора-тёзки схлопывались бы в один столбец с суммой
     # их обходов на двоих.
+    # МСК-дата, не func.date() от сырого UTC (как в "Лидеры дня" выше) —
+    # иначе обходы с 00:00 до 02:59 МСК (21:00-23:59 UTC предыдущих суток)
+    # попадали бы во "вчера", хотя по факту это уже следующий рабочий день.
     from collections import defaultdict
+    day_msk = func.date(func.timezone("Europe/Moscow", Inspection.created_at))
     day_stats_q = (
         select(
-            func.date(Inspection.created_at), User.id, User.full_name, func.count()
+            day_msk, User.id, User.full_name, func.count()
         )
         .join(User, Inspection.inspector_id == User.id)
-        .group_by(func.date(Inspection.created_at), User.id, User.full_name)
-        .order_by(func.date(Inspection.created_at).desc(), User.full_name)
+        .group_by(day_msk, User.id, User.full_name)
+        .order_by(day_msk.desc(), User.full_name)
     )
     if district_id:
-        day_stats_q = day_stats_q.join(Site).join(Courtyard).where(Courtyard.district_id == district_id)
+        # Явные условия join — БЕЗ них SQLAlchemy между Site и уже
+        # присоединённым User выбирает ПЕРВУЮ попавшуюся FK-связь
+        # (users.id = sites.assigned_inspector_id — "назначенный
+        # инспектор"), а не ту, что реально нужна (inspections.site_id =
+        # sites.id). С неявным .join(Site) фильтр по району на этом листе
+        # молча резолвился не в те строки и всегда возвращал пусто —
+        # найдено этим самым регресс-тестом на МСК-дату.
+        day_stats_q = (
+            day_stats_q.join(Site, Inspection.site_id == Site.id)
+            .join(Courtyard, Site.courtyard_id == Courtyard.id)
+            .where(Courtyard.district_id == district_id)
+        )
     day_stats_q = period(day_stats_q, Inspection.created_at)
     day_stats = (await db.execute(day_stats_q)).all()
 
@@ -874,7 +889,7 @@ async def export_xlsx(
         Пустой вызов _row() — разделитель между секциями, невысокая
         строка, чтобы не растягивать отчёт пустыми промежутками
         стандартной высоты."""
-        ov.append(list(vals) if vals else [None])
+        safe_append(ov, list(vals) if vals else [None])
         r = ov.max_row
         if not vals:
             ov.row_dimensions[r].height = SPACER_ROW_HEIGHT
@@ -995,7 +1010,7 @@ async def export_xlsx(
     reg_ws.append(["Район", "Зарегистрировано", "Всего приглашено", "% регистрации"])
     style_header_row(reg_ws, reg_ws.max_row, 4)
     for x in reg_stats:
-        reg_ws.append([x["name"], x["registered"], x["total"], x["pct"]])
+        safe_append(reg_ws, [x["name"], x["registered"], x["total"], x["pct"]])
         style_data_row(reg_ws, reg_ws.max_row, 4)
         fill = RED if x["pct"] < 0.5 else (YELLOW if x["pct"] < 0.8 else GREEN)
         reg_ws.cell(reg_ws.max_row, 4).fill = fill
@@ -1005,18 +1020,18 @@ async def export_xlsx(
     reg_ws.cell(reg_ws.max_row, 4).number_format = "0%"
 
     def _reg_header(text):
-        reg_ws.append([text])
+        safe_append(reg_ws, [text])
         style_merged_label(reg_ws, reg_ws.max_row, 2, header=True)
 
     def _reg_item(text):
-        reg_ws.append([text])
+        safe_append(reg_ws, [text])
         style_merged_label(reg_ws, reg_ws.max_row, 2, header=False)
 
     def _reg_note(text):
         """Сноска под 4-колоночной таблицей регистрации — на всю её
         ширину, а не в одной нестилизованной ячейке, иначе текст
         выползает за правую границу таблицы поверх пустых ячеек."""
-        reg_ws.append([text])
+        safe_append(reg_ws, [text])
         style_merged_label(reg_ws, reg_ws.max_row, 4, header=False)
 
     _reg_spacer()

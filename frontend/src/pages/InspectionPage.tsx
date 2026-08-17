@@ -198,6 +198,7 @@ export default function InspectionPage() {
     onSuccess: () => {
       toast.success('Проверено')
       queryClient.invalidateQueries({ queryKey: ['inspection', inspectionId] })
+      queryClient.invalidateQueries({ queryKey: ['inspections', inspection?.site_id] })
       setShowReviewPanel(false)
     },
     onError: () => toast.error('Ошибка'),
@@ -213,6 +214,12 @@ export default function InspectionPage() {
       toast.success('Обход завершён')
       queryClient.invalidateQueries({ queryKey: ['inspection', inspectionId] })
       queryClient.invalidateQueries({ queryKey: ['issues', inspectionId] })
+      // Список обходов площадки и личная история — иначе при возврате на
+      // SiteDetailPage (staleTime 30с, refetchOnWindowFocus выключен) там
+      // ещё какое-то время показывается список без только что завершённого
+      // обхода, будто он не сохранился.
+      queryClient.invalidateQueries({ queryKey: ['inspections', inspection!.site_id] })
+      queryClient.invalidateQueries({ queryKey: ['my-inspections-history'] })
       navigate(`/sites/${inspection!.site_id}`)
     },
     onError: () => toast.error('Ошибка завершения'),
@@ -224,6 +231,7 @@ export default function InspectionPage() {
     onSuccess: () => {
       toast.success('Возвращено на доработку')
       queryClient.invalidateQueries({ queryKey: ['inspection', inspectionId] })
+      queryClient.invalidateQueries({ queryKey: ['inspections', inspection?.site_id] })
       setShowReviewPanel(false)
     },
     onError: () => toast.error('Ошибка'),
@@ -553,8 +561,8 @@ export default function InspectionPage() {
         </div>
       )}
 
-      {/* Панель проверяющего */}
-      {showReviewPanel && isReviewer && (
+      {/* Панель проверяющего — не для своего же обхода (самопроверка), см. кнопку-тоггл выше */}
+      {showReviewPanel && isReviewer && !isInspector && (
         <div className="bg-white border-b p-3 shrink-0 space-y-3">
           <div className="text-sm font-semibold text-gray-800">Проверка обхода</div>
           <textarea

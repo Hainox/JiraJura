@@ -215,12 +215,18 @@ async def update_issue(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role("reviewer", "admin")),
 ):
+    # FOR UPDATE — сериализует конкурентные PUT по одному и тому же issue:
+    # без этого два админа, синхронно принимающие/отклоняющие один и тот же
+    # "fixed" issue, оба проходят проверку issue.status == 'fixed' (обычное
+    # read-then-write) и оба коммитят, один результат молча затирает другой
+    # без единого сигнала об этом. С блокировкой строки вторая транзакция
+    # дожидается коммита первой и видит уже актуальный (изменённый) статус.
     issue = (await db.execute(
         select(Issue).where(Issue.id == issue_id).options(
             selectinload(Issue.site_ref).selectinload(Site.courtyard).selectinload(Courtyard.district),
             selectinload(Issue.assigned_user),
             selectinload(Issue.creator_ref),
-        )
+        ).with_for_update(of=Issue)
     )).scalar_one_or_none()
     if not issue:
         raise HTTPException(404, "Замечание не найдено")
@@ -231,6 +237,13 @@ async def update_issue(
             raise HTTPException(403, "Замечание вне вашего района")
 
     old_status = issue.status
+
+    # Решение админа (closed/revision_needed) — финальное: уводить замечание
+    # ИЗ этих статусов куда-либо (в т.ч. обратно в open/in_work) тоже может
+    # только админ, иначе проверяющий одним PUT тихо отменяет уже принятое
+    # админом решение без его участия.
+    if issue.status in ('closed', 'revision_needed') and data.status and data.status != issue.status and current_user.role != 'admin':
+        raise HTTPException(403, "Изменить статус после решения администратора может только админ")
 
     if data.status and data.status != issue.status:
         # Цепочка инспектор→проверяющий→админ: проверяющий доводит
@@ -280,6 +293,12 @@ async def update_issue(
     # прислали", и снять уже назначенного исполнителя невозможно (тот же
     # класс бага, что уже был исправлен для UserRoleUpdate.district_id).
     if "assigned_to" in data.model_fields_set:
+        if data.assigned_to is not None:
+            assignee = (await db.execute(
+                select(User).where(User.id == data.assigned_to)
+            )).scalar_one_or_none()
+            if not assignee or not assignee.is_active:
+                raise HTTPException(400, "Указанный пользователь не найден или деактивирован")
         issue.assigned_to = data.assigned_to
     if "due_date" in data.model_fields_set:
         issue.due_date = data.due_date

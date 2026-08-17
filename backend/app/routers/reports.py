@@ -386,8 +386,9 @@ async def export_xlsx(
     """
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill
-    from openpyxl.chart import BarChart, PieChart, Reference
+    from openpyxl.chart import BarChart, PieChart, LineChart, Reference
     from openpyxl.chart.label import DataLabelList
+    from openpyxl.chart.marker import DataPoint
     from app.services.xlsx_style import (
         style_header_row, style_data_row, style_header_cell, style_data_cell,
         style_merged_label, safe_append, CENTER_WRAP, SPACER_ROW_HEIGHT,
@@ -827,7 +828,21 @@ async def export_xlsx(
     YELLOW = PatternFill("solid", fgColor="FFEB9C")
     GREEN = PatternFill("solid", fgColor="C6EFCE")
 
-    def _pie(ws, title, cats_ref, data_ref, anchor):
+    # Единая палитра для всех диаграмм отчёта — вместо цветов по умолчанию,
+    # которые Excel назначает сериям сам (обычно случайный порядок радуги,
+    # не связанный со смыслом "хорошо/плохо"). Статусные цвета (good/warning/
+    # critical) — для пар "хорошее/плохое" состояние (проверено/не проверено,
+    # без нарушений/с нарушениями), категориальный синий — для нейтральных
+    # сравнений величин (районы, категории нарушений, обходы по дням).
+    CHART_CATEGORICAL = "2A78D6"
+    CHART_GOOD = "0CA30C"
+    CHART_WARNING = "FAB219"
+    CHART_CRITICAL = "D03B3B"
+    CHART_MUTED = "898781"
+
+    def _pie(ws, title, cats_ref, data_ref, anchor, colors=None):
+        """colors — (hex, hex) для двух долей пирога, по умолчанию без
+        переопределения (цвета темы Excel)."""
         chart = PieChart()
         chart.title = title
         chart.height, chart.width = 7, 10
@@ -836,9 +851,16 @@ async def export_xlsx(
         chart.dataLabels = DataLabelList()
         chart.dataLabels.showVal = True
         chart.dataLabels.showPercent = True
+        if colors:
+            points = []
+            for i, color in enumerate(colors):
+                pt = DataPoint(idx=i)
+                pt.graphicalProperties.solidFill = color
+                points.append(pt)
+            chart.series[0].data_points = points
         ws.add_chart(chart, anchor)
 
-    def _bar(ws, title, cats_ref, data_ref, anchor, y_title=""):
+    def _bar(ws, title, cats_ref, data_ref, anchor, y_title="", color=CHART_CATEGORICAL):
         chart = BarChart()
         chart.type = "col"
         chart.title = title
@@ -846,6 +868,25 @@ async def export_xlsx(
         chart.height, chart.width = 9, 18
         chart.add_data(data_ref, titles_from_data=True)
         chart.set_categories(cats_ref)
+        for s in chart.series:
+            s.graphicalProperties.solidFill = color
+        ws.add_chart(chart, anchor)
+
+    def _line(ws, title, cats_ref, data_ref, anchor, y_title="", color=CHART_CATEGORICAL):
+        chart = LineChart()
+        chart.title = title
+        chart.y_axis.title = y_title
+        chart.height, chart.width = 9, 18
+        chart.add_data(data_ref, titles_from_data=True)
+        chart.set_categories(cats_ref)
+        for s in chart.series:
+            s.graphicalProperties.line.solidFill = color
+            s.graphicalProperties.line.width = 20000  # EMU, ≈2pt — тонкая, но заметная линия
+            s.smooth = False
+            s.marker.symbol = "circle"
+            s.marker.size = 5
+            s.marker.graphicalProperties.solidFill = color
+            s.marker.graphicalProperties.line.solidFill = color
         ws.add_chart(chart, anchor)
 
     # ── Обзор — тот же лист, что в generate_summary_report.py (раньше
@@ -986,13 +1027,37 @@ async def export_xlsx(
         style_data_cell(cell)
     if sites_inspected_all + sites_not_inspected_all > 0:
         _pie(ov, "Площадки: проверено / не проверено",
-             Reference(ov, min_col=8, min_row=2, max_row=3), Reference(ov, min_col=9, min_row=2, max_row=3), "K2")
+             Reference(ov, min_col=8, min_row=2, max_row=3), Reference(ov, min_col=9, min_row=2, max_row=3), "K2",
+             colors=(CHART_GOOD, CHART_MUTED))
     if inspections_ok_all + inspections_with_defects_all > 0:
         _pie(ov, "Обходы: без / с нарушениями",
-             Reference(ov, min_col=8, min_row=6, max_row=7), Reference(ov, min_col=9, min_row=6, max_row=7), "K16")
+             Reference(ov, min_col=8, min_row=6, max_row=7), Reference(ov, min_col=9, min_row=6, max_row=7), "K16",
+             colors=(CHART_GOOD, CHART_CRITICAL))
     if total_iss_open_all + total_iss_closed_all > 0:
         _pie(ov, "Замечания: в работе / принято",
-             Reference(ov, min_col=8, min_row=10, max_row=11), Reference(ov, min_col=9, min_row=10, max_row=11), "K30")
+             Reference(ov, min_col=8, min_row=10, max_row=11), Reference(ov, min_col=9, min_row=10, max_row=11), "K30",
+             colors=(CHART_WARNING, CHART_GOOD))
+
+    # Топ категорий нарушений — раньше только одной строкой текста в
+    # "Требуют внимания"; та строка остаётся (для быстрого чтения), тут —
+    # та же информация в виде графика, чтобы сразу увидеть, где систематика,
+    # а где единичный случай.
+    if top_categories:
+        ov["H13"] = "Категории нарушений"
+        style_header_cell(ov["H13"], fill=False)
+        style_header_cell(ov["I13"], fill=False)
+        ov.merge_cells("H13:I13")
+        row = 14
+        for cat, cnt in top_categories:
+            ov.cell(row, 8, cat)
+            ov.cell(row, 9, cnt)
+            style_data_cell(ov.cell(row, 8))
+            style_data_cell(ov.cell(row, 9))
+            row += 1
+        _bar(ov, "Топ категорий нарушений",
+             Reference(ov, min_col=8, min_row=14, max_row=row - 1),
+             Reference(ov, min_col=9, min_row=13, max_row=row - 1), "K44",
+             y_title="Нарушений", color=CHART_CRITICAL)
 
     # ── Регистрация ──
     reg_ws = wb.create_sheet("Регистрация")
@@ -1074,11 +1139,41 @@ async def export_xlsx(
     _sheet(wb, "Задания",
         ["Район", "Двор", "Тип площадки", "Назначенный инспектор", "Телефон", "Последний обход", "Статус последнего обхода"],
         assignment_data, [24, 40, 20, 26, 16, 18, 22])
-    _sheet(wb, "Сводка по районам",
+    summary_ws = _sheet(wb, "Сводка по районам",
         ["Район", "Всего площадок", "Проверено", "Не проверено", "Обходов",
          "Без нарушений", "С нарушениями", "Дефектов", "Замечаний",
          "В работе", "Устранено", "Доработка", "Принято", "Просрочено"],
         summary_data, [24, 15, 12, 12, 10, 12, 13, 10, 11, 10, 11, 10, 10, 11])
+
+    # Сравнение районов — раньше на этом листе не было ни одного графика,
+    # хотя это самая насыщенная сравнительная таблица отчёта. Две сгруппи-
+    # рованные диаграммы: охват (проверено/не проверено) и результат
+    # (без/с нарушениями), по каждому району — та же пара статусных цветов,
+    # что и в одноимённых круговых диаграммах на "Обзоре", чтобы смысл
+    # цвета не менялся от листа к листу.
+    if summary_data:
+        n = len(summary_data)
+        last_row = 1 + n
+
+        def _grouped_bar(title, col_a, col_b, anchor, colors):
+            chart = BarChart()
+            chart.type = "col"
+            chart.grouping = "clustered"
+            chart.title = title
+            chart.height, chart.width = 9, 22
+            data = Reference(summary_ws, min_col=col_a, max_col=col_b, min_row=1, max_row=last_row)
+            cats = Reference(summary_ws, min_col=1, min_row=2, max_row=last_row)
+            chart.add_data(data, titles_from_data=True)
+            chart.set_categories(cats)
+            for s, color in zip(chart.series, colors):
+                s.graphicalProperties.solidFill = color
+            summary_ws.add_chart(chart, anchor)
+
+        chart_row = last_row + 3
+        _grouped_bar("Охват по районам: проверено / не проверено", 3, 4,
+                     f"A{chart_row}", (CHART_GOOD, CHART_MUTED))
+        _grouped_bar("Результат по районам: без / с нарушениями", 6, 7,
+                     f"A{chart_row + 19}", (CHART_GOOD, CHART_CRITICAL))
     _sheet(wb, "Обходы",
         ["Дата", "Район", "Двор", "Тип площадки", "Инспектор", "Телефон", "Статус", "Начат", "Завершён", "Пунктов ОК", "Дефектов", "Фото", "Комментарий"],
         insp_data, [16, 20, 40, 20, 24, 16, 14, 16, 16, 12, 10, 7, 40])
@@ -1093,9 +1188,39 @@ async def export_xlsx(
         overdue_rows, [30, 20, 40, 24, 16, 16, 40])
 
     if dynamics_rows:
-        _sheet(wb, "Динамика",
+        dyn_ws = _sheet(wb, "Динамика",
             ["Дата"] + sorted_inspectors,
             dynamics_rows, [12] + [12] * len(sorted_inspectors))
+
+        # Тренд-график "обходов в день по всему округу" — раньше этот лист
+        # был голой матрицей чисел без единой диаграммы. Основная таблица
+        # намеренно новые даты сверху (быстро найти сегодня); для линии
+        # тренда нужен обратный, хронологический порядок (иначе график
+        # читается справа налево) — считаем отдельную компактную таблицу
+        # правее основной, а не пересортировываем то, что уже видит
+        # пользователь.
+        totals_by_day = {dt: sum(day_data[dt].values()) for dt in day_data}
+        chrono_dates = sorted(totals_by_day.keys())
+        trend_col = len(sorted_inspectors) + 3  # с отступом в 1 колонку от основной таблицы
+        dyn_ws.cell(1, trend_col, "Дата")
+        dyn_ws.cell(1, trend_col + 1, "Всего обходов")
+        style_header_cell(dyn_ws.cell(1, trend_col))
+        style_header_cell(dyn_ws.cell(1, trend_col + 1))
+        for i, dt in enumerate(chrono_dates, start=2):
+            dyn_ws.cell(i, trend_col, dt)
+            dyn_ws.cell(i, trend_col + 1, totals_by_day[dt])
+            style_data_cell(dyn_ws.cell(i, trend_col))
+            style_data_cell(dyn_ws.cell(i, trend_col + 1))
+        from openpyxl.utils import get_column_letter
+        dyn_ws.column_dimensions[get_column_letter(trend_col)].width = 14
+        dyn_ws.column_dimensions[get_column_letter(trend_col + 1)].width = 16
+        last_trend_row = 1 + len(chrono_dates)
+        if len(chrono_dates) >= 2:
+            _line(dyn_ws, "Обходов в день — весь округ",
+                  Reference(dyn_ws, min_col=trend_col, min_row=2, max_row=last_trend_row),
+                  Reference(dyn_ws, min_col=trend_col + 1, min_row=1, max_row=last_trend_row),
+                  dyn_ws.cell(last_trend_row + 3, trend_col).coordinate,
+                  y_title="Обходов")
 
     buf = io.BytesIO()
     wb.save(buf)

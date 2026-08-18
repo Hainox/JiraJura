@@ -166,6 +166,45 @@ async def test_login_history_endpoint_filters(client, admin_headers):
 
 
 @pytest.mark.asyncio
+async def test_login_history_for_other_user_does_not_500(client, admin_headers):
+    """Регрессия: get_login_history строил запрос без selectinload(AuditLog.user),
+    поэтому r.user.full_name падал с MissingGreenlet — НО только для чужого
+    успешного входа. Для входа самого admin'а объект User уже лежит в
+    identity map сессии (загружен зависимостью get_current_user), лениво
+    подгружать нечего, и тест на его логине бага не ловил. Здесь логинимся
+    ДРУГИМ пользователем — его User в этой сессии ещё нигде не загружен,
+    ленивая подгрузка обязана сходить в БД и без eager-load падает."""
+    r = await client.get("/api/v1/districts/", headers=admin_headers)
+    district_id = r.json()[0]["id"]
+
+    invite = await client.post("/api/v1/auth/invites", json={
+        "login": "LoginHistoryOther", "full_name": "Логинов Другой Пользователь",
+        "role": "inspector", "district_id": district_id,
+    }, headers=admin_headers)
+    assert invite.status_code == 200, invite.text
+    complete = await client.post(
+        f"/api/v1/auth/invites/{invite.json()['token']}/complete", json={"password": "OtherUser12345"},
+    )
+    assert complete.status_code == 200, complete.text
+
+    # Второй раз тем же логином — реальный login_success с непустым user_id,
+    # не совпадающим с admin'ом из admin_headers.
+    login2 = await client.post(
+        "/api/v1/auth/login", json={"login": "LoginHistoryOther", "password": "OtherUser12345"},
+    )
+    assert login2.status_code == 200, login2.text
+
+    r = await client.get(
+        "/api/v1/audit/logins", params={"login": "LoginHistoryOther"}, headers=admin_headers,
+    )
+    assert r.status_code == 200, r.text
+    items = r.json()["items"]
+    assert any(i["action"] == "login_success" for i in items)
+    success_item = next(i for i in items if i["action"] == "login_success")
+    assert success_item["user_name"] == "Логинов Другой Пользователь"
+
+
+@pytest.mark.asyncio
 async def test_login_history_requires_admin(client, admin_headers):
     # обычный инспектор не должен видеть историю входов
     r = await client.post(

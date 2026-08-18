@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import desc, func, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models import AuditLog, User
@@ -86,6 +87,7 @@ async def get_login_history(
     """
     base = (
         select(AuditLog)
+        .options(selectinload(AuditLog.user))
         .where(AuditLog.action.in_(["login_success", "login_failed"]))
         .order_by(desc(AuditLog.created_at))
     )

@@ -28,10 +28,20 @@ export default function DashboardPage() {
   const lockedDistrictId = user?.role === 'reviewer' ? user.district_id : undefined
 
   const today = new Date().toISOString().slice(0, 10)
-  const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10)
+  // По умолчанию — с понедельника ТЕКУЩЕЙ недели по сегодня (а не
+  // "скользящие 7 дней назад", как было раньше): при открытии дашборда в
+  // понедельник диапазон должен схлопываться в один день, а не тянуть
+  // хвост предыдущей недели. Оба поля остаются обычными <input type="date">
+  // ниже — пользователь может подставить любой другой период вручную.
+  const mondayThisWeek = (() => {
+    const now = new Date()
+    const daysSinceMonday = (now.getDay() + 6) % 7 // Пн=0, Вт=1, ..., Вс=6
+    now.setDate(now.getDate() - daysSinceMonday)
+    return now.toISOString().slice(0, 10)
+  })()
 
   const [districtFilter, setDistrictFilter] = useState<string>(lockedDistrictId || '')
-  const [dateFrom, setDateFrom] = useState<string>(weekAgo)
+  const [dateFrom, setDateFrom] = useState<string>(mondayThisWeek)
   const [dateTo, setDateTo] = useState<string>(today)
 
   const { data: districts } = useQuery<DistrictOut[]>({

@@ -7,22 +7,26 @@ interface Props {
   beforeLabel?: string
   /** Метка правой стороны */
   afterLabel?: string
+  /** Открыть фото во весь экран (лайтбокс родителя) — без него фото
+   * открывалось бы target="_blank" голой ссылкой, что в PWA standalone на
+   * iOS Safari уводит с картинки без возможности закрыть её. */
+  onPhotoClick: (url: string) => void
 }
 
 /** Одно окошко ДО или ПОСЛЕ: подпись + фото целиком (object-contain, не
  * cover) на тёмной подложке — без этого узкий/широкий телефонный кадр
  * обрезался бы под фиксированную коробку и терял как раз то место, где
  * видно нарушение или исправление. */
-function Panel({ url, label, dotColor }: { url?: string; label: string; dotColor: string }) {
+function Panel({ url, label, dotColor, onPhotoClick }: { url?: string; label: string; dotColor: string; onPhotoClick: (url: string) => void }) {
   return (
     <div className="space-y-1.5">
       <span className={`inline-flex items-center gap-1.5 text-xs font-bold px-2 py-0.5 rounded-full ${dotColor}`}>
         {label}
       </span>
       {url ? (
-        <a href={url} target="_blank" rel="noreferrer" className="block w-full h-56 bg-gray-900 rounded-xl overflow-hidden hover:opacity-90 transition-opacity">
+        <button onClick={() => onPhotoClick(url)} className="block w-full h-56 bg-gray-900 rounded-xl overflow-hidden hover:opacity-90 transition-opacity">
           <img src={url} alt={label} className="w-full h-full object-contain" />
-        </a>
+        </button>
       ) : (
         <div className="w-full h-56 bg-gray-100 rounded-xl flex items-center justify-center text-gray-400 text-xs text-center px-3">
           {label === 'ДО' ? 'Фото ДО отсутствует' : 'Фото ПОСЛЕ ещё не загружено'}
@@ -41,6 +45,7 @@ export default function BeforeAfterCompare({
   afterUrl,
   beforeLabel = 'ДО',
   afterLabel = 'ПОСЛЕ',
+  onPhotoClick,
 }: Props) {
   if (!beforeUrl && !afterUrl) {
     return (
@@ -52,8 +57,8 @@ export default function BeforeAfterCompare({
 
   return (
     <div className="grid grid-cols-2 gap-3">
-      <Panel url={beforeUrl} label={beforeLabel} dotColor="bg-blue-100 text-blue-700" />
-      <Panel url={afterUrl} label={afterLabel} dotColor="bg-green-100 text-green-700" />
+      <Panel url={beforeUrl} label={beforeLabel} dotColor="bg-blue-100 text-blue-700" onPhotoClick={onPhotoClick} />
+      <Panel url={afterUrl} label={afterLabel} dotColor="bg-green-100 text-green-700" onPhotoClick={onPhotoClick} />
     </div>
   )
 }

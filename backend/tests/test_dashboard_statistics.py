@@ -145,3 +145,56 @@ async def test_dashboard_sites_not_inspected(client: AsyncClient, admin_headers)
     assert totals["total_sites"] == 1
     assert totals["sites_inspected"] == 0
     assert totals["sites_not_inspected"] == 1
+
+
+@pytest.mark.asyncio
+async def test_dashboard_issue_status_buckets_ignore_date_filter(client: AsyncClient, admin_headers):
+    """Регрессия: issues_open/fixed/revision_needed/closed/overdue — снимок
+    ТЕКУЩЕГО статуса, а не событие внутри периода. Замечание, оформленное
+    ДО начала выбранного диапазона дат, но всё ещё «на доработке», обязано
+    попасть в issues_revision_needed при ЛЮБОМ фильтре периода — иначе оно
+    необъяснимо пропадает из дашборда, хотя объективно требует внимания
+    (реальный кейс: 19.08 переоткрыли и вернули на доработку замечание,
+    оформленное 11.08, дашборд с фильтром "с 12.08" показал 0)."""
+    did = _new_district("статус-вне-периода")
+    _, site_id = _site(did, "старое замечание", "С", 37.8)
+
+    invite = await client.post("/api/v1/auth/invites", json={
+        "login": "OldIssueInspector", "full_name": "Старозамечаньев Инспектор",
+        "role": "inspector", "district_id": did,
+    }, headers=admin_headers)
+    complete = await client.post(
+        f"/api/v1/auth/invites/{invite.json()['token']}/complete", json={"password": "OldIssue12345"},
+    )
+    inspector_headers = {"Authorization": f"Bearer {complete.json()['access_token']}"}
+
+    start = await client.post(
+        "/api/v1/inspections/", json={"site_id": site_id, "type": "regular"}, headers=inspector_headers,
+    )
+    insp_id = start.json()["id"]
+    issue = await client.post("/api/v1/issues/", json={
+        "inspection_id": insp_id, "title": "Старое замечание", "criticality": "medium",
+    }, headers=inspector_headers)
+    issue_id = issue.json()["id"]
+
+    # Отодвигаем created_at замечания в прошлое — "до начала" периода фильтра.
+    _exec(
+        "UPDATE issues SET created_at = now() - interval '10 days' WHERE id = %(id)s",
+        {"id": issue_id},
+    )
+
+    # Фильтр периода — только последние 2 дня: created_at замечания заведомо вне его.
+    today = __import__("datetime").date.today()
+    two_days_ago = today - __import__("datetime").timedelta(days=2)
+    dash = await client.get(
+        "/api/v1/reports/dashboard",
+        params={"district_id": did, "date_from": str(two_days_ago), "date_to": str(today)},
+        headers=admin_headers,
+    )
+    totals = dash.json()["totals"]
+    # issues_total (событие "оформлено") корректно НЕ считает старое замечание —
+    # оно вне периода.
+    assert totals["issues_total"] == 0
+    # issues_open — текущий статус, обязан увидеть замечание независимо от периода.
+    assert totals["issues_open"] == 1
+

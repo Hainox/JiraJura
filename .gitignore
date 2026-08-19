@@ -54,6 +54,9 @@ deploy/certbot/conf/*
 deploy/certbot/www/*
 !deploy/certbot/www/.gitkeep
 /backups/
+# Сжатые дампы БД (старые писались в корень репозитория; страховка, чтобы
+# случайно не закоммитить db_*.sql.gz на любой глубине)
+*.sql.gz
 
 # === Freebuff (локальное состояние агента) ===
 .freebuff/

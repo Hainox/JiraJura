@@ -10,6 +10,7 @@ import {
   Flag, RotateCcw, FileText, ClipboardList
 } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
+import PhotoLightbox from '@/components/PhotoLightbox'
 
 type AnswerResult = 'ok' | 'defect' | 'pending'
 
@@ -53,6 +54,7 @@ export default function InspectionPage() {
   const [issueCriticality, setIssueCriticality] = useState('medium')
   const [photos, setPhotos] = useState<PhotoOut[]>([])
   const [showPhotoPanel, setShowPhotoPanel] = useState(false)
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const itemFileInputRef = useRef<HTMLInputElement>(null)
   const [uploadingForItemId, setUploadingForItemId] = useState<string | null>(null)
@@ -503,9 +505,9 @@ export default function InspectionPage() {
                 {(issue.photos?.length ?? 0) > 0 && (
                   <div className="flex gap-1.5 mt-1.5">
                     {issue.photos!.map((p) => (
-                      <a key={p.id} href={p.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
+                      <button key={p.id} onClick={(e) => { e.stopPropagation(); setLightboxUrl(p.url) }}>
                         <img src={p.thumbnail_url ?? p.url} alt="" className="w-10 h-10 object-cover rounded border" />
-                      </a>
+                      </button>
                     ))}
                   </div>
                 )}
@@ -620,9 +622,9 @@ export default function InspectionPage() {
           </div>
           <div className="flex flex-wrap gap-2 mb-2">
             {generalPhotos.map((p) => (
-              <a key={p.id} href={p.url} target="_blank" rel="noreferrer">
+              <button key={p.id} onClick={() => setLightboxUrl(p.url)}>
                 <img src={p.url} alt="" className="w-16 h-16 object-cover rounded-lg border" />
-              </a>
+              </button>
             ))}
             {generalPhotos.length === 0 && (
               <div className="text-xs text-gray-400 py-2">Нет фотографий</div>
@@ -683,9 +685,9 @@ export default function InspectionPage() {
                 {itemPhotos.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {itemPhotos.map((p) => (
-                      <a key={p.id} href={p.url} target="_blank" rel="noreferrer">
+                      <button key={p.id} onClick={(e) => { e.stopPropagation(); setLightboxUrl(p.url) }}>
                         <img src={p.url} alt="" className="w-12 h-12 object-cover rounded border" />
-                      </a>
+                      </button>
                     ))}
                   </div>
                 )}
@@ -813,6 +815,7 @@ export default function InspectionPage() {
           )}
         </div>
       )}
+      <PhotoLightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />
     </div>
   )
 }

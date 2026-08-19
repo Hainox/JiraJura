@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { issuesApi, inspectionsApi } from '@/lib/api'
 import { usePhotoUpload } from '@/lib/usePhotoUpload'
@@ -34,6 +34,7 @@ const CRIT_COLORS: Record<string, string> = {
 export default function IssueFixPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
   const queryClient = useQueryClient()
   const user = useAuthStore((s) => s.user)
   const issueId = id!
@@ -47,6 +48,12 @@ export default function IssueFixPage() {
   // Смонтирована на /issues/:id (reviewer) и /admin/issues/:id (admin) —
   // см. тот же паттерн в IssuesPage.tsx.
   const issuesListPath = isAdmin ? '/admin/issues' : '/issues'
+  // Открыта из очереди "Финальный контроль" (/admin/control) — тогда после
+  // решения (принять/на доработку) и по кнопке "Назад" нужно возвращаться
+  // именно туда, а не в общий список "Замечания": админ уже отфильтровал
+  // очередь "исправлено, ждёт решения" и логично разбирать её дальше по
+  // порядку, а не начинать заново с полного списка.
+  const returnPath = (location.state as { from?: string } | null)?.from || issuesListPath
 
   const { data: issue, isLoading } = useQuery<IssueOut>({
     queryKey: ['issue', issueId], queryFn: () => issuesApi.get(issueId), enabled: !!issueId,
@@ -67,7 +74,7 @@ export default function IssueFixPage() {
       toast.success('Исправление зафиксировано!')
       queryClient.invalidateQueries({ queryKey: ['issue', issueId] })
       queryClient.invalidateQueries({ queryKey: ['issues'] })
-      navigate(issuesListPath)
+      navigate(returnPath)
     },
     onError: () => toast.error('Ошибка сохранения'),
   })
@@ -78,6 +85,8 @@ export default function IssueFixPage() {
       toast.success('Исправление принято!')
       queryClient.invalidateQueries({ queryKey: ['issue', issueId] })
       queryClient.invalidateQueries({ queryKey: ['issues'] })
+      queryClient.invalidateQueries({ queryKey: ['issues-final-control'] })
+      navigate(returnPath)
     },
     onError: (err: unknown) => {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
@@ -91,6 +100,8 @@ export default function IssueFixPage() {
       toast.success('Отправлено на доработку')
       queryClient.invalidateQueries({ queryKey: ['issue', issueId] })
       queryClient.invalidateQueries({ queryKey: ['issues'] })
+      queryClient.invalidateQueries({ queryKey: ['issues-final-control'] })
+      navigate(returnPath)
     },
     onError: (err: unknown) => {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
@@ -107,7 +118,7 @@ export default function IssueFixPage() {
     <div className="h-full flex flex-col bg-gray-50">
       <div className="bg-primary-800 text-white px-4 py-3 shrink-0">
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate(issuesListPath)} className="p-1.5 rounded-lg hover:bg-primary-700 transition-colors shrink-0">
+          <button onClick={() => navigate(returnPath)} className="p-1.5 rounded-lg hover:bg-primary-700 transition-colors shrink-0">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
             </svg>

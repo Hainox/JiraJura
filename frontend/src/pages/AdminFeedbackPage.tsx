@@ -5,6 +5,7 @@ import { feedbackApi } from '@/lib/api'
 import type { FeedbackReportOut, FeedbackStatus, FeedbackReportType } from '@/types'
 import { ArrowLeft, RefreshCw, MessageSquareWarning, Phone, MapPin, User as UserIcon, Bug, HelpCircle, MapPinned, Paperclip, FileSpreadsheet } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
+import PhotoLightbox from '@/components/PhotoLightbox'
 
 const STATUS_LABELS: Record<FeedbackStatus, string> = {
   new: 'Новое', in_review: 'В работе', resolved: 'Решено', dismissed: 'Отклонено',
@@ -36,6 +37,7 @@ export default function AdminFeedbackPage() {
   const [typeFilter, setTypeFilter] = useState<string>('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [commentDraft, setCommentDraft] = useState('')
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['feedback', statusFilter, typeFilter],
@@ -134,15 +136,26 @@ export default function AdminFeedbackPage() {
               <div className="flex flex-wrap gap-2">
                 {r.attachments.map((a) => {
                   const isImage = a.content_type?.startsWith('image/')
-                  return (
-                    <a
-                      key={a.id} href={a.url} target="_blank" rel="noreferrer"
-                      className="flex items-center gap-1.5 border border-gray-200 rounded-lg px-2 py-1 hover:border-primary-300 transition-colors"
-                    >
+                  const className = "flex items-center gap-1.5 border border-gray-200 rounded-lg px-2 py-1 hover:border-primary-300 transition-colors"
+                  const content = (
+                    <>
                       {isImage
                         ? <img src={a.url} alt="" className="w-8 h-8 object-cover rounded" />
                         : <Paperclip className="w-3.5 h-3.5 text-gray-400" />}
                       <span className="text-xs text-gray-600 max-w-[120px] truncate">{a.original_filename || 'файл'}</span>
+                    </>
+                  )
+                  // Фото — во встроенный лайтбокс (target="_blank" в PWA
+                  // standalone на iOS Safari уводит с картинки без возможности
+                  // закрыть). Не-изображения (pdf/doc/xlsx) — по-прежнему
+                  // обычной ссылкой, там открытие/скачивание через ОС уместно.
+                  return isImage ? (
+                    <button key={a.id} onClick={() => setLightboxUrl(a.url)} className={className}>
+                      {content}
+                    </button>
+                  ) : (
+                    <a key={a.id} href={a.url} target="_blank" rel="noreferrer" className={className}>
+                      {content}
                     </a>
                   )
                 })}
@@ -189,6 +202,7 @@ export default function AdminFeedbackPage() {
           </div>
         ))}
       </div>
+      <PhotoLightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />
     </div>
   )
 }

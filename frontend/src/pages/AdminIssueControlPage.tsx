@@ -69,7 +69,7 @@ export default function AdminIssueControlPage() {
             {issues.map((issue: IssueOut) => (
               <button
                 key={issue.id}
-                onClick={() => navigate(`/admin/issues/${issue.id}`)}
+                onClick={() => navigate(`/admin/issues/${issue.id}`, { state: { from: '/admin/control' } })}
                 className="w-full text-left bg-white hover:bg-gray-50 transition-colors p-3 flex items-start gap-3"
               >
                 <div className="flex-1 min-w-0">

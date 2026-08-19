@@ -76,7 +76,10 @@ export default function MapPage() {
   const setReviewStatusFilter = useMapViewStore((s) => s.setReviewStatusFilter)
   const myInspOnly = useMapViewStore((s) => s.myInspOnly)
   const setMyInspOnly = useMapViewStore((s) => s.setMyInspOnly)
-  const myAssignedOnly = useMapViewStore((s) => s.myAssignedOnly)
+  const selectedMyAssignedOnly = useMapViewStore((s) => s.myAssignedOnly)
+  // Персональное назначение — дополнительный режим только для инспектора;
+  // базовый список всегда содержит весь район пользователя.
+  const myAssignedOnly = user?.role === 'inspector' && selectedMyAssignedOnly
   const setMyAssignedOnly = useMapViewStore((s) => s.setMyAssignedOnly)
   // Не подписываемся на listScrollTop через селектор — иначе каждый пиксель
   // скролла ре-рендерил бы всю страницу (setter вызывается на каждый onScroll).
@@ -314,7 +317,7 @@ export default function MapPage() {
                   myAssignedOnly ? 'bg-primary-700 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
               >
-                Мои площадки
+                Мои назначенные площадки
               </button>
             </div>
           )}
@@ -482,13 +485,13 @@ export default function MapPage() {
               </div>
               <h3 className="text-lg font-semibold text-gray-700 mb-2">Нет персонально назначенных площадок</h3>
               <p className="text-sm text-gray-500">
-                Включён фильтр «Мои площадки», а за вами пока не закреплено ни одной конкретной площадки. Отключите фильтр, чтобы увидеть все площадки района.
+                Включён дополнительный фильтр «Мои назначенные площадки», а за вами пока не закреплено ни одной конкретной площадки. Отключите его, чтобы увидеть все площадки района.
               </p>
               <button
                 onClick={() => setMyAssignedOnly(false)}
                 className="btn-primary mt-4"
               >
-                Отключить «Мои площадки»
+                Показать все площадки района
               </button>
             </div>
           </div>

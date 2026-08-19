@@ -42,6 +42,9 @@ export const useAuthStore = create<AuthState>((set) => ({
   login: (token, user) => {
     localStorage.setItem('access_token', token)
     localStorage.setItem('user', JSON.stringify(user))
+    // Не переносим режим «Мои площадки» между аккаунтами на общем устройстве.
+    // По умолчанию инспектор должен видеть весь свой район.
+    useMapViewStore.getState().reset()
     set({ token, user, isAuthenticated: true })
   },
 
@@ -60,6 +63,11 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   setUser: (user) => {
     localStorage.setItem('user', JSON.stringify(user))
+    // Этот фильтр относится только к инспектору. Если роль сняли во время
+    // активной сессии, проверяющий/админ не должны сохранить его состояние.
+    if (user.role !== 'inspector') {
+      useMapViewStore.getState().setMyAssignedOnly(false)
+    }
     set({ user })
   },
 }))

@@ -77,11 +77,11 @@ async def list_sites(
         base = base.where(Site.type == type)
     if search:
         base = base.where(Site.kml_original_id.ilike(f"%{search}%"))
-    # "Мои площадки" — не хард-ограничение доступа (см. комментарий у
-    # assigned_inspector_id в models.py), просто фильтр вида, поэтому
-    # доступен любой роли: инспектору — свои, проверяющему/админу — чтобы
-    # проверить, что реально назначено конкретному человеку.
-    if assigned_to_me:
+    # "Мои назначенные площадки" — дополнительный фильтр только инспектора.
+    # Проверяющий всегда видит все площадки своего района и назначает их
+    # инспекторам, поэтому этот параметр не должен превращаться для него в
+    # скрытое ограничение списка.
+    if assigned_to_me and current_user.role == "inspector":
         base = base.where(Site.assigned_inspector_id == current_user.id)
 
     # count

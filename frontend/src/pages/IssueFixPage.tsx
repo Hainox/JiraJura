@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
 import BeforeAfterCompare from '@/components/BeforeAfterCompare'
+import PhotoLightbox from '@/components/PhotoLightbox'
 import { guardDemoAction } from '@/stores/demoMode'
 
 const STATUS_LABELS: Record<string, string> = {
@@ -41,6 +42,7 @@ export default function IssueFixPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [fixComment, setFixComment] = useState('')
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [reviewerComment, setReviewerComment] = useState('')
 
   const isAdmin = user?.role === 'admin'
@@ -159,7 +161,7 @@ export default function IssueFixPage() {
         )}
 
         {/* Слайдер ДО/ПОСЛЕ + загрузка фото */}
-        <IssuePhotoComparison inspectionId={issue.inspection_id} issuePhotos={issue.photos ?? []} fixPhotos={fixPhotos} />
+        <IssuePhotoComparison inspectionId={issue.inspection_id} issuePhotos={issue.photos ?? []} fixPhotos={fixPhotos} onPhotoClick={setLightboxUrl} />
 
         {issue.status !== 'closed' && (
           <div className="card space-y-2">
@@ -231,14 +233,15 @@ export default function IssueFixPage() {
           </div>
         )}
       </div>
+      <PhotoLightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />
     </div>
   )
 }
 
 /** Сравнение фото ДО/ПОСЛЕ через слайдер */
 function IssuePhotoComparison({
-  inspectionId, issuePhotos, fixPhotos,
-}: { inspectionId: string; issuePhotos: { id: string; url: string }[]; fixPhotos: { id: string; url: string }[] }) {
+  inspectionId, issuePhotos, fixPhotos, onPhotoClick,
+}: { inspectionId: string; issuePhotos: { id: string; url: string }[]; fixPhotos: { id: string; url: string }[]; onPhotoClick: (url: string) => void }) {
   const [pairIndex, setPairIndex] = useState(0)
   const { data: inspection } = useQuery({ queryKey: ['inspection', inspectionId], queryFn: () => inspectionsApi.get(inspectionId), enabled: !!inspectionId })
   // Фото самого замечания — если инспектор их прикрепил при создании
@@ -262,7 +265,7 @@ function IssuePhotoComparison({
           <span className="bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">ПОСЛЕ: {fixPhotos.length}</span>
         </div>
       </div>
-      <BeforeAfterCompare beforeUrl={beforeUrl} afterUrl={afterUrl} />
+      <BeforeAfterCompare beforeUrl={beforeUrl} afterUrl={afterUrl} onPhotoClick={onPhotoClick} />
       {totalPairs > 1 && (
         <>
           <div className="flex items-center justify-center gap-2">

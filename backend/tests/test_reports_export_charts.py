@@ -66,6 +66,13 @@ async def test_district_summary_sheet_has_comparison_charts(client, admin_header
     # смешение метрик разного масштаба в одном графике плохо читается.
     for c in summary_ws._charts:
         assert len(c.series) == 2
+        # openpyxl по умолчанию ставит axPos="l" ОБЕИМ осям (категорий и
+        # значений) — при рендере это конфликт "обе оси слева", из-за
+        # которого Excel вообще не рисует подписи районов под столбцами
+        # (репродуцировано живым скриншотом: пустая ось X). Без явного
+        # axPos="b" на оси категорий регрессия незаметна в самом файле —
+        # openpyxl не проверяет геометрию — только при живом открытии.
+        assert c.x_axis.axPos == "b"
 
 
 @pytest.mark.asyncio
@@ -178,6 +185,7 @@ async def test_dynamics_sheet_has_okrug_trend_line_chart(client, admin_headers):
     line_charts = [c for c in dyn._charts if type(c).__name__ == "LineChart"]
     assert len(line_charts) == 1
     assert len(line_charts[0].series) == 1
+    assert line_charts[0].x_axis.axPos == "b"  # см. комментарий в test_district_summary_sheet_has_comparison_charts
 
     # Мини-таблица тренда — правее основной, "Всего обходов" по возрастанию дат.
     header = [c.value for c in dyn[1]]

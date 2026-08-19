@@ -97,3 +97,5 @@ async def test_export_overview_has_top_districts_by_closures(client: AsyncClient
     bar_charts = [c for c in ov._charts if type(c).__name__ == "BarChart"]
     titles = [c.title.tx.rich.p[0].r[0].t for c in bar_charts]
     assert any("Топ районов по устранению замечаний" in t for t in titles)
+    closures_chart = next(c for c, t in zip(bar_charts, titles) if "Топ районов по устранению замечаний" in t)
+    assert closures_chart.x_axis.axPos == "b"  # см. test_reports_export_charts.py — иначе Excel не рисует подписи районов

@@ -835,6 +835,11 @@ async def export_xlsx(
         chart.type = "col"
         chart.title = title
         chart.y_axis.title = y_title
+        # openpyxl создаёt обе оси с axPos="l" по умолчанию — для
+        # горизонтальной оси категорий колоночного графика это неверно и
+        # конфликтует с осью значений (тоже "l"): Excel не может понять,
+        # где рисовать подписи категорий, и молча не рисует их вообще.
+        chart.x_axis.axPos = "b"
         chart.height, chart.width = 9, 18
         chart.add_data(data_ref, titles_from_data=True)
         chart.set_categories(cats_ref)
@@ -846,6 +851,7 @@ async def export_xlsx(
         chart = LineChart()
         chart.title = title
         chart.y_axis.title = y_title
+        chart.x_axis.axPos = "b"  # см. комментарий в _bar — тот же дефолт-баг openpyxl
         chart.height, chart.width = 9, 18
         chart.add_data(data_ref, titles_from_data=True)
         chart.set_categories(cats_ref)
@@ -1069,6 +1075,7 @@ async def export_xlsx(
             chart.grouping = "clustered"
             chart.title = title
             chart.height, chart.width = 9, 22
+            chart.x_axis.axPos = "b"  # см. комментарий в _bar — тот же дефолт-баг openpyxl
             data = Reference(summary_ws, min_col=col_a, max_col=col_b, min_row=1, max_row=last_row)
             cats = Reference(summary_ws, min_col=1, min_row=2, max_row=last_row)
             chart.add_data(data, titles_from_data=True)

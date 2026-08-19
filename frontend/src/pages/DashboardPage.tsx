@@ -15,13 +15,22 @@ export default function DashboardPage() {
   const navigate = useNavigate()
   // Смонтирована на /dashboard (reviewer) и /admin/dashboard (admin) —
   // см. тот же паттерн в IssuesPage.tsx.
-  const isAdmin = useAuthStore((s) => s.user?.role === 'admin')
+  const user = useAuthStore((s) => s.user)
+  const isAdmin = user?.role === 'admin'
   const backTo = isAdmin ? '/admin' : '/'
+
+  // Проверяющий с закреплённым районом (district_id задан) на бэкенде
+  // (reports.py) принудительно видит только свой район — сервер молча
+  // подменяет любой присланный district_id на свой. Раньше фильтр всё
+  // равно показывал "Все районы" как будто это реальный выбор, что вводило
+  // в заблуждение. Закрепляем фильтр за районом визуально, раз он и так
+  // закреплён по факту.
+  const lockedDistrictId = user?.role === 'reviewer' ? user.district_id : undefined
 
   const today = new Date().toISOString().slice(0, 10)
   const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10)
 
-  const [districtFilter, setDistrictFilter] = useState<string>('')
+  const [districtFilter, setDistrictFilter] = useState<string>(lockedDistrictId || '')
   const [dateFrom, setDateFrom] = useState<string>(weekAgo)
   const [dateTo, setDateTo] = useState<string>(today)
 
@@ -29,6 +38,8 @@ export default function DashboardPage() {
     queryKey: ['districts'],
     queryFn: districtsApi.list,
   })
+
+  const lockedDistrictName = districts?.find((d) => d.id === lockedDistrictId)?.name
 
   const { data, isLoading, isError, refetch } = useQuery<DashboardOut>({
     queryKey: ['dashboard', districtFilter, dateFrom, dateTo],
@@ -70,16 +81,26 @@ export default function DashboardPage() {
 
       {/* Filters */}
       <div className="bg-white border-b px-4 py-2 shrink-0 flex gap-2 flex-wrap">
-        <select
-          className="input-field text-sm flex-1 min-w-[140px]"
-          value={districtFilter}
-          onChange={(e) => setDistrictFilter(e.target.value)}
-        >
-          <option value="">Все районы</option>
-          {districts?.map((d) => (
-            <option key={d.id} value={d.id}>{d.name}</option>
-          ))}
-        </select>
+        {lockedDistrictId ? (
+          <div
+            className="input-field text-sm flex-1 min-w-[140px] flex items-center gap-1.5 bg-gray-50 text-gray-600 cursor-default"
+            title="Ваш аккаунт закреплён за этим районом"
+          >
+            <MapPin className="w-3.5 h-3.5 shrink-0 text-gray-400" />
+            <span className="truncate">{lockedDistrictName || '…'}</span>
+          </div>
+        ) : (
+          <select
+            className="input-field text-sm flex-1 min-w-[140px]"
+            value={districtFilter}
+            onChange={(e) => setDistrictFilter(e.target.value)}
+          >
+            <option value="">Все районы</option>
+            {districts?.map((d) => (
+              <option key={d.id} value={d.id}>{d.name}</option>
+            ))}
+          </select>
+        )}
         <input
           type="date"
           className="input-field text-sm w-[130px]"

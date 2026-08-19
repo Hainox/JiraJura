@@ -275,30 +275,33 @@ async def admin_dashboard(
 
         iss_base = select(func.count()).select_from(Issue).where(Issue.site_id.in_(site_sub))
         issues_total = (await db.execute(period(iss_base, Issue.created_at))).scalar_one() or 0
-        issues_open = (await db.execute(period(
+        # issues_open/fixed/revision_needed/closed/overdue — ТЕКУЩИЙ статус
+        # (снимок "сейчас"), не событие внутри периода: замечание, оформленное
+        # до начала выбранного диапазона дат, но до сих пор не устранённое,
+        # обязано попасть в issues_open/issues_revision_needed — иначе оно
+        # необъяснимо "пропадает" из дашборда, хотя объективно требует
+        # внимания прямо сейчас. Период фильтрует только issues_total
+        # (сколько ОФОРМЛЕНО за период — это уже реальное событие с датой).
+        issues_open = (await db.execute(
             select(func.count()).select_from(Issue).where(
                 Issue.site_id.in_(site_sub), Issue.status.in_(["open", "assigned", "in_work"])
-            ), Issue.created_at,
-        ))).scalar_one() or 0
+            ),
+        )).scalar_one() or 0
         # «fixed» + «control»: исправлено и ждёт приёмки / на контроле —
         # обе стадии означают «устранено, но ещё не принято», раньше «control»
         # выпадал из всех вёдер дашборда и такие замечания «терялись».
-        issues_fixed = (await db.execute(period(
+        issues_fixed = (await db.execute(
             select(func.count()).select_from(Issue).where(Issue.site_id.in_(site_sub), Issue.status.in_(["fixed", "control"])),
-            Issue.created_at,
-        ))).scalar_one() or 0
-        issues_revision_needed = (await db.execute(period(
+        )).scalar_one() or 0
+        issues_revision_needed = (await db.execute(
             select(func.count()).select_from(Issue).where(Issue.site_id.in_(site_sub), Issue.status == "revision_needed"),
-            Issue.created_at,
-        ))).scalar_one() or 0
-        issues_closed = (await db.execute(period(
+        )).scalar_one() or 0
+        issues_closed = (await db.execute(
             select(func.count()).select_from(Issue).where(Issue.site_id.in_(site_sub), Issue.status == "closed"),
-            Issue.created_at,
-        ))).scalar_one() or 0
-        issues_overdue = (await db.execute(period(
+        )).scalar_one() or 0
+        issues_overdue = (await db.execute(
             select(func.count()).select_from(Issue).where(Issue.site_id.in_(site_sub), Issue.status == "overdue"),
-            Issue.created_at,
-        ))).scalar_one() or 0
+        )).scalar_one() or 0
 
         row = DashboardDistrictRow(
             district_id=d.id, district_name=d.name, total_sites=total_sites,
@@ -711,45 +714,47 @@ async def export_xlsx(
             ChecklistAnswer.created_at,
         ))).scalar_one() or 0
 
-        # Жизненный цикл замечаний — все счётчики за период (как на дашборде),
-        # без смешивания «за период» и «сейчас»: раньше «Открыто сейчас»
-        # считалось без фильтра периода и не сходилось с «Замечаний
-        # оформлено», что выглядело как расхождение в данных.
+        # Жизненный цикл замечаний: created — сколько ОФОРМЛЕНО за период
+        # (событие, дата = created_at, фильтр периода уместен). Остальные —
+        # open_now/fixed/revision/closed/overdue — это ТЕКУЩИЙ статус, снимок
+        # состояния «прямо сейчас», а не событие внутри периода: замечание,
+        # оформленное вчера, но до сих пор не устранённое или только что
+        # возвращённое на доработку, обязано попасть в "revision"/"open_now"
+        # независимо от выбранных дат — иначе оно необъяснимо "пропадает" из
+        # дашборда/отчёта у пользователя, хотя объективно требует внимания.
+        # (Раньше все шесть счётчиков искусственно фильтровались одним и тем
+        # же периодом ради визуального "схождения" с created — ценой того,
+        # что текущий статус переставал быть текущим.)
         created = (await db.execute(period(
             select(func.count()).select_from(Issue).where(Issue.site_id.in_(site_sub)),
             Issue.created_at,
         ))).scalar_one() or 0
-        open_now = (await db.execute(period(
+        open_now = (await db.execute(
             select(func.count()).select_from(Issue).where(
                 Issue.site_id.in_(site_sub),
                 Issue.status.in_(["open", "assigned", "in_work"]),
             ),
-            Issue.created_at,
-        ))).scalar_one() or 0
-        fixed = (await db.execute(period(
+        )).scalar_one() or 0
+        fixed = (await db.execute(
             select(func.count()).select_from(Issue).where(
                 Issue.site_id.in_(site_sub), Issue.status.in_(["fixed", "control"])
             ),
-            Issue.created_at,
-        ))).scalar_one() or 0
-        revision = (await db.execute(period(
+        )).scalar_one() or 0
+        revision = (await db.execute(
             select(func.count()).select_from(Issue).where(
                 Issue.site_id.in_(site_sub), Issue.status == "revision_needed"
             ),
-            Issue.created_at,
-        ))).scalar_one() or 0
-        closed = (await db.execute(period(
+        )).scalar_one() or 0
+        closed = (await db.execute(
             select(func.count()).select_from(Issue).where(
                 Issue.site_id.in_(site_sub), Issue.status == "closed"
             ),
-            Issue.created_at,
-        ))).scalar_one() or 0
-        overdue = (await db.execute(period(
+        )).scalar_one() or 0
+        overdue = (await db.execute(
             select(func.count()).select_from(Issue).where(
                 Issue.site_id.in_(site_sub), Issue.status == "overdue"
             ),
-            Issue.created_at,
-        ))).scalar_one() or 0
+        )).scalar_one() or 0
         summary_data.append((
             d.name, total_sites, sites_inspected, sites_not_inspected,
             inspected, inspections_ok, inspections_with_defects,

@@ -11,7 +11,7 @@ from sqlalchemy.orm import aliased
 
 from app.database import get_db
 from app.models import (
-    District, Courtyard, Site, Inspection, Issue, ChecklistAnswer, ChecklistItem, User, UserInvite,
+    District, Courtyard, Site, Inspection, Issue, ChecklistAnswer, ChecklistItem, User, IssueStatusHistory,
 )
 from app.schemas import ReportWeeklyOut, ReportMonthlyOut, DashboardDistrictRow, DashboardOut
 from app.services.permissions import require_role
@@ -388,12 +388,12 @@ async def export_xlsx(
     district_id для него принудительно замещается собственным районом.
     """
     from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill
+    from openpyxl.styles import Font
     from openpyxl.chart import BarChart, PieChart, LineChart, Reference
     from openpyxl.chart.label import DataLabelList
     from openpyxl.chart.marker import DataPoint
     from app.services.xlsx_style import (
-        style_header_row, style_data_row, style_header_cell, style_data_cell,
+        style_header_cell, style_data_cell,
         style_merged_label, safe_append, CENTER_WRAP, SPACER_ROW_HEIGHT,
     )
 
@@ -409,58 +409,27 @@ async def export_xlsx(
             q = q.where(column < dt_to)
         return q
 
-    # ── Регистрация (для листов "Обзор"/"Регистрация" — тот же расчёт, что
-    # в эталонном generate_summary_report.py, который раньше запускался
-    # только вручную на сервере; переносим сюда, чтобы админ/reviewer могли
-    # получить тот же отчёт кнопкой "Excel" в приложении, без SSH) ──
-    pending_q = select(UserInvite.district_id, UserInvite.full_name, UserInvite.role, UserInvite.created_at).where(UserInvite.used_at.is_(None))
+    # ── Топ районов по устранению замечаний — закрытие замечания это
+    # СОБЫТИЕ (переход статуса в 'closed'), а не снимок текущего состояния,
+    # поэтому считаем по IssueStatusHistory с фильтром периода, а не по
+    # Issue.status: иначе "закрыто вчера и потом переоткрыто" неотличимо от
+    # "закрыто только что", а сегодняшнее закрытие замечания, оформленного
+    # неделю назад, не попало бы в подсчёт вовсе. ──
+    closures_q = (
+        select(District.id, District.name, func.count())
+        .select_from(IssueStatusHistory)
+        .join(Issue, IssueStatusHistory.issue_id == Issue.id)
+        .join(Site, Issue.site_id == Site.id)
+        .join(Courtyard, Site.courtyard_id == Courtyard.id)
+        .join(District, Courtyard.district_id == District.id)
+        .where(IssueStatusHistory.new_status == "closed")
+    )
     if district_id:
-        pending_q = pending_q.where(UserInvite.district_id == district_id)
-    pending_q = pending_q.order_by(UserInvite.full_name, UserInvite.created_at.desc())
-    pending_rows = (await db.execute(pending_q)).all()
-
-    # Дедуп по ФИО в рамках каждой группы (район/админы/окружные) — один
-    # человек мог быть приглашён повторно под другим логином (опечатка).
-    def _dedup_by_name(rows):
-        seen, out = set(), []
-        for r in rows:
-            if r.full_name in seen:
-                continue
-            seen.add(r.full_name)
-            out.append(r)
-        return out
-
-    pending_by_district_raw: dict = {}
-    pending_admins_raw, pending_okrug_reviewers_raw = [], []
-    for r in pending_rows:
-        if r.role == "admin":
-            pending_admins_raw.append(r)
-        elif r.district_id is None:
-            pending_okrug_reviewers_raw.append(r)
-        else:
-            pending_by_district_raw.setdefault(r.district_id, []).append(r)
-    pending_admins = _dedup_by_name(pending_admins_raw)
-    pending_okrug_reviewers = _dedup_by_name(pending_okrug_reviewers_raw)
-    pending_by_district = {did: _dedup_by_name(rows) for did, rows in pending_by_district_raw.items()}
-
-    reg_districts_q = select(District).order_by(District.name)
-    if district_id:
-        reg_districts_q = reg_districts_q.where(District.id == district_id)
-    reg_districts = (await db.execute(reg_districts_q)).scalars().all()
-
-    reg_stats = []
-    for d in reg_districts:
-        registered = (await db.execute(
-            select(func.count()).select_from(User).where(User.district_id == d.id, User.is_active)
-        )).scalar_one()
-        pending = pending_by_district.get(d.id, [])
-        total = registered + len(pending)
-        pct = (registered / total) if total else 1.0
-        reg_stats.append({"name": d.name, "registered": registered, "pending": pending, "total": total, "pct": pct})
-    reg_stats.sort(key=lambda x: x["pct"])
-    total_reg = sum(x["registered"] for x in reg_stats)
-    total_all_invited = sum(x["total"] for x in reg_stats)
-    overall_reg_pct = (total_reg / total_all_invited) if total_all_invited else 1.0
+        closures_q = closures_q.where(District.id == district_id)
+    closures_q = period(closures_q, IssueStatusHistory.created_at)
+    closures_q = closures_q.group_by(District.id, District.name).order_by(func.count().desc())
+    district_closures = (await db.execute(closures_q)).all()
+    total_closures_period = sum(cnt for _did, _name, cnt in district_closures)
 
     # ── Топ категорий нарушений и лидеры дня — та же зона видимости
     # (district_id), что и у остальных листов этой выгрузки ──
@@ -829,10 +798,6 @@ async def export_xlsx(
     # ── Сборка файла ──
     wb = Workbook()
 
-    RED = PatternFill("solid", fgColor="FFC7CE")
-    YELLOW = PatternFill("solid", fgColor="FFEB9C")
-    GREEN = PatternFill("solid", fgColor="C6EFCE")
-
     # Единая палитра для всех диаграмм отчёта — вместо цветов по умолчанию,
     # которые Excel назначает сериям сам (обычно случайный порядок радуги,
     # не связанный со смыслом "хорошо/плохо"). Статусные цвета (good/warning/
@@ -956,7 +921,7 @@ async def export_xlsx(
     ov[f"A{ov.max_row}"].alignment = CENTER_WRAP
     _row()
     _row("Ключевые цифры", style="header")
-    _row("Регистрация", f"{total_reg} / {total_all_invited} ({overall_reg_pct:.0%})", style="data")
+    _row("Закрыто замечаний за период", total_closures_period, style="data")
     _row("Площадок в системе", total_sites_all, style="data")
     _row("Проверено площадок / не проверено", f"{sites_inspected_all} / {sites_not_inspected_all}", style="data")
     _row("Обходов всего / завершено", f"{total_insp_all} / {total_insp_done_all} (в процессе: {total_insp_in_progress_all})", style="data")
@@ -966,16 +931,6 @@ async def export_xlsx(
     _row("«Проверено» считает площадки, а не записи обходов; «без нарушений» — завершённые обходы без дефектов: «зелёные» обходы входят сюда и никуда не теряются.", style="data")
     _row()
     _row("Требуют внимания в первую очередь", style="header")
-
-    low_reg = [x for x in reg_stats if x["pct"] < 0.5 and x["total"] > 0]
-    if low_reg:
-        names = ", ".join(f"{x['name']} ({x['pct']:.0%})" for x in low_reg)
-        _row(f"• Регистрация < 50%: {names} — стоит выяснить, не мешает ли что-то войти в систему.", style="data")
-
-    not_registered_admins = pending_admins + pending_okrug_reviewers
-    if not_registered_admins:
-        names = ", ".join(r.full_name for r in not_registered_admins)
-        _row(f"• Не зарегистрированы админы/окружные проверяющие ({len(not_registered_admins)}): {names} — у них административные права, стоит дожать в первую очередь.", style="data")
 
     if top_categories:
         cats = ", ".join(f"{cat} ({cnt})" for cat, cnt in top_categories)
@@ -992,7 +947,6 @@ async def export_xlsx(
     _row()
     _row("Состав отчёта", style="header")
     for name, desc in [
-        ("Регистрация", "Кто зарегистрирован/нет по районам, поимённо, худшие районы сверху"),
         ("Задания", "Снимок сейчас: кто отвечает за площадку и когда там были в последний раз"),
         ("Сводка по районам", "Охват (проверено/не проверено), результат обходов (без/с нарушениями) и жизненный цикл замечаний за период, в одной таблице"),
         ("Обходы", "Детальный лог всех обходов: инспектор, площадка, статус, ОК/дефектов/фото"),
@@ -1063,84 +1017,33 @@ async def export_xlsx(
              Reference(ov, min_col=8, min_row=14, max_row=row - 1),
              Reference(ov, min_col=9, min_row=13, max_row=row - 1), "K44",
              y_title="Нарушений", color=CHART_CRITICAL)
+        next_h_row, next_k_row = row + 2, 58
+    else:
+        next_h_row, next_k_row = 13, 44
 
-    # ── Регистрация ──
-    reg_ws = wb.create_sheet("Регистрация")
+    # Топ районов по устранению замечаний — зеркало "Топ категорий
+    # нарушений" выше, но по обратной, "хорошей" стороне процесса: не что
+    # сломано, а где активнее всего чинят. Явный акцент отчёта на
+    # исправления, а не только на учёт находок.
+    if district_closures:
+        ov.cell(next_h_row, 8, "Районы: закрыто замечаний")
+        style_header_cell(ov.cell(next_h_row, 8), fill=False)
+        style_header_cell(ov.cell(next_h_row, 9), fill=False)
+        ov.merge_cells(start_row=next_h_row, start_column=8, end_row=next_h_row, end_column=9)
+        r = next_h_row + 1
+        for _did, dname, cnt in district_closures:
+            ov.cell(r, 8, dname)
+            ov.cell(r, 9, cnt)
+            style_data_cell(ov.cell(r, 8))
+            style_data_cell(ov.cell(r, 9))
+            r += 1
+        _bar(ov, "Топ районов по устранению замечаний",
+             Reference(ov, min_col=8, min_row=next_h_row + 1, max_row=r - 1),
+             Reference(ov, min_col=9, min_row=next_h_row, max_row=r - 1), f"K{next_k_row}",
+             y_title="Закрыто", color=CHART_GOOD)
 
-    def _reg_spacer():
-        reg_ws.append([])
-        reg_ws.row_dimensions[reg_ws.max_row].height = SPACER_ROW_HEIGHT
-
-    reg_ws.append(["Регистрация пользователей по районам"])
-    reg_ws["A1"].font = Font(bold=True, size=14)
-    reg_ws["A1"].alignment = CENTER_WRAP
-    reg_ws.append([f"Снимок на {now_str} — user_invites + users, дедуп по ФИО"])
-    reg_ws[f"A{reg_ws.max_row}"].alignment = CENTER_WRAP
-    _reg_spacer()
-    reg_ws.append(["Район", "Зарегистрировано", "Всего приглашено", "% регистрации"])
-    style_header_row(reg_ws, reg_ws.max_row, 4)
-    for x in reg_stats:
-        safe_append(reg_ws, [x["name"], x["registered"], x["total"], x["pct"]])
-        style_data_row(reg_ws, reg_ws.max_row, 4)
-        fill = RED if x["pct"] < 0.5 else (YELLOW if x["pct"] < 0.8 else GREEN)
-        reg_ws.cell(reg_ws.max_row, 4).fill = fill
-        reg_ws.cell(reg_ws.max_row, 4).number_format = "0%"
-    reg_ws.append(["ИТОГО", total_reg, total_all_invited, overall_reg_pct])
-    style_header_row(reg_ws, reg_ws.max_row, 4)
-    reg_ws.cell(reg_ws.max_row, 4).number_format = "0%"
-
-    def _reg_header(text):
-        safe_append(reg_ws, [text])
-        style_merged_label(reg_ws, reg_ws.max_row, 2, header=True)
-
-    def _reg_item(text):
-        safe_append(reg_ws, [text])
-        style_merged_label(reg_ws, reg_ws.max_row, 2, header=False)
-
-    def _reg_note(text):
-        """Сноска под 4-колоночной таблицей регистрации — на всю её
-        ширину, а не в одной нестилизованной ячейке, иначе текст
-        выползает за правую границу таблицы поверх пустых ячеек."""
-        safe_append(reg_ws, [text])
-        style_merged_label(reg_ws, reg_ws.max_row, 4, header=False)
-
-    _reg_spacer()
-    _reg_header("Не зарегистрированы поимённо (по районам, худшие сверху)")
-    for x in reg_stats:
-        if not x["pending"]:
-            continue
-        _reg_header(x["name"])
-        for r in x["pending"]:
-            _reg_item(f"   {r.full_name}")
-
-    if not district_id and pending_okrug_reviewers:
-        _reg_spacer()
-        _reg_header("Проверяющие без района (весь округ) — не зарегистрированы")
-        for r in pending_okrug_reviewers:
-            _reg_item(f"   {r.full_name}")
-
-    if not district_id and pending_admins:
-        _reg_spacer()
-        _reg_header("Админы — не зарегистрированы")
-        for r in pending_admins:
-            _reg_item(f"   {r.full_name}")
-
-    _reg_spacer()
-    if odd_districts:
-        _reg_note(f"* {', '.join(odd_districts)} — вероятная опечатка/задвоение при заведении района, не отдельный реальный район.")
-    _reg_note("Цвет строки: красный < 50% регистрации, жёлтый 50–80%, зелёный ≥ 80%.")
-    for col, w in zip("ABCD", (45, 18, 18, 15)):
-        reg_ws.column_dimensions[col].width = w
-
-    if reg_stats:
-        n = len(reg_stats)
-        _bar(reg_ws, "% регистрации по районам",
-             Reference(reg_ws, min_col=1, min_row=5, max_row=4 + n),
-             Reference(reg_ws, min_col=4, min_row=4, max_row=4 + n), "F5", y_title="%")
-
-    # Первым листом после "Обзор"/"Регистрация" — снимок "кто чем занят
-    # прямо сейчас", не история за период: это то, что проверяющему нужно
-    # открыть первым делом.
+    # Снимок "кто чем занят прямо сейчас", не история за период: это то,
+    # что проверяющему нужно открыть первым делом.
     _sheet(wb, "Задания",
         ["Район", "Двор", "Тип площадки", "Назначенный инспектор", "Телефон", "Последний обход", "Статус последнего обхода"],
         assignment_data, [24, 40, 20, 26, 16, 18, 22])

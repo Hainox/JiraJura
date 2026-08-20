@@ -191,6 +191,18 @@ class UserInvite(Base):
     used_at = Column(DateTime(timezone=True), nullable=True)
 
 
+class IssueCategory(Base):
+    """Справочник категорий нарушений — см. docs/STATS_MODEL_V2.md §3.1.
+    Заменяет свободный текст checklist_items.category (deprecated, оставлен
+    для обратной совместимости старых миграций/дампов, код его не читает)."""
+    __tablename__ = "issue_categories"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String(200), nullable=False, unique=True)
+    sort_order = Column(Integer, nullable=False, default=0)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+
 class ChecklistTemplate(Base):
     __tablename__ = "checklist_templates"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -206,7 +218,11 @@ class ChecklistItem(Base):
     __tablename__ = "checklist_items"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     template_id = Column(UUID(as_uuid=True), ForeignKey("checklist_templates.id", ondelete="CASCADE"), nullable=False)
+    # Deprecated — свободный текст, заменён на category_id (справочник
+    # IssueCategory). Колонка остаётся в схеме (старые дампы/миграции), но
+    # код её больше не читает и не пишет.
     category = Column(String(200))
+    category_id = Column(UUID(as_uuid=True), ForeignKey("issue_categories.id"), nullable=True)
     question = Column(String(500), nullable=False)
     sort_order = Column(Integer, default=0)
     is_critical = Column(Boolean, default=False)
@@ -218,6 +234,7 @@ class ChecklistItem(Base):
     created_at = Column(DateTime(timezone=True), default=_utcnow)
 
     template = relationship("ChecklistTemplate", back_populates="items")
+    category_ref = relationship("IssueCategory", foreign_keys=[category_id])
 
 
 class Inspection(Base):
@@ -299,6 +316,11 @@ class Issue(Base):
     fix_comment = Column(Text)
     reviewer_comment = Column(Text)
     fixed_at = Column(DateTime(timezone=True))
+    category_id = Column(UUID(as_uuid=True), ForeignKey("issue_categories.id"), nullable=True)
+    # Кто фактически устранял нарушение (ФИО подрядчика/рабочего, не
+    # пользователь системы) — обязателен при переходе в status='fixed',
+    # см. STATS_MODEL_V2.md §4.2.
+    executor_name = Column(String(300), nullable=True)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), default=_utcnow)
     updated_at = Column(DateTime(timezone=True), onupdate=_utcnow)
@@ -307,6 +329,7 @@ class Issue(Base):
     site_ref = relationship("Site", back_populates="issues")
     assigned_user = relationship("User", back_populates="assigned_issues", foreign_keys=[assigned_to])
     creator_ref = relationship("User", foreign_keys=[created_by])
+    category_ref = relationship("IssueCategory", foreign_keys=[category_id])
     status_history = relationship("IssueStatusHistory", back_populates="issue")
     fix_photos = relationship("Photo",
                           primaryjoin="and_(Issue.id==Photo.issue_id, Photo.target_type=='issue_fix')",

@@ -79,6 +79,11 @@ async def test_stats_contract_and_pptx(client, admin_headers):
     assert len(presentation.slides) == 2
     assert presentation.slide_width == Inches(13.333)
     assert presentation.slide_height == Inches(7.5)
+    first_slide_text = "\n".join(shape.text for shape in presentation.slides[0].shapes if hasattr(shape, "text"))
+    second_slide_text = "\n".join(shape.text for shape in presentation.slides[1].shapes if hasattr(shape, "text"))
+    assert "УПРАВЛЕНИЕ ЖИЛИЩНО-КОММУНАЛЬНОГО ХОЗЯЙСТВА" in first_slide_text
+    assert "1.1" in first_slide_text
+    assert "1.2" in second_slide_text
     district_table = next(shape.table for shape in presentation.slides[0].shapes if shape.has_table)
     assert len(district_table.rows) == len(payload["districts"]) + 2
 

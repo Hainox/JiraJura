@@ -7,7 +7,7 @@ import type { InspectionOut, ChecklistTemplateOut, ChecklistItemOut, PhotoOut, I
 import {
   ArrowLeft, Send, X, AlertTriangle, CheckCircle, Eye,
   CheckCircle2, HelpCircle, ChevronRight, Plus, Camera,
-  Flag, RotateCcw, FileText, ClipboardList
+  Flag, RotateCcw, FileText, ClipboardList, ImagePlus
 } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
 import PhotoLightbox from '@/components/PhotoLightbox'
@@ -427,9 +427,10 @@ export default function InspectionPage() {
           className={`text-xs px-3 py-1.5 rounded-lg relative ${
             showPhotoPanel ? 'bg-white/30' : 'bg-white/20 hover:bg-white/30'
           }`}
+          aria-label="Открыть фотографии обхода"
         >
           <Camera className="w-4 h-4 inline mr-1" />
-          {photos.length > 0 ? photos.length : isInspector ? '!' : ''}
+          <span className="hidden sm:inline">Фото</span>{photos.length > 0 ? ` (${photos.length})` : isInspector ? ' — нужны' : ''}
         </button>
         <button
           onClick={() => reportsApi.openPdfReport(inspectionId).catch(() => toast.error('Не удалось открыть отчёт'))}
@@ -478,6 +479,20 @@ export default function InspectionPage() {
           <CheckCircle className="w-3.5 h-3.5" />
           Проверено: {inspection.reviewed_by.full_name}
           {inspection.reviewed_at && `, ${new Date(inspection.reviewed_at).toLocaleDateString('ru')}`}
+        </div>
+      )}
+
+      {isInspector && (
+        <div className="bg-blue-50 border-b border-blue-200 px-4 py-3 shrink-0">
+          <div className="flex items-start gap-3 max-w-3xl mx-auto">
+            <HelpCircle className="w-5 h-5 text-blue-700 shrink-0 mt-0.5" />
+            <div className="text-sm text-blue-950">
+              <div className="font-bold">Как добавить фото</div>
+              <div className="mt-1 leading-5 text-blue-800">
+                1. Отметьте результат пункта. 2. Нажмите большую кнопку «Добавить фото». 3. Проверьте, что снимок появился под нужным пунктом.
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -625,20 +640,35 @@ export default function InspectionPage() {
 
       {/* Панель общих фото */}
       {showPhotoPanel && (
-        <div className="bg-white border-b p-3 shrink-0">
-          <div className="text-xs text-gray-500 mb-2 font-medium">
-            {isReadOnly ? 'Фото обхода' : 'Общие фото обхода'}
-          </div>
-          <div className="flex flex-wrap gap-2 mb-2">
-            {generalPhotos.map((p) => (
-              <button key={p.id} onClick={() => setLightboxUrl(p.url)}>
-                <img src={p.url} alt="" className="w-16 h-16 object-cover rounded-lg border" />
-              </button>
-            ))}
-            {generalPhotos.length === 0 && (
-              <div className="text-xs text-gray-400 py-2">Нет фотографий</div>
-            )}
-          </div>
+        <div className="bg-white border-b p-4 shrink-0">
+          <div className="max-w-3xl mx-auto">
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div>
+                <div className="text-base font-bold text-gray-800">
+                  {isReadOnly ? 'Фото обхода' : 'Общее фото площадки'}
+                </div>
+                <div className="text-sm text-gray-500 mt-0.5">
+                  {isReadOnly ? 'Нажмите на снимок, чтобы увеличить.' : 'Снимите площадку целиком, чтобы было понятно, где проходил обход.'}
+                </div>
+              </div>
+              <span className="badge bg-blue-100 text-blue-800 shrink-0">
+                {generalPhotos.length === 0 ? '0 фото' : `${generalPhotos.length} ${generalPhotos.length === 1 ? 'фото' : 'фото'}`}
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-3 mb-3">
+              {generalPhotos.map((p, index) => (
+                <button key={p.id} onClick={() => setLightboxUrl(p.url)} className="group text-left" aria-label={`Открыть общее фото ${index + 1}`}>
+                  <img src={p.url} alt={`Общее фото ${index + 1}`} className="w-24 h-24 object-cover rounded-xl border-2 border-blue-200 group-hover:border-blue-500" />
+                  <span className="block text-xs text-gray-500 mt-1 text-center">Фото {index + 1}</span>
+                </button>
+              ))}
+              {generalPhotos.length === 0 && (
+                <div className="w-full rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 p-4 text-sm text-gray-500 flex items-center gap-3">
+                  <Camera className="w-6 h-6 text-gray-400 shrink-0" />
+                  <span>Здесь появится снимок общего вида площадки</span>
+                </div>
+              )}
+            </div>
           {!isReadOnly && (
             <>
               {/* Без capture="environment" — на некоторых Android WebView с
@@ -647,12 +677,13 @@ export default function InspectionPage() {
                   ни ошибки), без фолбэка на выбор из галереи/файлов. Без
                   capture — обычный системный выбор (камера ИЛИ галерея). */}
               <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleGeneralPhotoUpload} />
-              <button onClick={() => fileInputRef.current?.click()} disabled={uploadGeneralPhotoMutation.isPending} className="btn-outline py-1.5 px-3 text-sm">
-                <Camera className="w-4 h-4 inline mr-1" />
-                {uploadGeneralPhotoMutation.isPending ? 'Загрузка...' : 'Добавить общее фото'}
+              <button onClick={() => fileInputRef.current?.click()} disabled={uploadGeneralPhotoMutation.isPending} className="w-full sm:w-auto btn-primary py-3 px-5 text-base flex items-center justify-center gap-2">
+                <ImagePlus className="w-5 h-5" />
+                {uploadGeneralPhotoMutation.isPending ? 'Загружаем фото…' : 'Добавить фото общего вида'}
               </button>
             </>
           )}
+          </div>
         </div>
       )}
 
@@ -692,12 +723,16 @@ export default function InspectionPage() {
                 )}
 
                 {itemPhotos.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {itemPhotos.map((p) => (
-                      <button key={p.id} onClick={(e) => { e.stopPropagation(); setLightboxUrl(p.url) }}>
-                        <img src={p.url} alt="" className="w-12 h-12 object-cover rounded border" />
+                  <div className="mt-3 rounded-xl bg-gray-50 p-2.5">
+                    <div className="text-xs font-semibold text-gray-600 mb-2">Фото этого пункта</div>
+                    <div className="flex flex-wrap gap-3">
+                    {itemPhotos.map((p, photoIndex) => (
+                      <button key={p.id} onClick={(e) => { e.stopPropagation(); setLightboxUrl(p.url) }} className="text-left" aria-label={`Открыть фото пункта ${photoIndex + 1}`}>
+                        <img src={p.url} alt={`Фото пункта ${photoIndex + 1}`} className="w-20 h-20 object-cover rounded-xl border-2 border-gray-200" />
+                        <span className="block text-[11px] text-gray-500 mt-1 text-center">Фото {photoIndex + 1}</span>
                       </button>
                     ))}
+                    </div>
                   </div>
                 )}
 
@@ -706,10 +741,10 @@ export default function InspectionPage() {
                     <button
                       onClick={() => triggerItemUpload(item.id)}
                       disabled={uploadItemPhotoMutation.isPending && uploadingForItemId === item.id}
-                      className="w-full py-2.5 rounded-lg font-medium text-sm bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 flex items-center justify-center gap-2 disabled:opacity-60"
+                      className="w-full py-3 rounded-xl font-bold text-base bg-red-50 text-red-700 border-2 border-red-200 hover:bg-red-100 flex items-center justify-center gap-2 disabled:opacity-60"
                     >
-                      <Camera className="w-4 h-4" />
-                      {uploadItemPhotoMutation.isPending && uploadingForItemId === item.id ? 'Загрузка...' : 'Добавить фото дефекта'}
+                      <ImagePlus className="w-5 h-5" />
+                      {uploadItemPhotoMutation.isPending && uploadingForItemId === item.id ? 'Загружаем фото…' : 'Добавить фото нарушения'}
                     </button>
                   </div>
                 )}
@@ -725,10 +760,10 @@ export default function InspectionPage() {
                     <button
                       onClick={() => triggerItemUpload(item.id)}
                       disabled={uploadItemPhotoMutation.isPending && uploadingForItemId === item.id}
-                      className="w-full py-2.5 rounded-lg font-medium text-sm bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 flex items-center justify-center gap-2 disabled:opacity-60"
+                      className="w-full py-3 rounded-xl font-bold text-base bg-blue-50 text-blue-700 border-2 border-blue-200 hover:bg-blue-100 flex items-center justify-center gap-2 disabled:opacity-60"
                     >
-                      <Camera className="w-4 h-4" />
-                      {uploadItemPhotoMutation.isPending && uploadingForItemId === item.id ? 'Загрузка...' : 'Добавить фото (обязательно)'}
+                      <ImagePlus className="w-5 h-5" />
+                      {uploadItemPhotoMutation.isPending && uploadingForItemId === item.id ? 'Загружаем фото…' : 'Добавить обязательное фото'}
                     </button>
                   </div>
                 )}

@@ -181,6 +181,7 @@ export interface InspectionOut {
   reviewed_at?: string
   created_at: string
   site: SiteOut
+  uses_legacy_checklist: boolean
   answers: ChecklistAnswerOut[]
   issues_count: number
   is_green: boolean
@@ -199,7 +200,7 @@ export interface IssueCreate {
   title: string // обязательное поле!
   description?: string
   criticality?: string // по умолчанию medium
-  category_id?: string
+  category_id: string
 }
 
 export interface IssueCategoryOut {

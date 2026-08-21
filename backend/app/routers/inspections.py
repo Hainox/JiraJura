@@ -668,6 +668,7 @@ async def _inspection_to_out(
             is_active=i.site.is_active,
             lat=None, lon=None,  # инспекции не вычисляют геометрию
         ),
+        uses_legacy_checklist=i.template_id is not None,
         answers=[ChecklistAnswerOut.model_validate(a) for a in (i.answers or [])],
         issues_count=issues_count,
         is_green=i.status == "completed" and issues_count == 0,

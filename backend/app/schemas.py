@@ -307,6 +307,7 @@ class InspectionOut(BaseModel):
     reviewed_at: Optional[datetime] = None
     created_at: datetime
     site: SiteOut
+    uses_legacy_checklist: bool = False
     answers: list[ChecklistAnswerOut] = []
     issues_count: int = 0
     is_green: bool = False

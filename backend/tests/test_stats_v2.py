@@ -27,7 +27,7 @@ def _exec(sql, params=None):
 
 @pytest.mark.parametrize(
     ("numerator", "denominator", "expected"),
-    [(0, 0, 0), (1, 2, 50), (2, 3, 67), (1, 8, 13), (199, 200, 100)],
+    [(0, 0, 0), (1, 2, 50), (2, 3, 67), (1, 8, 13), (100, 928, 11), (199, 200, 100)],
 )
 def test_percent_uses_half_up(numerator, denominator, expected):
     assert percent(numerator, denominator) == expected

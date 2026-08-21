@@ -112,10 +112,10 @@ function Overview({ total: t }: { total: StatsDistrictRow }) {
   const coverage = [{ name: 'Проверено', value: t.sites_inspected }, { name: 'Не проверено', value: Math.max(0, t.total_sites - t.sites_inspected) }]
   return <div className="space-y-4">
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-      <Kpi label="Площадок" value={t.total_sites} /><Kpi label="Обойдено" value={t.sites_inspected} detail={`${t.coverage_pct}% охвата`} />
+      <Kpi label="Площадок" value={t.total_sites} /><Kpi label="Охват" value={`${t.coverage_pct}%`} detail={`${t.sites_inspected} из ${t.total_sites} площадок проверено`} />
       <Kpi label="Обходов" value={t.inspections_total} /><Kpi label="Зелёных" value={t.inspections_green} />
       <Kpi label="С нарушениями" value={t.inspections_with_defects} /><Kpi label="Выявлено" value={t.issues_found} />
-      <Kpi label="Устранено" value={t.issues_closed} detail={`${t.issues_closed_pct}%`} /><Kpi label="На доработке" value={t.issues_revision} />
+      <Kpi label="Устранение" value={`${t.issues_closed_pct}%`} detail={`${t.issues_closed} из ${t.issues_found} нарушений устранено`} /><Kpi label="На доработке" value={t.issues_revision} />
     </div>
     <div className="grid lg:grid-cols-2 gap-4">
       <ChartCard title="Воронка нарушений"><ResponsiveContainer width="100%" height={280}><BarChart data={funnel} layout="vertical"><CartesianGrid strokeDasharray="3 3"/><XAxis type="number"/><YAxis dataKey="name" type="category" width={95}/><Tooltip/><Bar dataKey="value" fill="#9E2B25" /></BarChart></ResponsiveContainer></ChartCard>

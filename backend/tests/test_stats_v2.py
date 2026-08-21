@@ -118,7 +118,7 @@ async def test_dashboard_uses_completed_at_and_computed_overdue(client, admin_he
         "INSERT INTO districts(id,name,code) VALUES (%(d)s,%(n)s,%(c)s);"
         "INSERT INTO courtyards(id,district_id,name) VALUES (%(y)s,%(d)s,%(yn)s);"
         "INSERT INTO sites(id,courtyard_id,type,area_m2,geometry,is_active) VALUES "
-        "(%(s)s,%(y)s,'Детская площадка',100,ST_GeomFromText(" 
+        "(%(s)s,%(y)s,'Детская площадка',100,ST_GeomFromText("
         "'POLYGON((39 55,39.01 55,39.01 55.01,39 55.01,39 55))',4326),true);"
         "INSERT INTO inspections(id,site_id,inspector_id,type,status,created_at,completed_at) VALUES "
         "(%(i)s,%(s)s,%(u)s,'regular','completed','2025-01-01T00:00:00Z','2026-08-19T10:00:00Z');"

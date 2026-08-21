@@ -100,7 +100,7 @@ export default function DashboardPage() {
 }
 
 function State({ text }: { text: string }) { return <div className="h-60 grid place-items-center text-gray-500">{text}</div> }
-function Kpi({ label, value, detail }: { label: string; value: number; detail?: string }) {
+function Kpi({ label, value, detail }: { label: string; value: number | string; detail?: string }) {
   return <div className="card"><div className="text-xs text-gray-500">{label}</div><div className="text-2xl font-bold mt-1">{value}</div>{detail && <div className="text-xs text-primary-700 mt-1">{detail}</div>}</div>
 }
 function Overview({ total: t }: { total: StatsDistrictRow }) {

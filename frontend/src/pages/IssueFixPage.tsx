@@ -56,7 +56,41 @@ export default function IssueFixPage() {
   // именно туда, а не в общий список "Замечания": админ уже отфильтровал
   // очередь "исправлено, ждёт решения" и логично разбирать её дальше по
   // порядку, а не начинать заново с полного списка.
-  const returnPath = (location.state as { from?: string } | null)?.from || issuesListPath
+  const navigationState = location.state as {
+    from?: string
+    finalControlDistrictId?: string
+  } | null
+  const returnPath = navigationState?.from || issuesListPath
+  const isFinalControlQueue = isAdmin && navigationState?.from === '/admin/control'
+
+  const advanceFinalControlQueue = async (message: string) => {
+    if (!isFinalControlQueue) {
+      toast.success(message)
+      navigate(returnPath)
+      return
+    }
+
+    try {
+      const queue = await queryClient.fetchQuery({
+        queryKey: ['issues-final-control', navigationState?.finalControlDistrictId || ''],
+        queryFn: () => issuesApi.list({
+          status: 'fixed', district_id: navigationState?.finalControlDistrictId || undefined, page_size: 200,
+        }),
+        staleTime: 0,
+      })
+      const nextIssue = queue.items.find((candidate) => candidate.id !== issueId)
+      if (nextIssue) {
+        toast.success(`${message} Открываю следующее исправление.`)
+        navigate(`/admin/issues/${nextIssue.id}`, { replace: true, state: navigationState })
+        return
+      }
+      toast.success(`${message} Очередь исправлений завершена.`)
+      navigate(returnPath, { replace: true })
+    } catch {
+      toast.success(message)
+      navigate(returnPath)
+    }
+  }
 
   const { data: issue, isLoading } = useQuery<IssueOut>({
     queryKey: ['issue', issueId], queryFn: () => issuesApi.get(issueId), enabled: !!issueId,
@@ -86,12 +120,11 @@ export default function IssueFixPage() {
 
   const acceptMutation = useMutation({
     mutationFn: () => issuesApi.update(issueId, { status: 'closed', reviewer_comment: reviewerComment || undefined }),
-    onSuccess: () => {
-      toast.success('Исправление принято!')
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ['issue', issueId] })
       queryClient.invalidateQueries({ queryKey: ['issues'] })
       queryClient.invalidateQueries({ queryKey: ['issues-final-control'] })
-      navigate(returnPath)
+      await advanceFinalControlQueue('Исправление принято!')
     },
     onError: (err: unknown) => {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
@@ -101,12 +134,11 @@ export default function IssueFixPage() {
 
   const rejectMutation = useMutation({
     mutationFn: () => issuesApi.update(issueId, { status: 'revision_needed', reviewer_comment: reviewerComment }),
-    onSuccess: () => {
-      toast.success('Отправлено на доработку')
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ['issue', issueId] })
       queryClient.invalidateQueries({ queryKey: ['issues'] })
       queryClient.invalidateQueries({ queryKey: ['issues-final-control'] })
-      navigate(returnPath)
+      await advanceFinalControlQueue('Отправлено на доработку.')
     },
     onError: (err: unknown) => {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail

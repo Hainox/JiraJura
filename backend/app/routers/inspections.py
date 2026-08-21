@@ -98,17 +98,9 @@ async def create_inspection(
         if existing_today:
             raise HTTPException(409, "Вы уже проверяли эту площадку сегодня — повторный обход в этот же день не нужен")
 
-    # подбираем шаблон чек-листа по типу площадки
-    tmpl = (await db.execute(
-        select(ChecklistTemplate).where(
-            ChecklistTemplate.site_type == site.type, ChecklistTemplate.is_active
-        )
-    )).scalar_one_or_none()
-
     inspection = Inspection(
         site_id=data.site_id,
         inspector_id=current_user.id,
-        template_id=tmpl.id if tmpl else None,
         type=data.type,
         status="in_progress",
         started_at=datetime.now(timezone.utc),
@@ -362,6 +354,21 @@ async def update_inspection(
         raise HTTPException(400, "Укажите комментарий — что нужно доработать")
 
     if data.status:
+        effective_status = data.status
+        if (
+            is_owner
+            and obj.template_id is None
+            and data.status in ("completed", "issues_found", "critical")
+        ):
+            criticalities = (await db.execute(
+                select(Issue.criticality).where(Issue.inspection_id == obj.id)
+            )).scalars().all()
+            if "critical" in criticalities:
+                effective_status = "critical"
+            elif criticalities:
+                effective_status = "issues_found"
+            else:
+                effective_status = "completed"
         # Фото общего вида площадки обязательно при завершении обхода самим
         # инспектором — это чек-листовый пункт "Общий вид / Фото общего
         # вида площадки" (requires_photo=TRUE), проверяется чуть ниже вместе
@@ -373,8 +380,8 @@ async def update_inspection(
         # обход с непонятной причины. Обе кнопки закрывали один и тот же
         # пункт чек-листа для человека, поэтому дублирующий гейт убран —
         # достаточно одного requires_photo-пункта.
-        obj.status = data.status
-        if data.status in ("completed", "issues_found", "critical"):
+        obj.status = effective_status
+        if effective_status in ("completed", "issues_found", "critical"):
             obj.completed_at = datetime.now(timezone.utc)
     if data.comment is not None:
         obj.comment = data.comment

@@ -343,10 +343,10 @@ class InspectionBulkAcceptOut(BaseModel):
 
 class IssueCreate(BaseModel):
     inspection_id: UUID
+    category_id: UUID
     title: str
     description: Optional[str] = None
     criticality: str = "medium"
-    category_id: Optional[UUID] = None
 
 
 class IssueCategoryOut(BaseModel):

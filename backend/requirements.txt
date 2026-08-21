@@ -4,7 +4,7 @@ sqlalchemy[asyncio]==2.0.52
 asyncpg==0.31.0
 psycopg2-binary==2.9.12
 geoalchemy2==0.20.0
-python-jose[cryptography]==3.5.0
+PyJWT[crypto]==2.13.0
 # passlib+bcrypt пока НЕ трогаем этой правкой: passlib не обновлялся с 2020,
 # но снятие его требует переписать не только app/services/auth.py, а ещё
 # несколько независимых ops-скриптов (fix_passwords.py, reset_shared_
@@ -18,7 +18,7 @@ python-multipart==0.0.32
 pydantic==2.13.4
 pydantic-settings==2.15.0
 alembic==1.19.1
-sqlparse==0.5.4
+sqlparse==0.6.0
 openpyxl==3.1.5
 python-pptx==1.0.2
 python-dotenv==1.2.2

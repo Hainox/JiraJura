@@ -3,7 +3,8 @@ import re
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
-from jose import JWTError, jwt
+import jwt
+from jwt.exceptions import PyJWTError
 from passlib.context import CryptContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -126,7 +127,7 @@ async def _get_user(token: str, db: AsyncSession) -> User:
         user_id: str = payload.get("sub")
         if not user_id:
             raise HTTPException(status_code=401, detail="Недействительный токен")
-    except JWTError:
+    except PyJWTError:
         raise HTTPException(status_code=401, detail="Недействительный токен")
 
     result = await db.execute(select(User).where(User.id == user_id, User.is_active))

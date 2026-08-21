@@ -35,8 +35,8 @@ class TestJWT:
         assert payload["role"] == "inspector"
 
     def test_decode_invalid_token(self):
-        from jose import JWTError
-        with pytest.raises(JWTError):
+        from jwt.exceptions import PyJWTError
+        with pytest.raises(PyJWTError):
             decode_access_token("not.a.token")
 
 

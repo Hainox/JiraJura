@@ -1,7 +1,7 @@
 """Конфигурация приложения."""
 from pydantic_settings import BaseSettings
 
-DEV_SECRET_KEY = "dev-secret-change-in-production"
+DEV_SECRET_KEY = "dev-secret-change-in-production-32"
 
 
 class Settings(BaseSettings):

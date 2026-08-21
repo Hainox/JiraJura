@@ -9,6 +9,8 @@ from fastapi import HTTPException
 from app.models import User
 from app.services.timezone import MSK, msk_day_bounds_utc
 
+ALL_TIME_START = date(2000, 1, 1)
+
 
 @dataclass(frozen=True)
 class StatisticsFilter:
@@ -36,13 +38,14 @@ def build_filter(
     district_id: UUID | None,
     *,
     default_previous_week: bool = False,
+    all_time: bool = False,
 ) -> StatisticsFilter:
     default_from, default_to = previous_full_week() if default_previous_week else current_week()
-    start_date = date_from or default_from
-    end_date = date_to or default_to
+    start_date = ALL_TIME_START if all_time else date_from or default_from
+    end_date = datetime.now(MSK).date() if all_time else date_to or default_to
     if start_date > end_date:
         raise HTTPException(422, "date_from не может быть позже date_to")
-    if (end_date - start_date).days > 365:
+    if not all_time and (end_date - start_date).days > 365:
         raise HTTPException(422, "Максимальный период статистики — 366 дней")
 
     effective_district = district_id

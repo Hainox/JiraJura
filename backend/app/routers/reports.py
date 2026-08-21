@@ -302,6 +302,7 @@ async def export_xlsx(
     district_id: Optional[str] = Query(None),
     date_from: Optional[date] = Query(None),
     date_to: Optional[date] = Query(None),
+    all_time: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role("reviewer", "admin")),
 ):
@@ -311,7 +312,7 @@ async def export_xlsx(
     district_id для него принудительно замещается собственным районом.
     """
     from openpyxl import Workbook
-    from openpyxl.styles import Font
+    from openpyxl.styles import Font, PatternFill
     from openpyxl.chart import BarChart, PieChart, LineChart, Reference
     from openpyxl.chart.label import DataLabelList
     from openpyxl.chart.marker import DataPoint
@@ -324,10 +325,12 @@ async def export_xlsx(
         district_id = str(current_user.district_id)
 
     effective_district = UUID(district_id) if district_id else None
-    stats_filter = build_filter(current_user, date_from, date_to, effective_district)
+    stats_filter = build_filter(current_user, date_from, date_to, effective_district, all_time=all_time)
     # Сохраняем legacy-контракт детальных листов: отсутствие дат означает
     # всю историю. Районная сводка ниже использует календарный default v2.
-    dt_from, dt_to = msk_day_bounds_utc(date_from, date_to)
+    export_from = stats_filter.date_from if all_time else date_from
+    export_to = stats_filter.date_to if all_time else date_to
+    dt_from, dt_to = msk_day_bounds_utc(export_from, export_to)
 
     def period(q, column):
         if dt_from is not None:
@@ -551,17 +554,16 @@ async def export_xlsx(
             row.district_name,
             row.total_sites,
             row.sites_inspected,
-            max(row.total_sites - row.sites_inspected, 0),
+            row.coverage_pct,
             row.inspections_total,
             row.inspections_green,
             row.inspections_with_defects,
             row.issues_found,
-            row.issues_found,
-            row.issues_open + row.issues_in_work,
-            row.issues_on_check,
-            row.issues_revision,
             row.issues_closed,
+            row.issues_revision,
+            row.issues_not_fixed,
             row.issues_overdue,
+            row.issues_closed_pct,
         )
         for row in stats_dashboard.districts
     ]
@@ -709,26 +711,24 @@ async def export_xlsx(
     # доступен только через ручной запуск скрипта на сервере) ──
     now_str = datetime.now(MSK).strftime("%d.%m.%Y %H:%M")
     # Индексы кортежей summary_data (0-based):
-    # 0 name, 1 total_sites, 2 sites_inspected, 3 sites_not_inspected,
-    # 4 inspected, 5 inspections_ok, 6 inspections_with_defects,
-    # 7 checklist_defects, 8 created, 9 open, 10 fixed, 11 revision,
-    # 12 closed, 13 overdue
+    # 0 name, 1 total_sites, 2 sites_inspected, 3 coverage_pct,
+    # 4 inspections, 5 without_defects, 6 with_defects, 7 found,
+    # 8 closed, 9 revision, 10 not_fixed, 11 overdue, 12 closed_pct
     def _sum(idx):
         return sum(x[idx] for x in summary_data) if summary_data else 0
 
     total_sites_all = _sum(1)
     sites_inspected_all = _sum(2)
-    sites_not_inspected_all = _sum(3)
+    sites_not_inspected_all = max(total_sites_all - sites_inspected_all, 0)
     total_insp_all = _sum(4)
     inspections_ok_all = _sum(5)
     inspections_with_defects_all = _sum(6)
-    total_checklist_defects_all = _sum(7)
-    total_iss_all = _sum(8)
-    total_iss_open_all = _sum(9)
-    total_iss_fixed_all = _sum(10)
-    total_iss_revision_all = _sum(11)
-    total_iss_closed_all = _sum(12)
-    total_iss_overdue_all = _sum(13)
+    total_checklist_defects_all = total_iss_all = _sum(7)
+    total_iss_open_all = stats_dashboard.totals.issues_open + stats_dashboard.totals.issues_in_work
+    total_iss_fixed_all = stats_dashboard.totals.issues_on_check
+    total_iss_revision_all = _sum(9)
+    total_iss_closed_all = _sum(8)
+    total_iss_overdue_all = _sum(11)
     total_insp_done_all = inspections_ok_all + inspections_with_defects_all
     total_insp_in_progress_all = total_insp_all - total_insp_done_all
 
@@ -905,10 +905,21 @@ async def export_xlsx(
         ["Район", "Двор", "Тип площадки", "Назначенный инспектор", "Телефон", "Последний обход", "Статус последнего обхода"],
         assignment_data, [24, 40, 20, 26, 16, 18, 22])
     summary_ws = _sheet(wb, "Сводка по районам",
-        ["Район", "Всего площадок", "Проверено", "Не проверено", "Обходов",
-         "Без нарушений", "С нарушениями", "Дефектов", "Замечаний",
-         "В работе", "Устранено", "Доработка", "Принято", "Просрочено"],
-        summary_data, [24, 15, 12, 12, 10, 12, 13, 10, 11, 10, 11, 10, 10, 11])
+        ["Район", "Площадок", "Проверено", "Охват %", "Обходов",
+         "Без нарушений", "С наруш.", "Выявлено", "Устранено",
+         "Доработка", "Не устранено", "Просрочено", "Устранение %"],
+        summary_data, [24, 12, 12, 11, 10, 15, 11, 11, 11, 11, 13, 11, 14])
+    for row_idx, row in enumerate(summary_data, start=2):
+        for column_idx in (4, 13):
+            value = row[column_idx - 1]
+            color = "63BE7B" if value >= 100 else "FFD966" if value >= 70 else "F4B183" if value >= 50 else "E06666"
+            summary_ws.cell(row_idx, column_idx).fill = PatternFill("solid", fgColor=color)
+    summary_ws["O1"], summary_ws["P1"] = "Проверено", "Не проверено"
+    for row_idx, row in enumerate(summary_data, start=2):
+        summary_ws.cell(row_idx, 15, row[2])
+        summary_ws.cell(row_idx, 16, max(row[1] - row[2], 0))
+    summary_ws.column_dimensions["O"].hidden = True
+    summary_ws.column_dimensions["P"].hidden = True
 
     # Сравнение районов — раньше на этом листе не было ни одного графика,
     # хотя это самая насыщенная сравнительная таблица отчёта. Две сгруппи-
@@ -936,7 +947,7 @@ async def export_xlsx(
             summary_ws.add_chart(chart, anchor)
 
         chart_row = last_row + 3
-        _grouped_bar("Охват по районам: проверено / не проверено", 3, 4,
+        _grouped_bar("Охват по районам: проверено / не проверено", 15, 16,
                      f"A{chart_row}", (CHART_GOOD, CHART_MUTED))
         _grouped_bar("Результат по районам: без / с нарушениями", 6, 7,
                      f"A{chart_row + 19}", (CHART_GOOD, CHART_CRITICAL))

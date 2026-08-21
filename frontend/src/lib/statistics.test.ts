@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { currentMskWeek, mskDateString, percentageColor, previousMskWeek } from './statistics'
+import { currentMskWeek, mskDateString, percentageColor, periodRange, previousMskWeek } from './statistics'
 
 describe('statistics calendar helpers', () => {
   it('uses the Moscow date across the UTC midnight boundary', () => {
@@ -15,4 +15,12 @@ describe('statistics calendar helpers', () => {
       expect(percentageColor(value)).toBe(color)
     },
   )
+
+  it.each([
+    ['day', ['2026-08-17', '2026-08-17']],
+    ['week', ['2026-08-17', '2026-08-17']],
+    ['month', ['2026-08-01', '2026-08-17']],
+  ] as const)('builds the %s preset in Moscow time', (preset, expected) => {
+    expect(periodRange(preset, new Date('2026-08-16T21:30:00Z'))).toEqual(expected)
+  })
 })

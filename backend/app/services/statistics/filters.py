@@ -9,7 +9,7 @@ from fastapi import HTTPException
 from app.models import User
 from app.services.timezone import MSK, msk_day_bounds_utc
 
-ALL_TIME_START = date(2000, 1, 1)
+ALL_TIME_START = date(2026, 6, 1)
 
 
 @dataclass(frozen=True)

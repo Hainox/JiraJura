@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { authApi } from '@/lib/api'
+import { authApi, describeRegistrationError } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
 import { ROLE_LABELS } from '@/lib/roles'
 import type { Role } from '@/types'
@@ -40,8 +40,8 @@ export default function RegisterPage() {
       loginStore(res.access_token, res.user)
       toast.success(`Добро пожаловать, ${res.user.full_name}!`)
       navigate('/')
-    } catch {
-      toast.error('Не удалось завершить регистрацию — ссылка могла устареть')
+    } catch (error) {
+      toast.error(describeRegistrationError(error))
     } finally {
       setSubmitting(false)
     }

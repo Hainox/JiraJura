@@ -14,6 +14,31 @@ import PhotoLightbox from '@/components/PhotoLightbox'
 
 type AnswerResult = 'ok' | 'defect' | 'pending'
 
+function DraftPhotoThumb({ file, index, onRemove }: { file: File; index: number; onRemove: () => void }) {
+  const [url, setUrl] = useState('')
+
+  useEffect(() => {
+    const nextUrl = URL.createObjectURL(file)
+    setUrl(nextUrl)
+    return () => URL.revokeObjectURL(nextUrl)
+  }, [file])
+
+  return (
+    <div className="relative rounded-lg border border-blue-200 bg-white p-1 shadow-sm">
+      {url && <img src={url} alt={`Фото нарушения ${index + 1}`} className="h-16 w-16 rounded-md object-cover" />}
+      <span className="absolute left-1 top-1 rounded bg-black/65 px-1 text-[10px] text-white">Фото {index + 1}</span>
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label={`Удалить фото нарушения ${index + 1}`}
+        className="absolute -right-2 -top-2 rounded-full bg-red-600 px-1.5 py-0.5 text-xs font-bold text-white shadow"
+      >
+        ×
+      </button>
+    </div>
+  )
+}
+
 const STATUS_LABELS: Record<string, string> = {
   planned: 'Запланирован', in_progress: 'В процессе',
   completed: 'Завершён', issues_found: 'Есть нарушения', critical: 'Критический',
@@ -53,6 +78,7 @@ export default function InspectionPage() {
   const [issueDesc, setIssueDesc] = useState('')
   const [issueCriticality, setIssueCriticality] = useState('medium')
   const [issueCategoryId, setIssueCategoryId] = useState('')
+  const [issueDraftPhotos, setIssueDraftPhotos] = useState<File[]>([])
   const [photos, setPhotos] = useState<PhotoOut[]>([])
   const [showPhotoPanel, setShowPhotoPanel] = useState(false)
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
@@ -64,6 +90,7 @@ export default function InspectionPage() {
   const [issuePhotoTargetId, setIssuePhotoTargetId] = useState<string | null>(null)
   const [issuePhotoCount, setIssuePhotoCount] = useState(0)
   const issuePhotoInputRef = useRef<HTMLInputElement>(null)
+  const issueDraftPhotoInputRef = useRef<HTMLInputElement>(null)
 
   // Reviewer state
   const [reviewerComment, setReviewerComment] = useState('')
@@ -248,23 +275,37 @@ export default function InspectionPage() {
   })
 
   const createIssueMutation = useMutation({
-    mutationFn: () =>
-      issuesApi.create({
+    mutationFn: async () => {
+      const issue = await issuesApi.create({
         inspection_id: inspectionId,
         title: issueTitle,
         description: issueDesc || undefined,
         criticality: issueCriticality,
         category_id: issueCategoryId,
-      }),
-    onSuccess: (issue) => {
-      toast.success('Замечание создано')
+      })
+      const results = await Promise.allSettled(
+        issueDraftPhotos.map((file) => issuesApi.uploadPhoto(issue.id, file))
+      )
+      return {
+        issue,
+        uploaded: results.filter((result) => result.status === 'fulfilled').length,
+        failed: results.filter((result) => result.status === 'rejected').length,
+      }
+    },
+    onSuccess: ({ issue, uploaded, failed }) => {
+      setIssuePhotoCount(uploaded)
+      toast.success(
+        failed > 0
+          ? `Замечание создано, но ${failed} фото не загрузилось — добавьте его ещё раз`
+          : uploaded > 0 ? `Замечание и фото сохранены (${uploaded})` : 'Замечание создано'
+      )
       setIssueTitle('')
       setIssueDesc('')
       setIssueCategoryId('')
+      setIssueDraftPhotos([])
       // не закрываем панель сразу — даём прикрепить фото именно к этому
       // замечанию, а не заставляем грузить его отдельно в общий альбом
       setIssuePhotoTargetId(issue.id)
-      setIssuePhotoCount(0)
       queryClient.invalidateQueries({ queryKey: ['issues'] })
     },
     onError: () => toast.error('Ошибка создания замечания'),
@@ -848,6 +889,49 @@ export default function InspectionPage() {
                 <option value="">Выберите категорию</option>
                 {issueCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
               </select>
+              <input
+                ref={issueDraftPhotoInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  const selected = Array.from(e.target.files ?? [])
+                  setIssueDraftPhotos((current) => [...current, ...selected].slice(0, 5))
+                  e.target.value = ''
+                }}
+              />
+              <div className="rounded-xl border-2 border-dashed border-blue-200 bg-blue-50 p-3">
+                <div className="flex items-start gap-2">
+                  <ImagePlus className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" />
+                  <div>
+                    <p className="font-semibold text-sm text-blue-900">Фото нарушения</p>
+                    <p className="mt-0.5 text-xs text-blue-700">Выберите снимок — он прикрепится именно к этому замечанию.</p>
+                    <p className="mt-1 text-[11px] text-blue-600">Допустимые форматы: JPG, JPEG, PNG, WEBP, HEIC, HEIF, GIF.</p>
+                  </div>
+                </div>
+                {issueDraftPhotos.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {issueDraftPhotos.map((file, index) => (
+                      <DraftPhotoThumb
+                        key={`${file.name}-${file.lastModified}-${index}`}
+                        file={file}
+                        index={index}
+                        onRemove={() => setIssueDraftPhotos((current) => current.filter((_, i) => i !== index))}
+                      />
+                    ))}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => issueDraftPhotoInputRef.current?.click()}
+                  disabled={issueDraftPhotos.length >= 5}
+                  className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-blue-700 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-50"
+                >
+                  <Camera className="h-4 w-4" />
+                  {issueDraftPhotos.length >= 5 ? 'Добавлено максимум 5 фото' : issueDraftPhotos.length ? 'Добавить ещё фото' : 'Добавить фото нарушения'}
+                </button>
+              </div>
               <div className="flex gap-2">
                 <select className="input-field text-sm flex-1" value={issueCriticality} onChange={(e) => setIssueCriticality(e.target.value)}>
                   <option value="low">Низкая</option>
@@ -855,7 +939,7 @@ export default function InspectionPage() {
                   <option value="high">Высокая</option>
                   <option value="critical">Критическая</option>
                 </select>
-                <button onClick={() => { if (issueTitle.trim() && issueCategoryId) createIssueMutation.mutate() }} disabled={!issueTitle.trim() || !issueCategoryId} className="btn-primary py-2 px-4 text-sm">
+                <button onClick={() => { if (issueTitle.trim() && issueCategoryId) createIssueMutation.mutate() }} disabled={!issueTitle.trim() || !issueCategoryId || createIssueMutation.isPending} className="btn-primary py-2 px-4 text-sm">
                   <Send className="w-4 h-4" />
                 </button>
               </div>

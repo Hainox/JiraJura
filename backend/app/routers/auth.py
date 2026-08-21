@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -302,6 +303,12 @@ async def complete_invite(
     if err:
         raise HTTPException(400, err)
 
+    existing_user = (await db.execute(
+        select(User).where(User.login == invite.login)
+    )).scalar_one_or_none()
+    if existing_user:
+        raise HTTPException(409, 'Этот логин уже зарегистрирован. Обратитесь к администратору за новой ссылкой.')
+
     user = User(
         login=invite.login,
         password_hash=hash_password(data.password),
@@ -312,7 +319,11 @@ async def complete_invite(
     )
     db.add(user)
     invite.used_at = datetime.now(timezone.utc)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(409, 'Этот логин уже зарегистрирован. Обратитесь к администратору за новой ссылкой.')
     await db.refresh(user)
 
     access_token = create_access_token(str(user.id), user.role)

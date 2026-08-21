@@ -174,6 +174,20 @@ export function describeUploadError(error: unknown): string {
   return 'Ошибка загрузки фото'
 }
 
+export function describeRegistrationError(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.code === 'ECONNABORTED') return 'Сервер отвечает слишком долго — проверьте связь и попробуйте ещё раз'
+    if (!error.response) return 'Нет соединения с сервером — проверьте интернет'
+    const data = error.response.data as { detail?: unknown } | null
+    const detail = typeof data?.detail === 'string' ? data.detail : ''
+    if (error.response.status === 409) return detail || 'Этот логин уже зарегистрирован. Обратитесь к администратору за новой ссылкой.'
+    if (error.response.status === 404 || error.response.status === 410) return 'Ссылка недействительна или уже использована. Попросите администратора выдать новую.'
+    if (error.response.status >= 500) return 'Сервер не смог завершить регистрацию. Попробуйте ещё раз через минуту.'
+    if (detail) return detail
+  }
+  return 'Не удалось завершить регистрацию. Попробуйте ещё раз или обратитесь к администратору.'
+}
+
 // ── Auth ──
 export const authApi = {
   login: (data: LoginRequest) =>

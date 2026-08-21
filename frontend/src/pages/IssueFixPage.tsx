@@ -42,6 +42,7 @@ export default function IssueFixPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [fixComment, setFixComment] = useState('')
+  const [executorName, setExecutorName] = useState('')
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [reviewerComment, setReviewerComment] = useState('')
 
@@ -71,7 +72,9 @@ export default function IssueFixPage() {
   const { isUploading, handleFileInput } = usePhotoUpload((file) => fixPhotoUpload.mutateAsync(file))
 
   const markFixedMutation = useMutation({
-    mutationFn: () => issuesApi.update(issueId, { status: 'fixed', fix_comment: fixComment || undefined }),
+    mutationFn: () => issuesApi.update(issueId, {
+      status: 'fixed', fix_comment: fixComment || undefined, executor_name: executorName.trim(),
+    }),
     onSuccess: () => {
       toast.success('Исправление зафиксировано!')
       queryClient.invalidateQueries({ queryKey: ['issue', issueId] })
@@ -139,7 +142,7 @@ export default function IssueFixPage() {
           {issue.description && <p className="text-sm text-gray-600">{issue.description}</p>}
           <div className="flex flex-wrap gap-2">
             <span className={`badge text-xs ${CRIT_COLORS[issue.criticality] ?? 'bg-gray-100'}`}>{CRIT_LABELS[issue.criticality] ?? issue.criticality}</span>
-            <span className={`badge text-xs ${STATUS_COLORS[issue.status] ?? 'bg-gray-100'}`}>{STATUS_LABELS[issue.status] ?? issue.status}</span>
+            <span className={`badge text-xs ${STATUS_COLORS[issue.is_overdue ? 'overdue' : issue.status] ?? 'bg-gray-100'}`}>{STATUS_LABELS[issue.is_overdue ? 'overdue' : issue.status] ?? issue.status}</span>
           </div>
           <div className="grid grid-cols-2 gap-2 text-xs text-gray-500">
             {issue.site_name && <div className="flex items-center gap-1"><MapPin className="w-3 h-3" />{issue.site_name}</div>}
@@ -147,6 +150,7 @@ export default function IssueFixPage() {
             {issue.creator && <div className="flex items-center gap-1"><User className="w-3 h-3" />Создал: {issue.creator.full_name}</div>}
             {issue.assigned_user && <div className="flex items-center gap-1"><User className="w-3 h-3" />{issue.assigned_user.full_name}</div>}
             {issue.due_date && <div className="flex items-center gap-1"><Calendar className="w-3 h-3" />До {new Date(issue.due_date).toLocaleDateString('ru')}</div>}
+            {issue.executor_name && <div className="flex items-center gap-1"><User className="w-3 h-3" />Исполнитель: {issue.executor_name}</div>}
             <div className="flex items-center gap-1"><Clock className="w-3 h-3" />{new Date(issue.created_at).toLocaleDateString('ru')}</div>
           </div>
           <button onClick={() => navigate(`/inspections/${issue.inspection_id}`)} className="text-xs text-primary-600 hover:text-primary-800 underline">Открыть обход</button>
@@ -189,12 +193,13 @@ export default function IssueFixPage() {
         {isReviewerLike && issue.status !== 'fixed' && issue.status !== 'closed' && (
           <div className="card space-y-3">
             <h3 className="font-semibold text-gray-800">Зафиксировать исправление</h3>
+            <input className="input-field text-sm" maxLength={300} placeholder="Исполнитель работ *" value={executorName} onChange={(e) => setExecutorName(e.target.value)} />
             <textarea className="input-field text-sm" rows={3} placeholder="Опишите, что было сделано для устранения нарушения..." value={fixComment} onChange={(e) => setFixComment(e.target.value)} />
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800 flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
               <div><div className="font-medium mb-0.5">Перед фиксацией проверьте:</div><ul className="list-disc list-inside space-y-0.5"><li>Фото исправления загружены</li><li>Нарушение действительно устранено</li><li>Описание исправления заполнено</li></ul></div>
             </div>
-            <button onClick={() => guardDemoAction(() => markFixedMutation.mutate())} disabled={markFixedMutation.isPending || fixPhotos.length === 0} className="btn-primary w-full py-3 flex items-center justify-center gap-2 disabled:opacity-50">
+            <button onClick={() => guardDemoAction(() => markFixedMutation.mutate())} disabled={markFixedMutation.isPending || fixPhotos.length === 0 || !executorName.trim()} className="btn-primary w-full py-3 flex items-center justify-center gap-2 disabled:opacity-50">
               {markFixedMutation.isPending ? <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
               Зафиксировать исправление
             </button>

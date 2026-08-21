@@ -210,6 +210,8 @@ class SiteListOut(BaseModel):
 class ChecklistItemOut(BaseModel):
     id: UUID
     category: Optional[str]
+    category_id: Optional[UUID] = None
+    category_name: Optional[str] = None
     question: str
     sort_order: int
     is_critical: bool
@@ -231,6 +233,7 @@ class ChecklistTemplateOut(BaseModel):
 class ChecklistItemCreate(BaseModel):
     template_id: UUID
     category: Optional[str] = None
+    category_id: Optional[UUID] = None
     question: str
     sort_order: int = 0
     is_critical: bool = False
@@ -239,6 +242,7 @@ class ChecklistItemCreate(BaseModel):
 
 class ChecklistItemUpdate(BaseModel):
     category: Optional[str] = None
+    category_id: Optional[UUID] = None
     question: Optional[str] = None
     sort_order: Optional[int] = None
     is_critical: Optional[bool] = None
@@ -305,6 +309,7 @@ class InspectionOut(BaseModel):
     site: SiteOut
     answers: list[ChecklistAnswerOut] = []
     issues_count: int = 0
+    is_green: bool = False
     photos_count: int = 0
     photos: list[PhotoOut] = []
 
@@ -341,9 +346,18 @@ class IssueCreate(BaseModel):
     title: str
     description: Optional[str] = None
     criticality: str = "medium"
+    category_id: Optional[UUID] = None
 
 
-ISSUE_STATUSES = ("open", "assigned", "in_work", "fixed", "control", "closed", "overdue", "revision_needed")
+class IssueCategoryOut(BaseModel):
+    id: UUID
+    name: str
+    sort_order: int
+
+    model_config = {"from_attributes": True}
+
+
+ISSUE_STATUSES = ("open", "assigned", "in_work", "fixed", "control", "closed", "revision_needed")
 
 
 class IssueUpdate(BaseModel):
@@ -353,6 +367,8 @@ class IssueUpdate(BaseModel):
     comment: Optional[str] = None  # для истории статуса
     fix_comment: Optional[str] = None  # описание исправления
     reviewer_comment: Optional[str] = None  # комментарий проверяющего (при приёмке/возврате)
+    executor_name: Optional[str] = Field(default=None, max_length=300)
+    category_id: Optional[UUID] = None
 
 
 class IssueOut(BaseModel):
@@ -372,6 +388,10 @@ class IssueOut(BaseModel):
     district_name: Optional[str] = None
     fix_comment: Optional[str] = None
     reviewer_comment: Optional[str] = None
+    executor_name: Optional[str] = None
+    category_id: Optional[UUID] = None
+    category_name: Optional[str] = None
+    is_overdue: bool = False
     photos: list[PhotoOut] = []
     fix_photos: list[PhotoOut] = []
     created_at: datetime
@@ -441,6 +461,80 @@ class DashboardDistrictRow(BaseModel):
 class DashboardOut(BaseModel):
     districts: list[DashboardDistrictRow]
     totals: DashboardDistrictRow
+
+
+# ── Статистика v2 ─────────────────────────────────────────────
+
+class StatsPeriodOut(BaseModel):
+    date_from: date
+    date_to: date
+
+
+class StatsDistrictRow(BaseModel):
+    district_id: str
+    district_name: str
+    total_sites: int = 0
+    sites_inspected: int = 0
+    coverage_pct: int = 0
+    inspections_total: int = 0
+    inspections_green: int = 0
+    inspections_with_defects: int = 0
+    issues_found: int = 0
+    issues_closed: int = 0
+    issues_on_check: int = 0
+    issues_revision: int = 0
+    issues_in_work: int = 0
+    issues_open: int = 0
+    issues_not_fixed: int = 0
+    issues_overdue: int = 0
+    issues_closed_pct: int = 0
+
+
+class StatsDashboardOut(BaseModel):
+    period: StatsPeriodOut
+    timezone: str = "Europe/Moscow"
+    generated_at: datetime
+    methodology: str = "v2"
+    districts: list[StatsDistrictRow]
+    totals: StatsDistrictRow
+
+
+class StatsDynamicsDay(BaseModel):
+    date: date
+    inspections: int = 0
+    issues_found: int = 0
+    closure_events: int = 0
+
+
+class StatsDynamicsOut(BaseModel):
+    period: StatsPeriodOut
+    timezone: str = "Europe/Moscow"
+    generated_at: datetime
+    methodology: str = "v2"
+    days: list[StatsDynamicsDay]
+
+
+class StatsCategoryRow(BaseModel):
+    category_id: str
+    name: str
+    sort_order: int
+    found: int = 0
+    closed: int = 0
+    on_check: int = 0
+    revision: int = 0
+    in_work: int = 0
+    open: int = 0
+    not_fixed: int = 0
+    overdue: int = 0
+    closed_pct: int = 0
+
+
+class StatsCategoriesOut(BaseModel):
+    period: StatsPeriodOut
+    timezone: str = "Europe/Moscow"
+    generated_at: datetime
+    methodology: str = "v2"
+    categories: list[StatsCategoryRow]
 
 
 # ── Обращения (публичная веб-форма) ──────────────────────────────

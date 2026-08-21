@@ -1,6 +1,6 @@
 """Reports router."""
 import io
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -16,6 +16,8 @@ from app.models import (
 from app.schemas import ReportWeeklyOut, ReportMonthlyOut, DashboardDistrictRow, DashboardOut
 from app.services.permissions import require_role
 from app.services.timezone import MSK, msk_day_bounds_utc
+from app.services.statistics import StatisticsService
+from app.services.statistics.filters import build_filter
 
 router = APIRouter()
 
@@ -31,142 +33,58 @@ INSPECTION_DONE_STATUSES = ("completed", "issues_found", "critical")
 @router.get("/weekly", response_model=list[ReportWeeklyOut])
 async def weekly_report(
     district_id: Optional[str] = Query(None),
+    date_from: Optional[date] = Query(None),
+    date_to: Optional[date] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role("reviewer", "admin")),
 ):
-    if current_user.role == "reviewer" and current_user.district_id is not None:
-        district_id = str(current_user.district_id)
-
-    week_ago = datetime.now(timezone.utc) - timedelta(days=7)
-    results = []
-
-    dist_q = select(District).order_by(District.name)
-    if district_id:
-        dist_q = dist_q.where(District.id == district_id)
-    districts = (await db.execute(dist_q)).scalars().all()
-
-    for d in districts:
-        court_ids = (
-            await db.execute(select(Courtyard.id).where(Courtyard.district_id == d.id))
-        ).scalars().all()
-        court_ids = [str(c) for c in court_ids]
-
-        total_sites = (await db.execute(
-            select(func.count()).select_from(Site).where(
-                Site.courtyard_id.in_(court_ids), Site.is_active
-            )
-        )).scalar_one() or 0
-
-        # distinct site_id: inspected_sites — это «сколько РАЗНЫХ площадок
-        # обойдено», а не число строк обходов (раньше считались строки,
-        # повторный обход той же площадки задваивал «проверено»).
-        inspected = (await db.execute(
-            select(func.count(func.distinct(Inspection.site_id))).select_from(Inspection).where(
-                Inspection.site_id.in_(
-                    select(Site.id).where(Site.courtyard_id.in_(court_ids))
-                ),
-                Inspection.created_at >= week_ago,
-            )
-        )).scalar_one() or 0
-
-        issues_open = (await db.execute(
-            select(func.count()).select_from(Issue).where(
-                Issue.site_id.in_(
-                    select(Site.id).where(Site.courtyard_id.in_(court_ids))
-                ),
-                Issue.status.in_(["open", "assigned", "in_work"]),
-            )
-        )).scalar_one() or 0
-
-        issues_overdue = (await db.execute(
-            select(func.count()).select_from(Issue).where(
-                Issue.site_id.in_(
-                    select(Site.id).where(Site.courtyard_id.in_(court_ids))
-                ),
-                Issue.status == "overdue",
-            )
-        )).scalar_one() or 0
-
-        results.append(ReportWeeklyOut(
-            district_id=d.id,
-            district_name=d.name,
-            total_sites=total_sites,
-            inspected_sites=inspected,
-            issues_open=issues_open,
-            issues_overdue=issues_overdue,
-        ))
-
-    return results
+    did = UUID(district_id) if district_id else None
+    dashboard = await StatisticsService(
+        db, build_filter(current_user, date_from, date_to, did)
+    ).dashboard()
+    return [ReportWeeklyOut(
+        district_id=row.district_id, district_name=row.district_name,
+        total_sites=row.total_sites, inspected_sites=row.sites_inspected,
+        issues_open=row.issues_open + row.issues_in_work,
+        issues_overdue=row.issues_overdue,
+    ) for row in dashboard.districts]
 
 
 @router.get("/monthly", response_model=list[ReportMonthlyOut])
 async def monthly_report(
     district_id: Optional[str] = Query(None),
+    date_from: Optional[date] = Query(None),
+    date_to: Optional[date] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role("reviewer", "admin")),
 ):
-    if current_user.role == "reviewer" and current_user.district_id is not None:
-        district_id = str(current_user.district_id)
-
-    month_ago = datetime.now(timezone.utc) - timedelta(days=30)
-    results = []
-
-    dist_q = select(District).order_by(District.name)
-    if district_id:
-        dist_q = dist_q.where(District.id == district_id)
-    districts = (await db.execute(dist_q)).scalars().all()
-
-    for d in districts:
-        court_ids = (
-            await db.execute(select(Courtyard.id).where(Courtyard.district_id == d.id))
-        ).scalars().all()
-        court_ids = [str(c) for c in court_ids]
-
-        site_sub = select(Site.id).where(Site.courtyard_id.in_(court_ids))
-
-        total_sites = (await db.execute(
-            select(func.count()).select_from(Site).where(Site.courtyard_id.in_(court_ids), Site.is_active)
-        )).scalar_one() or 0
-
-        # distinct site_id — см. комментарий в weekly_report: поле называется
-        # inspected_sites, а раньше считало строки обходов, а не площадки.
-        inspected = (await db.execute(
-            select(func.count(func.distinct(Inspection.site_id))).select_from(Inspection).where(
-                Inspection.site_id.in_(site_sub),
-                Inspection.created_at >= month_ago,
-            )
-        )).scalar_one() or 0
-
-        created = (await db.execute(
-            select(func.count()).select_from(Issue).where(
-                Issue.site_id.in_(site_sub), Issue.created_at >= month_ago
-            )
-        )).scalar_one() or 0
-
-        closed = (await db.execute(
-            select(func.count()).select_from(Issue).where(
-                Issue.site_id.in_(site_sub), Issue.status == "closed",
-                Issue.updated_at >= month_ago,
-            )
-        )).scalar_one() or 0
-
-        overdue = (await db.execute(
-            select(func.count()).select_from(Issue).where(
-                Issue.site_id.in_(site_sub), Issue.status == "overdue"
-            )
-        )).scalar_one() or 0
-
-        results.append(ReportMonthlyOut(
-            district_id=d.id,
-            district_name=d.name,
-            total_sites=total_sites,
-            inspected_sites=inspected,
-            issues_created=created,
-            issues_closed=closed,
-            issues_overdue=overdue,
-        ))
-
-    return results
+    today = datetime.now(MSK).date()
+    month_start = today.replace(day=1)
+    did = UUID(district_id) if district_id else None
+    filters = build_filter(
+        current_user, date_from or month_start, date_to or today, did
+    )
+    dashboard = await StatisticsService(db, filters).dashboard()
+    closure_stmt = (
+        select(Courtyard.district_id, func.count(IssueStatusHistory.id))
+        .join(Issue, Issue.id == IssueStatusHistory.issue_id)
+        .join(Site, Site.id == Issue.site_id)
+        .join(Courtyard, Courtyard.id == Site.courtyard_id)
+        .where(IssueStatusHistory.new_status == "closed",
+               IssueStatusHistory.created_at >= filters.start_utc,
+               IssueStatusHistory.created_at < filters.end_utc)
+        .group_by(Courtyard.district_id)
+    )
+    if filters.district_id:
+        closure_stmt = closure_stmt.where(Courtyard.district_id == filters.district_id)
+    closures = {str(key): value for key, value in (await db.execute(closure_stmt)).all()}
+    return [ReportMonthlyOut(
+        district_id=row.district_id, district_name=row.district_name,
+        total_sites=row.total_sites, inspected_sites=row.sites_inspected,
+        issues_created=row.issues_found,
+        issues_closed=int(closures.get(row.district_id, 0)),
+        issues_overdue=row.issues_overdue,
+    ) for row in dashboard.districts]
 
 
 # ── Дашборд админа ─────────────────────────────────────────────
@@ -300,7 +218,12 @@ async def admin_dashboard(
             select(func.count()).select_from(Issue).where(Issue.site_id.in_(site_sub), Issue.status == "closed"),
         )).scalar_one() or 0
         issues_overdue = (await db.execute(
-            select(func.count()).select_from(Issue).where(Issue.site_id.in_(site_sub), Issue.status == "overdue"),
+            select(func.count()).select_from(Issue).where(
+                Issue.site_id.in_(site_sub),
+                Issue.status.in_(("open", "assigned", "in_work", "revision_needed")),
+                Issue.due_date.is_not(None),
+                Issue.due_date < datetime.now(MSK).date(),
+            ),
         )).scalar_one() or 0
 
         row = DashboardDistrictRow(
@@ -400,6 +323,10 @@ async def export_xlsx(
     if current_user.role == "reviewer" and current_user.district_id is not None:
         district_id = str(current_user.district_id)
 
+    effective_district = UUID(district_id) if district_id else None
+    stats_filter = build_filter(current_user, date_from, date_to, effective_district)
+    # Сохраняем legacy-контракт детальных листов: отсутствие дат означает
+    # всю историю. Районная сводка ниже использует календарный default v2.
     dt_from, dt_to = msk_day_bounds_utc(date_from, date_to)
 
     def period(q, column):
@@ -617,118 +544,27 @@ async def export_xlsx(
         for answer, question, category, insp_dt, dist_name, court_name, site_type, inspector_name in defects
     ]
 
-    # ── Сводка по районам ──
-    dist_q = select(District).order_by(District.name)
-    if district_id:
-        dist_q = dist_q.where(District.id == district_id)
-    districts = (await db.execute(dist_q)).scalars().all()
-
-    summary_data = []
-    for d in districts:
-        site_sub = (
-            select(Site.id)
-            .join(Courtyard, Site.courtyard_id == Courtyard.id)
-            .where(Courtyard.district_id == d.id)
+    # ── Сводка по районам: единый statistics v2 service ──
+    stats_dashboard = await StatisticsService(db, stats_filter).dashboard()
+    summary_data = [
+        (
+            row.district_name,
+            row.total_sites,
+            row.sites_inspected,
+            max(row.total_sites - row.sites_inspected, 0),
+            row.inspections_total,
+            row.inspections_green,
+            row.inspections_with_defects,
+            row.issues_found,
+            row.issues_found,
+            row.issues_open + row.issues_in_work,
+            row.issues_on_check,
+            row.issues_revision,
+            row.issues_closed,
+            row.issues_overdue,
         )
-        total_sites = (await db.execute(
-            select(func.count()).select_from(Site).where(
-                Site.id.in_(site_sub), Site.is_active
-            )
-        )).scalar_one() or 0
-
-        # Охват и результат — те же определения, что на дашборде
-        # (admin_dashboard): «проверено» = РАЗНЫЕ площадки с завершённым
-        # обходом за период, «без/с нарушениями» — по наличию defect-пунктов
-        # в завершённом обходе. «Зелёные» обходы входят в «проверено» и
-        # «без нарушений» и никуда не теряются.
-        sites_inspected = (await db.execute(period(
-            select(func.count(func.distinct(Inspection.site_id)))
-            .select_from(Inspection)
-            .where(Inspection.site_id.in_(site_sub), Inspection.status.in_(INSPECTION_DONE_STATUSES)),
-            Inspection.created_at,
-        ))).scalar_one() or 0
-        sites_not_inspected = max(total_sites - sites_inspected, 0)
-
-        inspected = (await db.execute(period(
-            select(func.count()).select_from(Inspection).where(Inspection.site_id.in_(site_sub)),
-            Inspection.created_at,
-        ))).scalar_one() or 0
-
-        inspections_with_defects = (await db.execute(period(
-            select(func.count(func.distinct(Inspection.id)))
-            .select_from(Inspection)
-            .join(ChecklistAnswer, ChecklistAnswer.inspection_id == Inspection.id)
-            .where(
-                Inspection.site_id.in_(site_sub),
-                Inspection.status.in_(INSPECTION_DONE_STATUSES),
-                ChecklistAnswer.result == "defect",
-            ),
-            Inspection.created_at,
-        ))).scalar_one() or 0
-        inspections_completed = (await db.execute(period(
-            select(func.count()).select_from(Inspection).where(
-                Inspection.site_id.in_(site_sub), Inspection.status.in_(INSPECTION_DONE_STATUSES)
-            ),
-            Inspection.created_at,
-        ))).scalar_one() or 0
-        inspections_ok = max(inspections_completed - inspections_with_defects, 0)
-
-        # Реально выявлено при обходе (чек-лист, result='defect') — то же
-        # число, что и checklist_defects на дашборде. Оформление замечания —
-        # отдельный необязательный шаг, эти два числа умышленно расходятся.
-        checklist_defects = (await db.execute(period(
-            select(func.count()).select_from(ChecklistAnswer)
-            .join(Inspection, ChecklistAnswer.inspection_id == Inspection.id)
-            .where(Inspection.site_id.in_(site_sub), ChecklistAnswer.result == "defect"),
-            ChecklistAnswer.created_at,
-        ))).scalar_one() or 0
-
-        # Жизненный цикл замечаний: created — сколько ОФОРМЛЕНО за период
-        # (событие, дата = created_at, фильтр периода уместен). Остальные —
-        # open_now/fixed/revision/closed/overdue — это ТЕКУЩИЙ статус, снимок
-        # состояния «прямо сейчас», а не событие внутри периода: замечание,
-        # оформленное вчера, но до сих пор не устранённое или только что
-        # возвращённое на доработку, обязано попасть в "revision"/"open_now"
-        # независимо от выбранных дат — иначе оно необъяснимо "пропадает" из
-        # дашборда/отчёта у пользователя, хотя объективно требует внимания.
-        # (Раньше все шесть счётчиков искусственно фильтровались одним и тем
-        # же периодом ради визуального "схождения" с created — ценой того,
-        # что текущий статус переставал быть текущим.)
-        created = (await db.execute(period(
-            select(func.count()).select_from(Issue).where(Issue.site_id.in_(site_sub)),
-            Issue.created_at,
-        ))).scalar_one() or 0
-        open_now = (await db.execute(
-            select(func.count()).select_from(Issue).where(
-                Issue.site_id.in_(site_sub),
-                Issue.status.in_(["open", "assigned", "in_work"]),
-            ),
-        )).scalar_one() or 0
-        fixed = (await db.execute(
-            select(func.count()).select_from(Issue).where(
-                Issue.site_id.in_(site_sub), Issue.status.in_(["fixed", "control"])
-            ),
-        )).scalar_one() or 0
-        revision = (await db.execute(
-            select(func.count()).select_from(Issue).where(
-                Issue.site_id.in_(site_sub), Issue.status == "revision_needed"
-            ),
-        )).scalar_one() or 0
-        closed = (await db.execute(
-            select(func.count()).select_from(Issue).where(
-                Issue.site_id.in_(site_sub), Issue.status == "closed"
-            ),
-        )).scalar_one() or 0
-        overdue = (await db.execute(
-            select(func.count()).select_from(Issue).where(
-                Issue.site_id.in_(site_sub), Issue.status == "overdue"
-            ),
-        )).scalar_one() or 0
-        summary_data.append((
-            d.name, total_sites, sites_inspected, sites_not_inspected,
-            inspected, inspections_ok, inspections_with_defects,
-            checklist_defects, created, open_now, fixed, revision, closed, overdue,
-        ))
+        for row in stats_dashboard.districts
+    ]
 
     # ── Динамика по дням (инспектор × дата) ──
     # Группируем по User.id, а не по ФИО — у full_name нет уникальности в
@@ -783,7 +619,11 @@ async def export_xlsx(
         .join(Courtyard, Site.courtyard_id == Courtyard.id)
         .join(District, Courtyard.district_id == District.id)
         .join(User, Issue.created_by == User.id)
-        .where(Issue.status == "overdue")
+        .where(
+            Issue.status.in_(("open", "assigned", "in_work", "revision_needed")),
+            Issue.due_date.is_not(None),
+            Issue.due_date < datetime.now(MSK).date(),
+        )
         .order_by(Issue.due_date)
     )
     if district_id:
@@ -925,6 +765,12 @@ async def export_xlsx(
     ov["A1"].alignment = CENTER_WRAP
     _row(f"Снимок на {now_str} (МСК)")
     ov[f"A{ov.max_row}"].alignment = CENTER_WRAP
+    _row(
+        f"Методика v2 · Europe/Moscow · период "
+        f"{stats_filter.date_from:%d.%m.%Y}–{stats_filter.date_to:%d.%m.%Y} · "
+        f"сформировано {stats_dashboard.generated_at:%d.%m.%Y %H:%M UTC}"
+    )
+    ov[f"A{ov.max_row}"].alignment = CENTER_WRAP
     _row()
     _row("Ключевые цифры", style="header")
     _row("Закрыто замечаний за период", total_closures_period, style="data")
@@ -933,7 +779,12 @@ async def export_xlsx(
     _row("Обходов всего / завершено", f"{total_insp_all} / {total_insp_done_all} (в процессе: {total_insp_in_progress_all})", style="data")
     _row("Обходов без нарушений / с нарушениями", f"{inspections_ok_all} / {inspections_with_defects_all}", style="data")
     _row("Найдено дефектов по чек-листу / замечаний оформлено", f"{total_checklist_defects_all} / {total_iss_all}", style="data")
-    _row("Замечаний: в работе / устранено / принято / просрочено", f"{total_iss_open_all} / {total_iss_fixed_all} / {total_iss_closed_all} / {total_iss_overdue_all}", style="data")
+    _row(
+        "Замечаний: в работе / на проверке / на доработке / принято / просрочено",
+        f"{total_iss_open_all} / {total_iss_fixed_all} / {total_iss_revision_all} / "
+        f"{total_iss_closed_all} / {total_iss_overdue_all}",
+        style="data",
+    )
     _row("«Проверено» считает площадки, а не записи обходов; «без нарушений» — завершённые обходы без дефектов: «зелёные» обходы входят сюда и никуда не теряются.", style="data")
     _row()
     _row("Требуют внимания в первую очередь", style="header")

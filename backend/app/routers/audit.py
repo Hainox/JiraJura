@@ -1,5 +1,4 @@
 """Audit log router — только для admin."""
-import json
 from datetime import datetime
 from typing import Optional
 
@@ -12,8 +11,6 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models import AuditLog, User
-from app.schemas import UserOut
-from app.services.auth import get_current_user
 from app.services.permissions import require_role
 from app.services.audit import list_audit_log
 

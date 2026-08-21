@@ -77,8 +77,9 @@ async def test_export_overview_has_top_districts_by_closures(client: AsyncClient
 
     issue_id = str(uuid.uuid4())
     _exec(
-        "INSERT INTO issues (id, inspection_id, site_id, title, status, created_by) VALUES "
-        "(%(i)s, %(insp)s, %(s)s, 'Тестовое замечание для закрытий', 'closed', %(u)s)",
+        "INSERT INTO issues (id, inspection_id, site_id, category_id, title, status, created_by) VALUES "
+        "(%(i)s, %(insp)s, %(s)s, (SELECT id FROM issue_categories WHERE name='Прочее'), "
+        "'Тестовое замечание для закрытий', 'closed', %(u)s)",
         {"i": issue_id, "insp": insp_id, "s": site_id, "u": admin_id},
     )
     _exec(

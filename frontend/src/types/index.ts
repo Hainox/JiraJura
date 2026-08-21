@@ -116,6 +116,8 @@ export interface SiteListOut {
 export interface ChecklistItemOut {
   id: string // UUID
   category?: string
+  category_id?: string
+  category_name?: string
   question: string // не description!
   sort_order: number
   is_critical: boolean
@@ -181,6 +183,7 @@ export interface InspectionOut {
   site: SiteOut
   answers: ChecklistAnswerOut[]
   issues_count: number
+  is_green: boolean
   photos_count: number
   photos?: PhotoOut[]
 }
@@ -196,6 +199,13 @@ export interface IssueCreate {
   title: string // обязательное поле!
   description?: string
   criticality?: string // по умолчанию medium
+  category_id?: string
+}
+
+export interface IssueCategoryOut {
+  id: string
+  name: string
+  sort_order: number
 }
 
 export interface IssueOut {
@@ -215,6 +225,10 @@ export interface IssueOut {
   district_name?: string
   fix_comment?: string
   reviewer_comment?: string
+  executor_name?: string
+  category_id?: string
+  category_name?: string
+  is_overdue: boolean
   photos?: PhotoOut[]
   fix_photos?: PhotoOut[]
   created_at: string
@@ -267,6 +281,75 @@ export interface DashboardDistrictRow {
 export interface DashboardOut {
   districts: DashboardDistrictRow[]
   totals: DashboardDistrictRow
+}
+
+export interface StatsPeriod { date_from: string; date_to: string }
+
+export interface StatsDistrictRow {
+  district_id: string
+  district_name: string
+  total_sites: number
+  sites_inspected: number
+  coverage_pct: number
+  inspections_total: number
+  inspections_green: number
+  inspections_with_defects: number
+  issues_found: number
+  issues_closed: number
+  issues_on_check: number
+  issues_revision: number
+  issues_in_work: number
+  issues_open: number
+  issues_not_fixed: number
+  issues_overdue: number
+  issues_closed_pct: number
+}
+
+export interface StatsDashboardOut {
+  period: StatsPeriod
+  timezone: string
+  generated_at: string
+  methodology: 'v2'
+  districts: StatsDistrictRow[]
+  totals: StatsDistrictRow
+}
+
+export interface StatsDynamicsDay {
+  date: string
+  inspections: number
+  issues_found: number
+  closure_events: number
+}
+
+export interface StatsDynamicsOut {
+  period: StatsPeriod
+  timezone: string
+  generated_at: string
+  methodology: 'v2'
+  days: StatsDynamicsDay[]
+}
+
+export interface StatsCategoryRow {
+  category_id: string
+  name: string
+  sort_order: number
+  found: number
+  closed: number
+  on_check: number
+  revision: number
+  in_work: number
+  open: number
+  not_fixed: number
+  overdue: number
+  closed_pct: number
+}
+
+export interface StatsCategoriesOut {
+  period: StatsPeriod
+  timezone: string
+  generated_at: string
+  methodology: 'v2'
+  categories: StatsCategoryRow[]
 }
 
 // ── Эксплуатационная сводка ("Разработчик") ──

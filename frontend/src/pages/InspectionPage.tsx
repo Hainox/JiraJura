@@ -52,6 +52,7 @@ export default function InspectionPage() {
   const [issueTitle, setIssueTitle] = useState('')
   const [issueDesc, setIssueDesc] = useState('')
   const [issueCriticality, setIssueCriticality] = useState('medium')
+  const [issueCategoryId, setIssueCategoryId] = useState('')
   const [photos, setPhotos] = useState<PhotoOut[]>([])
   const [showPhotoPanel, setShowPhotoPanel] = useState(false)
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
@@ -98,6 +99,12 @@ export default function InspectionPage() {
     queryKey: ['checklist-template', inspection?.site?.type],
     queryFn: () => checklistsApi.template({ site_type: inspection!.site.type }),
     enabled: !!inspection?.site?.type,
+  })
+
+  const { data: issueCategories = [] } = useQuery({
+    queryKey: ['issue-categories'],
+    queryFn: issuesApi.categories,
+    staleTime: 5 * 60_000,
   })
 
   // Замечания, уже созданные по этому обходу — раньше карточка обхода их
@@ -246,11 +253,13 @@ export default function InspectionPage() {
         title: issueTitle,
         description: issueDesc || undefined,
         criticality: issueCriticality,
+        category_id: issueCategoryId || undefined,
       }),
     onSuccess: (issue) => {
       toast.success('Замечание создано')
       setIssueTitle('')
       setIssueDesc('')
+      setIssueCategoryId('')
       // не закрываем панель сразу — даём прикрепить фото именно к этому
       // замечанию, а не заставляем грузить его отдельно в общий альбом
       setIssuePhotoTargetId(issue.id)
@@ -800,6 +809,10 @@ export default function InspectionPage() {
             <div className="space-y-2">
               <input className="input-field text-sm" placeholder="Заголовок замечания" value={issueTitle} onChange={(e) => setIssueTitle(e.target.value)} />
               <textarea className="input-field text-sm" rows={2} placeholder="Описание (необязательно)" value={issueDesc} onChange={(e) => setIssueDesc(e.target.value)} />
+              <select className="input-field text-sm" value={issueCategoryId} onChange={(e) => setIssueCategoryId(e.target.value)}>
+                <option value="">Категория: Прочее</option>
+                {issueCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+              </select>
               <div className="flex gap-2">
                 <select className="input-field text-sm flex-1" value={issueCriticality} onChange={(e) => setIssueCriticality(e.target.value)}>
                   <option value="low">Низкая</option>

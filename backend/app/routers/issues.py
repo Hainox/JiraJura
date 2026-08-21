@@ -14,11 +14,14 @@ import uuid as _uuid
 from fastapi import UploadFile, File
 
 from app.config import settings
-from app.models import Issue, IssueStatusHistory, Site, Courtyard, District, User, Photo
-from app.schemas import IssueCreate, IssueUpdate, IssueOut, IssueListOut, UserOut, PhotoOut
+from app.models import Issue, IssueCategory, IssueStatusHistory, Site, Courtyard, User, Photo
+from app.schemas import (
+    IssueCategoryOut, IssueCreate, IssueUpdate, IssueOut, IssueListOut, UserOut, PhotoOut,
+)
 from app.services.auth import get_current_user
 from app.services.permissions import require_role, check_own_or_role, in_district_scope
 from app.services.audit import log_action
+from app.services.timezone import MSK
 
 router = APIRouter()
 
@@ -70,6 +73,14 @@ def _issue_to_out(i: Issue) -> IssueOut:
         district_name=district_name,
         fix_comment=i.fix_comment if hasattr(i, 'fix_comment') else None,
         reviewer_comment=i.reviewer_comment if hasattr(i, 'reviewer_comment') else None,
+        executor_name=i.executor_name,
+        category_id=i.category_id,
+        category_name=i.category_ref.name if i.category_ref else None,
+        is_overdue=(
+            i.due_date is not None
+            and i.due_date < datetime.now(MSK).date()
+            and i.status in {"open", "assigned", "in_work", "revision_needed"}
+        ),
         photos=photos,
         fix_photos=fix_photos,
         created_at=i.created_at,
@@ -100,12 +111,22 @@ async def create_issue(
         if not in_district_scope(current_user, district_id):
             raise HTTPException(403, "Обход вне вашего района")
 
+    if data.category_id is not None:
+        category = await db.get(IssueCategory, data.category_id)
+        if category is None:
+            raise HTTPException(400, "Категория не найдена")
+    else:
+        category = (await db.execute(
+            select(IssueCategory).where(IssueCategory.name == "Прочее")
+        )).scalar_one_or_none()
+
     issue = Issue(
         inspection_id=data.inspection_id,
         site_id=insp.site_id,
         title=data.title,
         description=data.description,
         criticality=data.criticality,
+        category_id=category.id if category else None,
         status="open",
         created_by=current_user.id,
     )
@@ -119,6 +140,7 @@ async def create_issue(
         selectinload(Issue.site_ref).selectinload(Site.courtyard).selectinload(Courtyard.district),
         selectinload(Issue.assigned_user),
         selectinload(Issue.creator_ref),
+        selectinload(Issue.category_ref),
         selectinload(Issue.photos),
         selectinload(Issue.fix_photos),
     )
@@ -143,6 +165,7 @@ async def list_issues(
         selectinload(Issue.site_ref).selectinload(Site.courtyard).selectinload(Courtyard.district),
         selectinload(Issue.assigned_user),
         selectinload(Issue.creator_ref),
+        selectinload(Issue.category_ref),
         selectinload(Issue.photos),
         selectinload(Issue.fix_photos),
     ).order_by(Issue.created_at.desc())
@@ -152,7 +175,14 @@ async def list_issues(
     if inspection_id:
         base = base.where(Issue.inspection_id == inspection_id)
     if status:
-        base = base.where(Issue.status == status)
+        if status == "overdue":
+            base = base.where(
+                Issue.status.in_(("open", "assigned", "in_work", "revision_needed")),
+                Issue.due_date.is_not(None),
+                Issue.due_date < datetime.now(MSK).date(),
+            )
+        else:
+            base = base.where(Issue.status == status)
     if criticality:
         base = base.where(Issue.criticality == criticality)
     if assigned_to:
@@ -181,6 +211,24 @@ async def list_issues(
     )
 
 
+@router.get("/categories", response_model=list[IssueCategoryOut])
+async def list_issue_categories(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Stable category reference for manual issue writers.
+
+    Inspectors need this list while filling an inspection, so this endpoint is
+    authenticated but deliberately not restricted to reviewer/admin.
+    """
+    del current_user
+    return (await db.execute(
+        select(IssueCategory)
+        .where(IssueCategory.is_active.is_(True))
+        .order_by(IssueCategory.sort_order, IssueCategory.name)
+    )).scalars().all()
+
+
 @router.get("/{issue_id}", response_model=IssueOut)
 async def get_issue(
     issue_id: str,
@@ -191,6 +239,7 @@ async def get_issue(
         selectinload(Issue.site_ref).selectinload(Site.courtyard).selectinload(Courtyard.district),
         selectinload(Issue.assigned_user),
         selectinload(Issue.creator_ref),
+        selectinload(Issue.category_ref),
         selectinload(Issue.photos),
         selectinload(Issue.fix_photos),
     )
@@ -238,6 +287,20 @@ async def update_issue(
 
     old_status = issue.status
 
+    if "category_id" in data.model_fields_set:
+        if data.category_id is None:
+            category = (await db.execute(
+                select(IssueCategory).where(IssueCategory.name == "Прочее")
+            )).scalar_one()
+            issue.category_id = category.id
+        elif await db.get(IssueCategory, data.category_id) is None:
+            raise HTTPException(400, "Категория не найдена")
+        else:
+            issue.category_id = data.category_id
+
+    if "executor_name" in data.model_fields_set:
+        issue.executor_name = data.executor_name.strip() if data.executor_name else None
+
     # Решение админа (closed/revision_needed) — финальное: уводить замечание
     # ИЗ этих статусов куда-либо (в т.ч. обратно в open/in_work) тоже может
     # только админ, иначе проверяющий одним PUT тихо отменяет уже принятое
@@ -262,6 +325,8 @@ async def update_issue(
                 issue.reviewer_comment = data.reviewer_comment
 
         if data.status == "fixed":
+            if not (issue.executor_name or "").strip():
+                raise HTTPException(400, "Укажите исполнителя работ")
             # Именно фото ИСПРАВЛЕНИЯ (target_type='issue_fix'), а не любое
             # фото на issue_id — с появлением фото самого нарушения
             # (POST /issues/{id}/photos, target_type='issue') подсчёт без
@@ -319,6 +384,7 @@ async def update_issue(
         selectinload(Issue.site_ref).selectinload(Site.courtyard).selectinload(Courtyard.district),
         selectinload(Issue.assigned_user),
         selectinload(Issue.creator_ref),
+        selectinload(Issue.category_ref),
         selectinload(Issue.photos),
         selectinload(Issue.fix_photos),
     )

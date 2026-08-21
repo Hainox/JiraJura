@@ -7,6 +7,11 @@ import { ArrowLeft, Pencil, Plus, RotateCcw, EyeOff } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
 import { guardDemoAction } from '@/stores/demoMode'
 
+const ISSUE_CATEGORIES = [
+  'Оборудование', 'Покрытие', 'Ограждения', 'МАФ', 'Санитарное состояние',
+  'Безопасность', 'Документация', 'Освещение', 'Прочее',
+]
+
 export default function AdminChecklistsPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -71,7 +76,10 @@ export default function AdminChecklistsPage() {
           <div key={item.id} className={`card ${!item.is_active ? 'opacity-50' : ''}`}>
             {editingId === item.id ? (
               <div className="space-y-2">
-                <input className="input-field text-sm w-full" placeholder="Категория" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
+                <select className="input-field text-sm w-full" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+                  <option value="">Выберите категорию</option>
+                  {ISSUE_CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}
+                </select>
                 <textarea className="input-field text-sm w-full" rows={2} placeholder="Текст пункта" value={form.question} onChange={(e) => setForm({ ...form, question: e.target.value })} />
                 <div className="flex gap-3 flex-wrap text-sm">
                   <label className="flex items-center gap-1.5">
@@ -135,7 +143,10 @@ export default function AdminChecklistsPage() {
         {showAdd ? (
           <div className="card">
             <div className="space-y-2">
-              <input className="input-field text-sm w-full" placeholder="Категория" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
+              <select className="input-field text-sm w-full" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+                  <option value="">Выберите категорию</option>
+                  {ISSUE_CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}
+                </select>
               <textarea className="input-field text-sm w-full" rows={2} placeholder="Текст пункта" value={form.question} onChange={(e) => setForm({ ...form, question: e.target.value })} />
               <div className="flex gap-3 flex-wrap text-sm">
                 <label className="flex items-center gap-1.5">

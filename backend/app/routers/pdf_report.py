@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.models import Inspection, Site, Courtyard, District, ChecklistAnswer, ChecklistItem, Photo, User
+from app.models import Inspection, Site, Courtyard, ChecklistItem, Photo, User
 from app.services.auth import get_current_user
 from app.services.permissions import check_own_or_role, in_district_scope
 

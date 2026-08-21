@@ -16,7 +16,7 @@
 html, body, #root {
   height: 100%;
   margin: 0;
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Century Gothic', 'Jost', Futura, 'Trebuchet MS', Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 

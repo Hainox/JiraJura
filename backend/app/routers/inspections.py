@@ -1,5 +1,5 @@
 """Inspections router."""
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Optional
 import uuid as _uuid
 import os
@@ -14,7 +14,7 @@ from app.database import get_db
 from app.services.permissions import check_own_or_role, in_district_scope
 from app.services.timezone import MSK
 from app.models import (
-    Inspection, Site, Courtyard, District, User,
+    Inspection, Site, Courtyard, User,
     ChecklistAnswer, ChecklistItem, ChecklistTemplate, Photo, Issue,
 )
 from app.schemas import (
@@ -230,8 +230,8 @@ async def bulk_accept_inspections(
     здесь перепроверяется на сервере (статус/район/уже проверен кем-то),
     те, что не проходят проверку, просто пропускаются, а не валят весь
     запрос."""
-    if current_user.role not in ("reviewer", "admin"):
-        raise HTTPException(403, "Недостаточно прав")
+    if current_user.role != "reviewer":
+        raise HTTPException(403, "Массовая приёмка — только для проверяющего")
 
     ids = [str(i) for i in data.ids]
     rows = (await db.execute(
@@ -329,6 +329,18 @@ async def update_inspection(
             raise HTTPException(403, "Обход вне вашего района")
 
     is_owner = str(current_user.id) == str(obj.inspector_id)
+
+    existing_issues_count = (await db.execute(
+        select(func.count()).select_from(Issue).where(Issue.inspection_id == obj.id)
+    )).scalar_one() or 0
+    is_green_before_update = obj.status == "completed" and existing_issues_count == 0
+    if (
+        current_user.role == "admin"
+        and data.status is not None
+        and not is_owner
+        and is_green_before_update
+    ):
+        raise HTTPException(403, "Зелёные обходы принимает проверяющий")
 
     # Обход уже проверен (reviewed_by проставлен) — владелец больше не может
     # задним числом поменять ответы чек-листа или статус, иначе отметка
@@ -458,6 +470,7 @@ async def update_inspection(
                     inspection_id=inspection_id,
                     site_id=obj.site_id,
                     checklist_answer_id=answer.id,
+                    category_id=item.category_id,
                     title=item.question,
                     description=answer.comment,
                     criticality="high" if item.is_critical else "medium",
@@ -650,6 +663,7 @@ async def _inspection_to_out(
         ),
         answers=[ChecklistAnswerOut.model_validate(a) for a in (i.answers or [])],
         issues_count=issues_count,
+        is_green=i.status == "completed" and issues_count == 0,
         photos_count=len(photos),
         photos=[_photo_to_out(p) for p in photos],
     )

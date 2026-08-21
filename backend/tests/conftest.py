@@ -19,11 +19,11 @@ TEST_DB_URL = os.environ.get(
 )
 os.environ["DATABASE_URL"] = TEST_DB_URL
 
-import psycopg2
-import pytest
-import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy.engine import make_url
+import psycopg2  # noqa: E402
+import pytest  # noqa: E402
+import pytest_asyncio  # noqa: E402
+from httpx import ASGITransport, AsyncClient  # noqa: E402
+from sqlalchemy.engine import make_url  # noqa: E402
 
 ADMIN_LOGIN = "admin"
 ADMIN_PASSWORD = "admin123"

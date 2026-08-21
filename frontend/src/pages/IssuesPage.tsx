@@ -229,9 +229,9 @@ export default function IssuesPage() {
                         <span className={`badge text-xs ${CRIT_COLORS[issue.criticality] ?? 'bg-gray-100'}`}>
                           {CRIT_LABELS[issue.criticality] ?? issue.criticality}
                         </span>
-                        <span className={`badge text-xs flex items-center gap-0.5 ${STATUS_COLORS[issue.status] ?? 'bg-gray-100'}`}>
-                          {STATUS_ICONS[issue.status]}
-                          {STATUS_LABELS[issue.status] ?? issue.status}
+                        <span className={`badge text-xs flex items-center gap-0.5 ${STATUS_COLORS[issue.is_overdue ? 'overdue' : issue.status] ?? 'bg-gray-100'}`}>
+                          {STATUS_ICONS[issue.is_overdue ? 'overdue' : issue.status]}
+                          {STATUS_LABELS[issue.is_overdue ? 'overdue' : issue.status] ?? issue.status}
                         </span>
                         {!!issue.photos?.length && (
                           <span className="badge text-xs bg-gray-100 text-gray-600 flex items-center gap-0.5" title="Фото нарушения">

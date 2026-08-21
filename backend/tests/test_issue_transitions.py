@@ -76,7 +76,11 @@ async def _mark_fixed(client: AsyncClient, admin_headers, issue_id: str):
         headers=admin_headers,
     )
     assert photo.status_code == 200, photo.text
-    fixed = await client.put(f"/api/v1/issues/{issue_id}", json={"status": "fixed"}, headers=admin_headers)
+    fixed = await client.put(
+        f"/api/v1/issues/{issue_id}",
+        json={"status": "fixed", "executor_name": "Тестовый исполнитель"},
+        headers=admin_headers,
+    )
     assert fixed.status_code == 200, fixed.text
     assert fixed.json()["status"] == "fixed"
 

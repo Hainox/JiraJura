@@ -13,6 +13,7 @@ import type {
   IssueOut,
   IssueCreate,
   IssueListOut,
+  IssueCategoryOut,
   PhotoOut,
   UserOut,
   UserAdminOut,
@@ -27,6 +28,9 @@ import type {
   FeedbackReportOut,
   FeedbackReportListOut,
   FeedbackAttachmentOut,
+  StatsDashboardOut,
+  StatsDynamicsOut,
+  StatsCategoriesOut,
 } from '@/types'
 
 // Нативный fetch вместо axios: тот тянул в главный бандл ~46 kB ради
@@ -333,10 +337,36 @@ export const reportsApi = {
   },
 }
 
+// ── Statistics v2 ──
+type StatsParams = { district_id?: string; date_from?: string; date_to?: string }
+
+export const statsApi = {
+  dashboard: (params?: StatsParams) =>
+    api.get<StatsDashboardOut>('/stats/dashboard', { params }).then((r) => r.data),
+  dynamics: (params?: StatsParams) =>
+    api.get<StatsDynamicsOut>('/stats/dynamics', { params }).then((r) => r.data),
+  categories: (params?: StatsParams) =>
+    api.get<StatsCategoriesOut>('/stats/categories', { params }).then((r) => r.data),
+  downloadShtab: async (params?: StatsParams) => {
+    const res = await api.get('/stats/shtab.pptx', { params, responseType: 'blob' })
+    const url = URL.createObjectURL(res.data as Blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `shtab_${params?.date_from || 'period'}_${params?.date_to || 'period'}.pptx`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  },
+}
+
 // ── Issues ──
 export const issuesApi = {
   create: (data: IssueCreate) =>
     api.post<IssueOut>('/issues/', data).then((r) => r.data),
+
+  categories: () =>
+    api.get<IssueCategoryOut[]>('/issues/categories').then((r) => r.data),
 
   get: (id: string) => api.get<IssueOut>(`/issues/${id}`).then((r) => r.data),
 
@@ -348,6 +378,7 @@ export const issuesApi = {
 
   update: (id: string, data: {
     status?: string; assigned_to?: string | null; due_date?: string | null; comment?: string; fix_comment?: string; reviewer_comment?: string
+    executor_name?: string | null; category_id?: string | null
   }) =>
     api.put<IssueOut>(`/issues/${id}`, data).then((r) => r.data),
 

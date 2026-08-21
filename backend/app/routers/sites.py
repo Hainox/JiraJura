@@ -239,7 +239,9 @@ async def list_checklist_templates(
     from app.models import ChecklistTemplate, ChecklistItem
     from app.schemas import ChecklistItemOut
 
-    q = select(ChecklistTemplate).options(selectinload(ChecklistTemplate.items))
+    q = select(ChecklistTemplate).options(
+        selectinload(ChecklistTemplate.items).selectinload(ChecklistItem.category_ref)
+    )
     if site_type:
         q = q.where(ChecklistTemplate.site_type == site_type)
     templates = (await db.execute(q)).scalars().all()
@@ -249,7 +251,13 @@ async def list_checklist_templates(
         ChecklistTemplateOut(
             id=t.id, name=t.name, site_type=t.site_type,
             items=[
-                ChecklistItemOut.model_validate(i)
+                ChecklistItemOut(
+                    id=i.id, category=i.category_ref.name if i.category_ref else i.category, category_id=i.category_id,
+                    category_name=i.category_ref.name if i.category_ref else i.category,
+                    question=i.question, sort_order=i.sort_order,
+                    is_critical=i.is_critical, requires_photo=i.requires_photo,
+                    is_active=i.is_active,
+                )
                 for i in sorted(t.items, key=lambda x: x.sort_order)
                 if i.is_active
             ],

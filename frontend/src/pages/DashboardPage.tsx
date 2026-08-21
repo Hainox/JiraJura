@@ -1,269 +1,132 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { reportsApi, districtsApi } from '@/lib/api'
-import { useAuthStore } from '@/stores/auth'
-import type { DashboardOut, DistrictOut } from '@/types'
 import {
-  ArrowLeft, RefreshCw, FileSpreadsheet, Building, ClipboardCheck,
-  AlertTriangle, Clock, CheckCircle2, RotateCcw, MapPin,
-  MapPinOff, ThumbsUp, AlertOctagon,
-} from 'lucide-react'
+  Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart,
+  ResponsiveContainer, Tooltip, XAxis, YAxis,
+} from 'recharts'
+import { ArrowLeft, Download, FileSpreadsheet, RefreshCw } from 'lucide-react'
+import { districtsApi, reportsApi, statsApi } from '@/lib/api'
+import { useAuthStore } from '@/stores/auth'
 import { notify as toast } from '@/lib/toast'
+import { currentMskWeek, percentageColor, previousMskWeek } from '@/lib/statistics'
+import type { StatsDistrictRow } from '@/types'
+
+type Tab = 'overview' | 'dynamics' | 'categories' | 'districts' | 'shtab'
+const tabs: [Tab, string][] = [
+  ['overview', 'Обзор'], ['dynamics', 'Динамика'], ['categories', 'Категории'],
+  ['districts', 'По районам'], ['shtab', 'Штаб-отчёт'],
+]
 
 export default function DashboardPage() {
   const navigate = useNavigate()
-  // Смонтирована на /dashboard (reviewer) и /admin/dashboard (admin) —
-  // см. тот же паттерн в IssuesPage.tsx.
   const user = useAuthStore((s) => s.user)
-  const isAdmin = user?.role === 'admin'
-  const backTo = isAdmin ? '/admin' : '/'
+  const [defaultFrom, defaultTo] = currentMskWeek()
+  const [dateFrom, setDateFrom] = useState(defaultFrom)
+  const [dateTo, setDateTo] = useState(defaultTo)
+  const [tab, setTab] = useState<Tab>('overview')
+  const lockedDistrict = user?.role === 'reviewer' ? user.district_id : undefined
+  const [districtId, setDistrictId] = useState(lockedDistrict || '')
+  const params = { date_from: dateFrom, date_to: dateTo, district_id: districtId || undefined }
 
-  // Проверяющий с закреплённым районом (district_id задан) на бэкенде
-  // (reports.py) принудительно видит только свой район — сервер молча
-  // подменяет любой присланный district_id на свой. Раньше фильтр всё
-  // равно показывал "Все районы" как будто это реальный выбор, что вводило
-  // в заблуждение. Закрепляем фильтр за районом визуально, раз он и так
-  // закреплён по факту.
-  const lockedDistrictId = user?.role === 'reviewer' ? user.district_id : undefined
+  const { data: districts } = useQuery({ queryKey: ['districts'], queryFn: districtsApi.list })
+  const dashboard = useQuery({
+    queryKey: ['stats-v2-dashboard', params], queryFn: () => statsApi.dashboard(params),
+    refetchInterval: 60_000,
+  })
+  const dynamics = useQuery({
+    queryKey: ['stats-v2-dynamics', params], queryFn: () => statsApi.dynamics(params),
+    enabled: tab === 'dynamics',
+  })
+  const categories = useQuery({
+    queryKey: ['stats-v2-categories', params], queryFn: () => statsApi.categories(params),
+    enabled: tab === 'categories',
+  })
+  const generated = dashboard.data?.generated_at
+    ? new Date(dashboard.data.generated_at).toLocaleString('ru-RU') : '—'
 
-  const today = new Date().toISOString().slice(0, 10)
-  // По умолчанию — с понедельника ТЕКУЩЕЙ недели по сегодня (а не
-  // "скользящие 7 дней назад", как было раньше): при открытии дашборда в
-  // понедельник диапазон должен схлопываться в один день, а не тянуть
-  // хвост предыдущей недели. Оба поля остаются обычными <input type="date">
-  // ниже — пользователь может подставить любой другой период вручную.
-  const mondayThisWeek = (() => {
-    const now = new Date()
-    const daysSinceMonday = (now.getDay() + 6) % 7 // Пн=0, Вт=1, ..., Вс=6
-    now.setDate(now.getDate() - daysSinceMonday)
-    return now.toISOString().slice(0, 10)
-  })()
-
-  const [districtFilter, setDistrictFilter] = useState<string>(lockedDistrictId || '')
-  const [dateFrom, setDateFrom] = useState<string>(mondayThisWeek)
-  const [dateTo, setDateTo] = useState<string>(today)
-
-  const { data: districts } = useQuery<DistrictOut[]>({
-    queryKey: ['districts'],
-    queryFn: districtsApi.list,
+  const exportXlsx = () => toast.promise(reportsApi.exportXlsx(params), {
+    loading: 'Готовлю Excel…', success: 'Excel скачан', error: 'Ошибка выгрузки',
   })
 
-  const lockedDistrictName = districts?.find((d) => d.id === lockedDistrictId)?.name
+  return <div className="h-full flex flex-col bg-slate-50">
+    <header className="bg-primary-800 text-white px-4 py-3 flex items-center gap-3 shrink-0">
+      <button onClick={() => navigate(user?.role === 'admin' ? '/admin' : '/')} className="p-2"><ArrowLeft /></button>
+      <div className="flex-1"><h1 className="font-bold text-lg">Статистика v2</h1><p className="text-xs text-blue-200">МСК · сформировано {generated}</p></div>
+      <button onClick={() => dashboard.refetch()} className="p-2"><RefreshCw className="w-5" /></button>
+    </header>
 
-  const { data, isLoading, isError, refetch } = useQuery<DashboardOut>({
-    queryKey: ['dashboard', districtFilter, dateFrom, dateTo],
-    queryFn: () => reportsApi.dashboard({
-      district_id: districtFilter || undefined,
-      date_from: dateFrom || undefined,
-      date_to: dateTo || undefined,
-    }),
-    refetchInterval: 60_000, // автообновление раз в минуту
-  })
+    <section className="bg-white border-b p-3 flex gap-2 flex-wrap">
+      {lockedDistrict ? <div className="input-field text-sm !w-64 bg-gray-50">{districts?.find(d => d.id === lockedDistrict)?.name || 'Ваш район'}</div>
+        : <select className="input-field text-sm !w-64" value={districtId} onChange={e => setDistrictId(e.target.value)}>
+            <option value="">Все районы</option>{districts?.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+          </select>}
+      <input className="input-field text-sm !w-40" type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
+      <input className="input-field text-sm !w-40" type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} />
+      <button className="btn-outline flex gap-2 items-center text-sm" onClick={exportXlsx}><FileSpreadsheet className="w-4" />Excel</button>
+    </section>
 
-  const exportXlsx = () => {
-    toast.promise(reportsApi.exportXlsx({
-      district_id: districtFilter || undefined,
-      date_from: dateFrom || undefined,
-      date_to: dateTo || undefined,
-    }), {
-      loading: 'Готовлю файл...', success: 'Отчёт скачан', error: 'Ошибка выгрузки',
-    })
-  }
+    <nav className="bg-white px-3 pt-2 flex overflow-x-auto border-b">
+      {tabs.map(([id, label]) => <button key={id} onClick={() => setTab(id)} className={`px-4 py-2 text-sm whitespace-nowrap border-b-2 ${tab === id ? 'border-primary-700 text-primary-700 font-semibold' : 'border-transparent text-gray-500'}`}>{label}</button>)}
+    </nav>
 
-  const t = data?.totals
-
-  return (
-    <div className="h-full flex flex-col bg-gray-50">
-      {/* Header */}
-      <div className="bg-primary-800 text-white px-4 py-3 flex items-center gap-3 shrink-0">
-        <button onClick={() => navigate(backTo)} className="p-1.5 rounded-lg hover:bg-primary-700">
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <div className="flex-1">
-          <h1 className="text-lg font-bold">Дашборд</h1>
-          <p className="text-blue-200 text-xs">Сводка по округу</p>
-        </div>
-        <button onClick={() => refetch()} className="p-2 rounded-lg hover:bg-primary-700">
-          <RefreshCw className="w-5 h-5" />
-        </button>
-      </div>
-
-      {/* Filters */}
-      <div className="bg-white border-b px-4 py-2 shrink-0 flex gap-2 flex-wrap">
-        {lockedDistrictId ? (
-          <div
-            className="input-field text-sm flex-1 min-w-[140px] flex items-center gap-1.5 bg-gray-50 text-gray-600 cursor-default"
-            title="Ваш аккаунт закреплён за этим районом"
-          >
-            <MapPin className="w-3.5 h-3.5 shrink-0 text-gray-400" />
-            <span className="truncate">{lockedDistrictName || '…'}</span>
-          </div>
-        ) : (
-          <select
-            className="input-field text-sm flex-1 min-w-[140px]"
-            value={districtFilter}
-            onChange={(e) => setDistrictFilter(e.target.value)}
-          >
-            <option value="">Все районы</option>
-            {districts?.map((d) => (
-              <option key={d.id} value={d.id}>{d.name}</option>
-            ))}
-          </select>
-        )}
-        <input
-          type="date"
-          className="input-field text-sm w-[130px]"
-          value={dateFrom}
-          onChange={(e) => setDateFrom(e.target.value)}
-          title="С даты"
-        />
-        <input
-          type="date"
-          className="input-field text-sm w-[130px]"
-          value={dateTo}
-          onChange={(e) => setDateTo(e.target.value)}
-          title="По дату"
-        />
-        <button onClick={exportXlsx} className="btn-outline text-sm px-3 py-1.5 flex items-center gap-1 shrink-0">
-          <FileSpreadsheet className="w-4 h-4" /> Excel
-        </button>
-      </div>
-
-      {isLoading ? (
-        <div className="flex-1 flex items-center justify-center text-gray-400">Загрузка...</div>
-      ) : isError && !data ? (
-        // Раньше при ЛЮБОЙ ошибке запроса (сеть моргнула, 500 и т.п.) карточки
-        // молча показывали 0 через `?? 0`, а таблица оставалась пустой без
-        // единого слова об ошибке — выглядело так, будто обходов и замечаний
-        // за период реально нет, хотя на самом деле просто не удалось
-        // загрузить данные. Явно показываем, что это ошибка, а не факт.
-        <div className="flex-1 flex flex-col items-center justify-center text-gray-500 gap-3 p-4 text-center">
-          <AlertTriangle className="w-8 h-8 text-red-400" />
-          <div>Не удалось загрузить сводку — сервер не ответил или произошла ошибка.</div>
-          <button onClick={() => refetch()} className="btn-primary text-sm px-4 py-2">Попробовать снова</button>
-        </div>
-      ) : (
-        <div className="overflow-y-auto flex-1 p-4 space-y-4">
-          {isError && (
-            <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-lg px-3 py-2 flex items-center justify-between gap-2">
-              <span>Не удалось обновить данные — показана последняя загруженная сводка.</span>
-              <button onClick={() => refetch()} className="underline shrink-0">Обновить</button>
-            </div>
-          )}
-          {/* KPI cards — охват и результат обходов */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <KpiCard icon={<Building className="w-5 h-5" />} label="Площадок" value={t?.total_sites ?? 0} color="bg-indigo-500" />
-            <KpiCard icon={<CheckCircle2 className="w-5 h-5" />} label="Проверено" value={t?.sites_inspected ?? 0} color="bg-green-600" />
-            <KpiCard icon={<MapPinOff className="w-5 h-5" />} label="Не проверено" value={t?.sites_not_inspected ?? 0} color="bg-slate-400" />
-            <KpiCard icon={<ClipboardCheck className="w-5 h-5" />} label="Обходов" value={t?.inspections_total ?? 0} color="bg-blue-500" />
-            <KpiCard icon={<ThumbsUp className="w-5 h-5" />} label="Без нарушений" value={t?.inspections_ok ?? 0} color="bg-emerald-500" />
-            <KpiCard icon={<AlertTriangle className="w-5 h-5" />} label="С нарушениями" value={t?.inspections_with_defects ?? 0} color="bg-rose-600" />
-            <KpiCard icon={<Clock className="w-5 h-5" />} label="В процессе" value={t?.inspections_in_progress ?? 0} color="bg-yellow-500" />
-          </div>
-
-          {/* KPI cards — дефекты и жизненный цикл замечаний */}
-          <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
-            <KpiCard icon={<AlertTriangle className="w-5 h-5" />} label="Найдено дефектов" value={t?.checklist_defects ?? 0} color="bg-rose-600" />
-            <KpiCard icon={<AlertTriangle className="w-5 h-5" />} label="Замечаний" value={t?.issues_total ?? 0} color="bg-red-500" />
-            <KpiCard icon={<AlertTriangle className="w-5 h-5" />} label="В работе" value={t?.issues_open ?? 0} color="bg-orange-500" />
-            <KpiCard icon={<CheckCircle2 className="w-5 h-5" />} label="Устранено" value={t?.issues_fixed ?? 0} color="bg-emerald-500" />
-            <KpiCard icon={<RotateCcw className="w-5 h-5" />} label="На доработке" value={t?.issues_revision_needed ?? 0} color="bg-amber-500" />
-            <KpiCard icon={<CheckCircle2 className="w-5 h-5" />} label="Принято" value={t?.issues_closed ?? 0} color="bg-green-600" />
-            <KpiCard icon={<AlertOctagon className="w-5 h-5" />} label="Просрочено" value={t?.issues_overdue ?? 0} color="bg-purple-600" />
-          </div>
-
-          {/* Таблица по районам */}
-          <div className="card overflow-hidden">
-            <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-1.5">
-              <MapPin className="w-4 h-4 text-primary-600" />
-              По районам
-            </h3>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="text-left text-gray-500 bg-gray-50">
-                    <th className="p-2 font-medium whitespace-nowrap sticky left-0 bg-gray-50">Район</th>
-                    <th className="p-2 font-medium text-center">Площадок</th>
-                    <th className="p-2 font-medium text-center">Проверено</th>
-                    <th className="p-2 font-medium text-center">Не проверено</th>
-                    <th className="p-2 font-medium text-center">Обходов</th>
-                    <th className="p-2 font-medium text-center">Без наруш.</th>
-                    <th className="p-2 font-medium text-center">С наруш.</th>
-                    <th className="p-2 font-medium text-center">Дефектов</th>
-                    <th className="p-2 font-medium text-center">Замечаний</th>
-                    <th className="p-2 font-medium text-center">В работе</th>
-                    <th className="p-2 font-medium text-center">Устранено</th>
-                    <th className="p-2 font-medium text-center">Доработка</th>
-                    <th className="p-2 font-medium text-center">Принято</th>
-                    <th className="p-2 font-medium text-center">Просрочено</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {/* Totals row */}
-                  {t && (
-                    <tr className="border-t bg-blue-50 font-semibold text-gray-800">
-                      <td className="p-2 sticky left-0 bg-blue-50 whitespace-nowrap">ВСЕГО</td>
-                      <td className="p-2 text-center">{t.total_sites}</td>
-                      <td className="p-2 text-center text-green-700">{t.sites_inspected}</td>
-                      <td className="p-2 text-center text-slate-500">{t.sites_not_inspected}</td>
-                      <td className="p-2 text-center">{t.inspections_total}</td>
-                      <td className="p-2 text-center text-emerald-700">{t.inspections_ok}</td>
-                      <td className="p-2 text-center text-rose-700">{t.inspections_with_defects}</td>
-                      <td className="p-2 text-center text-rose-700">{t.checklist_defects}</td>
-                      <td className="p-2 text-center">{t.issues_total}</td>
-                      <td className="p-2 text-center text-orange-600">{t.issues_open}</td>
-                      <td className="p-2 text-center">{t.issues_fixed}</td>
-                      <td className="p-2 text-center">{t.issues_revision_needed}</td>
-                      <td className="p-2 text-center text-green-700">{t.issues_closed}</td>
-                      <td className="p-2 text-center text-purple-700">{t.issues_overdue}</td>
-                    </tr>
-                  )}
-                  {data?.districts.map((d, i) => (
-                    <tr key={d.district_id} className={`border-t ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
-                      <td className="p-2 sticky left-0 bg-inherit whitespace-nowrap text-gray-700">{d.district_name}</td>
-                      <td className="p-2 text-center text-gray-600">{d.total_sites}</td>
-                      <td className="p-2 text-center text-green-700">{d.sites_inspected || '-'}</td>
-                      <td className="p-2 text-center text-slate-500">{d.sites_not_inspected || '-'}</td>
-                      <td className="p-2 text-center">{d.inspections_total || '-'}</td>
-                      <td className="p-2 text-center text-emerald-700">{d.inspections_ok || '-'}</td>
-                      <td className="p-2 text-center text-rose-700 font-medium">{d.inspections_with_defects || '-'}</td>
-                      <td className="p-2 text-center text-rose-700 font-medium">{d.checklist_defects || '-'}</td>
-                      <td className="p-2 text-center font-medium">{d.issues_total || '-'}</td>
-                      <td className="p-2 text-center text-orange-600">{d.issues_open || '-'}</td>
-                      <td className="p-2 text-center text-emerald-600">{d.issues_fixed || '-'}</td>
-                      <td className="p-2 text-center">
-                        {d.issues_revision_needed > 0 ? (
-                          <span className="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full font-medium">{d.issues_revision_needed}</span>
-                        ) : '-'}
-                      </td>
-                      <td className="p-2 text-center text-green-700">{d.issues_closed || '-'}</td>
-                      <td className="p-2 text-center text-purple-700">{d.issues_overdue || '-'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {data?.districts.length === 0 && (
-              <div className="text-center text-gray-400 py-8">Нет данных за выбранный период</div>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  )
+    <main className="flex-1 overflow-y-auto p-4">
+      {dashboard.isLoading ? <State text="Загрузка…" /> : dashboard.isError || !dashboard.data ? <State text="Не удалось загрузить статистику" /> : <>
+        {tab === 'overview' && <Overview total={dashboard.data.totals} />}
+        {tab === 'dynamics' && (dynamics.data ? <Dynamics data={dynamics.data.days} /> : <State text="Загрузка динамики…" />)}
+        {tab === 'categories' && (categories.data ? <Categories data={categories.data.categories} /> : <State text="Загрузка категорий…" />)}
+        {tab === 'districts' && <DistrictTable rows={dashboard.data.districts} onSelect={lockedDistrict ? undefined : setDistrictId} />}
+        {tab === 'shtab' && <Shtab districtId={districtId || undefined} />}
+      </>}
+    </main>
+  </div>
 }
 
-function KpiCard({ icon, label, value, color }: { icon: React.ReactNode; label: string; value: number; color: string }) {
-  return (
-    <div className="card p-3 flex items-center gap-3">
-      <div className={`w-10 h-10 ${color} rounded-xl flex items-center justify-center text-white shrink-0`}>
-        {icon}
-      </div>
-      <div className="min-w-0">
-        <div className="text-xs text-gray-400 truncate">{label}</div>
-        <div className="text-xl font-bold text-gray-800">{value}</div>
-      </div>
+function State({ text }: { text: string }) { return <div className="h-60 grid place-items-center text-gray-500">{text}</div> }
+function Kpi({ label, value, detail }: { label: string; value: number; detail?: string }) {
+  return <div className="card"><div className="text-xs text-gray-500">{label}</div><div className="text-2xl font-bold mt-1">{value}</div>{detail && <div className="text-xs text-primary-700 mt-1">{detail}</div>}</div>
+}
+function Overview({ total: t }: { total: StatsDistrictRow }) {
+  const funnel = [
+    { name: 'Выявлено', value: t.issues_found }, { name: 'Не устранено', value: t.issues_not_fixed },
+    { name: 'В работе', value: t.issues_in_work }, { name: 'На проверке', value: t.issues_on_check },
+    { name: 'Устранено', value: t.issues_closed },
+  ]
+  const coverage = [{ name: 'Проверено', value: t.sites_inspected }, { name: 'Не проверено', value: Math.max(0, t.total_sites - t.sites_inspected) }]
+  return <div className="space-y-4">
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <Kpi label="Площадок" value={t.total_sites} /><Kpi label="Обойдено" value={t.sites_inspected} detail={`${t.coverage_pct}% охвата`} />
+      <Kpi label="Обходов" value={t.inspections_total} /><Kpi label="Зелёных" value={t.inspections_green} />
+      <Kpi label="С нарушениями" value={t.inspections_with_defects} /><Kpi label="Выявлено" value={t.issues_found} />
+      <Kpi label="Устранено" value={t.issues_closed} detail={`${t.issues_closed_pct}%`} /><Kpi label="На доработке" value={t.issues_revision} />
     </div>
-  )
+    <div className="grid lg:grid-cols-2 gap-4">
+      <ChartCard title="Воронка нарушений"><ResponsiveContainer width="100%" height={280}><BarChart data={funnel} layout="vertical"><CartesianGrid strokeDasharray="3 3"/><XAxis type="number"/><YAxis dataKey="name" type="category" width={95}/><Tooltip/><Bar dataKey="value" fill="#9E2B25" /></BarChart></ResponsiveContainer></ChartCard>
+      <ChartCard title="Охват"><ResponsiveContainer width="100%" height={280}><PieChart><Pie data={coverage} dataKey="value" nameKey="name" innerRadius={65} outerRadius={105} label>{coverage.map((_, i) => <Cell key={i} fill={i ? '#D9D9D9' : '#63BE7B'} />)}</Pie><Tooltip/><Legend/></PieChart></ResponsiveContainer></ChartCard>
+    </div>
+  </div>
+}
+function ChartCard({ title, children }: { title: string; children: React.ReactNode }) { return <div className="card"><h2 className="font-semibold mb-3">{title}</h2>{children}</div> }
+function Dynamics({ data }: { data: { date: string; inspections: number; issues_found: number; closure_events: number }[] }) {
+  return <div className="space-y-4"><ChartCard title="Динамика по дням"><ResponsiveContainer width="100%" height={330}><LineChart data={data}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="date"/><YAxis allowDecimals={false}/><Tooltip/><Legend/><Line dataKey="inspections" name="Обходы" stroke="#2563EB"/><Line dataKey="issues_found" name="Выявлено" stroke="#E06666"/><Line dataKey="closure_events" name="Устранено" stroke="#63BE7B"/></LineChart></ResponsiveContainer></ChartCard>
+    <div className="card overflow-x-auto"><table className="w-full text-sm"><thead><tr><th>Дата</th><th>Обходы</th><th>Выявлено</th><th>Устранено</th></tr></thead><tbody>{data.map(d => <tr className="border-t text-center" key={d.date}><td className="p-2">{d.date}</td><td>{d.inspections}</td><td>{d.issues_found}</td><td>{d.closure_events}</td></tr>)}</tbody></table></div></div>
+}
+function Categories({ data }: { data: { category_id: string; name: string; found: number; closed: number; not_fixed: number; overdue: number; closed_pct: number }[] }) {
+  const sorted = [...data].sort((a, b) => b.found - a.found)
+  return <div className="space-y-4"><ChartCard title="Нарушения по категориям"><ResponsiveContainer width="100%" height={360}><BarChart data={sorted} layout="vertical"><CartesianGrid strokeDasharray="3 3"/><XAxis type="number"/><YAxis dataKey="name" type="category" width={150}/><Tooltip/><Bar dataKey="found" name="Выявлено" fill="#9E2B25"/></BarChart></ResponsiveContainer></ChartCard>
+    <div className="card overflow-x-auto"><table className="w-full text-sm"><thead><tr><th>Категория</th><th>Выявлено</th><th>Устранено</th><th>Не устранено</th><th>Просрочено</th><th>%</th></tr></thead><tbody>{data.map(r => <tr className="border-t text-center" key={r.category_id}><td className="p-2 text-left">{r.name}</td><td>{r.found}</td><td>{r.closed}</td><td>{r.not_fixed}</td><td>{r.overdue}</td><td style={{background:percentageColor(r.closed_pct)}}>{r.closed_pct}%</td></tr>)}</tbody></table></div></div>
+}
+function DistrictTable({ rows, onSelect }: { rows: StatsDistrictRow[]; onSelect?: (id: string) => void }) {
+  const [sort, setSort] = useState<keyof StatsDistrictRow>('district_name')
+  const ordered = useMemo(() => [...rows].sort((a,b) => typeof a[sort] === 'number' ? Number(b[sort])-Number(a[sort]) : String(a[sort]).localeCompare(String(b[sort]), 'ru')), [rows, sort])
+  const cols: [keyof StatsDistrictRow, string][] = [['district_name','Район'],['total_sites','Площадок'],['sites_inspected','Обойдено'],['coverage_pct','Охват %'],['inspections_total','Обходов'],['inspections_green','Зелёных'],['inspections_with_defects','С наруш.'],['issues_found','Выявлено'],['issues_closed','Устранено'],['issues_revision','Доработка'],['issues_not_fixed','Не устранено'],['issues_overdue','Просрочено'],['issues_closed_pct','Устранение %']]
+  return <div className="card overflow-x-auto"><table className="w-full text-xs"><thead><tr>{cols.map(([key,label]) => <th key={key} onClick={() => setSort(key)} className="p-2 whitespace-nowrap cursor-pointer bg-gray-100">{label}</th>)}</tr></thead><tbody>{ordered.map(r => <tr key={r.district_id} onClick={() => onSelect?.(r.district_id)} className={onSelect ? 'border-t text-center cursor-pointer hover:bg-blue-50' : 'border-t text-center'}>{cols.map(([key]) => <td key={key} className="p-2 whitespace-nowrap" style={key === 'coverage_pct' || key === 'issues_closed_pct' ? {background:percentageColor(Number(r[key]))}:undefined}>{key === 'coverage_pct' || key === 'issues_closed_pct' ? `${r[key]}%` : r[key]}</td>)}</tr>)}</tbody></table></div>
+}
+function Shtab({ districtId }: { districtId?: string }) {
+  const [initialFrom, initialTo] = previousMskWeek()
+  const [from, setFrom] = useState(initialFrom), [to, setTo] = useState(initialTo)
+  const params = { date_from: from, date_to: to, district_id: districtId }
+  const preview = useQuery({ queryKey:['shtab-preview', params], queryFn:() => statsApi.dashboard(params) })
+  const download = () => toast.promise(statsApi.downloadShtab(params), { loading:'Формирую PPTX…', success:'PPTX скачан', error:'Ошибка выгрузки' })
+  return <div className="space-y-4"><div className="card flex flex-wrap items-end gap-3"><label className="text-sm">С даты<input className="input-field mt-1" type="date" value={from} onChange={e=>setFrom(e.target.value)}/></label><label className="text-sm">По дату<input className="input-field mt-1" type="date" value={to} onChange={e=>setTo(e.target.value)}/></label><button onClick={download} className="btn-primary flex items-center gap-2"><Download className="w-4"/>Скачать PPTX</button></div>{preview.data ? <DistrictTable rows={preview.data.districts}/> : <State text="Загрузка превью…"/>}</div>
 }

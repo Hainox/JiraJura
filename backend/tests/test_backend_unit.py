@@ -1,7 +1,7 @@
 """Тесты бэкенда — юнит-тесты без FastAPI app."""
 import pytest
 from app.services.auth import hash_password, verify_password, create_access_token, decode_access_token
-from app.services.permissions import check_own_or_role, require_role, in_district_scope
+from app.services.permissions import check_own_or_role, in_district_scope
 from app.models import User
 
 

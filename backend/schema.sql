@@ -131,10 +131,24 @@ CREATE TABLE checklist_templates (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE issue_categories (
+    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name        VARCHAR(200) NOT NULL UNIQUE,
+    sort_order  INTEGER NOT NULL DEFAULT 0,
+    is_active   BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+INSERT INTO issue_categories (name, sort_order) VALUES
+    ('Оборудование', 10), ('Покрытие', 20), ('Ограждения', 30),
+    ('МАФ', 40), ('Санитарное состояние', 50), ('Безопасность', 60),
+    ('Документация', 70), ('Освещение', 80), ('Прочее', 999);
+
 CREATE TABLE checklist_items (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     template_id     UUID NOT NULL REFERENCES checklist_templates(id) ON DELETE CASCADE,
-    category        VARCHAR(200),                        -- "Покрытие", "Оборудование", "Ограждение"
+    category        VARCHAR(200),                        -- legacy name, retained during rollout
+    category_id     UUID REFERENCES issue_categories(id),
     question        VARCHAR(500) NOT NULL,               -- "Целостность покрытия"
     sort_order      INT DEFAULT 0,
     is_critical     BOOLEAN DEFAULT FALSE,               -- критический пункт?
@@ -144,6 +158,7 @@ CREATE TABLE checklist_items (
 );
 
 CREATE INDEX idx_checklist_items_template ON checklist_items(template_id);
+CREATE INDEX idx_checklist_items_category_id ON checklist_items(category_id);
 
 -- ============================================================
 -- 6. ОБХОДЫ
@@ -250,6 +265,7 @@ CREATE TABLE issues (
     inspection_id   UUID NOT NULL REFERENCES inspections(id),
     site_id         UUID NOT NULL REFERENCES sites(id),
     checklist_answer_id UUID REFERENCES checklist_answers(id) ON DELETE SET NULL, -- пункт чек-листа, породивший замечание автоматически (NULL — заведено вручную)
+    category_id     UUID NOT NULL REFERENCES issue_categories(id),
     title           VARCHAR(300) NOT NULL,
     description     TEXT,
     criticality     issue_criticality NOT NULL DEFAULT 'medium',
@@ -259,6 +275,7 @@ CREATE TABLE issues (
     fixed_at        TIMESTAMPTZ,
     reviewer_comment TEXT,                                -- комментарий проверяющего (напр. причина возврата на доработку)
     fix_comment     TEXT,                                 -- описание исправления от того, кто устранял
+    executor_name   VARCHAR(300),                         -- исполнитель работ
     created_by      UUID NOT NULL REFERENCES users(id),
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ
@@ -270,6 +287,7 @@ CREATE INDEX idx_issues_status ON issues(status);
 CREATE UNIQUE INDEX ux_issues_checklist_answer_id ON issues(checklist_answer_id) WHERE checklist_answer_id IS NOT NULL;
 CREATE INDEX idx_issues_criticality ON issues(criticality);
 CREATE INDEX idx_issues_assigned ON issues(assigned_to);
+CREATE INDEX idx_issues_category_id ON issues(category_id);
 
 -- FK для photos.issue_id
 ALTER TABLE photos ADD CONSTRAINT fk_photos_issue
@@ -361,6 +379,20 @@ INSERT INTO checklist_items (template_id, category, question, sort_order, is_cri
     ('c0000000-0000-0000-0000-000000000002', 'МАФ', 'Состояние скамеек', 5, FALSE, FALSE),
     ('c0000000-0000-0000-0000-000000000002', 'Ограждение', 'Целостность ограждения', 6, TRUE, FALSE),
     ('c0000000-0000-0000-0000-000000000002', 'Общий вид', 'Фото общего вида площадки', 7, FALSE, TRUE);
+
+-- Keep the legacy category text usable while populating the v2 foreign key.
+UPDATE checklist_items AS ci
+SET category_id = ic.id
+FROM issue_categories AS ic
+WHERE ic.name = CASE
+    WHEN lower(ci.category) = 'покрытие' THEN 'Покрытие'
+    WHEN lower(ci.category) = 'оборудование' THEN 'Оборудование'
+    WHEN lower(ci.category) IN ('ограждение', 'ограждения') THEN 'Ограждения'
+    WHEN lower(ci.category) = 'маф' THEN 'МАФ'
+    ELSE 'Прочее'
+END;
+
+ALTER TABLE checklist_items ALTER COLUMN category_id SET NOT NULL;
 
 -- ============================================================
 -- 14. ОБРАЩЕНИЯ ГРАЖДАН/СОТРУДНИКОВ (публичная веб-форма, без авторизации)

@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from geoalchemy2 import Geometry
 from sqlalchemy import (
     Column, ForeignKey, String, Integer, Numeric, Text, Boolean,
-    Date, DateTime, Enum, UniqueConstraint, CheckConstraint, text,
+    Date, DateTime, Enum, UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, relationship
@@ -202,11 +202,24 @@ class ChecklistTemplate(Base):
     items = relationship("ChecklistItem", back_populates="template")
 
 
+class IssueCategory(Base):
+    __tablename__ = "issue_categories"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String(200), unique=True, nullable=False)
+    sort_order = Column(Integer, nullable=False, default=0)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+    checklist_items = relationship("ChecklistItem", back_populates="category_ref")
+    issues = relationship("Issue", back_populates="category_ref")
+
+
 class ChecklistItem(Base):
     __tablename__ = "checklist_items"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     template_id = Column(UUID(as_uuid=True), ForeignKey("checklist_templates.id", ondelete="CASCADE"), nullable=False)
     category = Column(String(200))
+    category_id = Column(UUID(as_uuid=True), ForeignKey("issue_categories.id"), nullable=False)
     question = Column(String(500), nullable=False)
     sort_order = Column(Integer, default=0)
     is_critical = Column(Boolean, default=False)
@@ -218,6 +231,7 @@ class ChecklistItem(Base):
     created_at = Column(DateTime(timezone=True), default=_utcnow)
 
     template = relationship("ChecklistTemplate", back_populates="items")
+    category_ref = relationship("IssueCategory", back_populates="checklist_items")
 
 
 class Inspection(Base):
@@ -290,6 +304,7 @@ class Issue(Base):
     # Пункт чек-листа, из-за которого замечание создано автоматически —
     # NULL для замечаний, заведённых вручную не по конкретному пункту.
     checklist_answer_id = Column(UUID(as_uuid=True), ForeignKey("checklist_answers.id", ondelete="SET NULL"), nullable=True)
+    category_id = Column(UUID(as_uuid=True), ForeignKey("issue_categories.id"), nullable=False)
     title = Column(String(300), nullable=False)
     description = Column(Text)
     criticality = Column(ISSUE_CRITICALITY_ENUM, nullable=False, default="medium")
@@ -298,6 +313,7 @@ class Issue(Base):
     due_date = Column(Date)
     fix_comment = Column(Text)
     reviewer_comment = Column(Text)
+    executor_name = Column(String(300))
     fixed_at = Column(DateTime(timezone=True))
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), default=_utcnow)
@@ -307,6 +323,7 @@ class Issue(Base):
     site_ref = relationship("Site", back_populates="issues")
     assigned_user = relationship("User", back_populates="assigned_issues", foreign_keys=[assigned_to])
     creator_ref = relationship("User", foreign_keys=[created_by])
+    category_ref = relationship("IssueCategory", back_populates="issues")
     status_history = relationship("IssueStatusHistory", back_populates="issue")
     fix_photos = relationship("Photo",
                           primaryjoin="and_(Issue.id==Photo.issue_id, Photo.target_type=='issue_fix')",

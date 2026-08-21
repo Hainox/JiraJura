@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AuditLog, User
+from app.models import AuditLog
 
 
 async def log_action(

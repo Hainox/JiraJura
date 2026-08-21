@@ -18,48 +18,48 @@ from app.services.statistics.pptx import render_shtab
 router = APIRouter()
 
 
-def _service(db, user, date_from, date_to, district_id, *, previous_week=False):
+def _service(db, user, date_from, date_to, district_id, *, previous_week=False, all_time=False):
     return StatisticsService(
         db,
-        build_filter(user, date_from, date_to, district_id, default_previous_week=previous_week),
+        build_filter(user, date_from, date_to, district_id, default_previous_week=previous_week, all_time=all_time),
     )
 
 
 @router.get("/dashboard", response_model=StatsDashboardOut)
 async def dashboard(
     date_from: date | None = Query(None), date_to: date | None = Query(None),
-    district_id: UUID | None = Query(None), db: AsyncSession = Depends(get_db),
+    district_id: UUID | None = Query(None), all_time: bool = Query(False), db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role("reviewer", "admin")),
 ):
-    return await _service(db, current_user, date_from, date_to, district_id).dashboard()
+    return await _service(db, current_user, date_from, date_to, district_id, all_time=all_time).dashboard()
 
 
 @router.get("/dynamics", response_model=StatsDynamicsOut)
 async def dynamics(
     date_from: date | None = Query(None), date_to: date | None = Query(None),
-    district_id: UUID | None = Query(None), db: AsyncSession = Depends(get_db),
+    district_id: UUID | None = Query(None), all_time: bool = Query(False), db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role("reviewer", "admin")),
 ):
-    return await _service(db, current_user, date_from, date_to, district_id).dynamics()
+    return await _service(db, current_user, date_from, date_to, district_id, all_time=all_time).dynamics()
 
 
 @router.get("/categories", response_model=StatsCategoriesOut)
 async def categories(
     date_from: date | None = Query(None), date_to: date | None = Query(None),
-    district_id: UUID | None = Query(None), db: AsyncSession = Depends(get_db),
+    district_id: UUID | None = Query(None), all_time: bool = Query(False), db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role("reviewer", "admin")),
 ):
-    return await _service(db, current_user, date_from, date_to, district_id).categories()
+    return await _service(db, current_user, date_from, date_to, district_id, all_time=all_time).categories()
 
 
 @router.get("/shtab.pptx")
 async def shtab_pptx(
     date_from: date | None = Query(None), date_to: date | None = Query(None),
-    district_id: UUID | None = Query(None), db: AsyncSession = Depends(get_db),
+    district_id: UUID | None = Query(None), all_time: bool = Query(False), db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role("reviewer", "admin")),
 ):
     service = _service(
-        db, current_user, date_from, date_to, district_id, previous_week=True
+        db, current_user, date_from, date_to, district_id, previous_week=True, all_time=all_time
     )
     dashboard_data = await service.dashboard()
     category_data = await service.categories()

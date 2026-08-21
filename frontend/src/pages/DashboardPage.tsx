@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -9,10 +9,11 @@ import { ArrowLeft, Download, FileSpreadsheet, RefreshCw } from 'lucide-react'
 import { districtsApi, reportsApi, statsApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
 import { notify as toast } from '@/lib/toast'
-import { currentMskWeek, percentageColor, previousMskWeek } from '@/lib/statistics'
+import { currentMskWeek, percentageColor, periodRange, type StatisticsPreset } from '@/lib/statistics'
 import type { StatsDistrictRow } from '@/types'
 
 type Tab = 'overview' | 'dynamics' | 'categories' | 'districts' | 'shtab'
+type PeriodMode = StatisticsPreset | 'all' | 'custom'
 const tabs: [Tab, string][] = [
   ['overview', 'Обзор'], ['dynamics', 'Динамика'], ['categories', 'Категории'],
   ['districts', 'По районам'], ['shtab', 'Штаб-отчёт'],
@@ -20,14 +21,27 @@ const tabs: [Tab, string][] = [
 
 export default function DashboardPage() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const user = useAuthStore((s) => s.user)
   const [defaultFrom, defaultTo] = currentMskWeek()
   const [dateFrom, setDateFrom] = useState(defaultFrom)
   const [dateTo, setDateTo] = useState(defaultTo)
+  const [periodMode, setPeriodMode] = useState<PeriodMode>('week')
   const [tab, setTab] = useState<Tab>('overview')
   const lockedDistrict = user?.role === 'reviewer' ? user.district_id : undefined
   const [districtId, setDistrictId] = useState(lockedDistrict || '')
-  const params = { date_from: dateFrom, date_to: dateTo, district_id: districtId || undefined }
+  const params = { date_from: dateFrom, date_to: dateTo, district_id: districtId || undefined, all_time: periodMode === 'all' || undefined }
+  const selectPreset = (mode: Exclude<PeriodMode, 'custom'>) => {
+    setPeriodMode(mode)
+    if (mode !== 'all') {
+      const [from, to] = periodRange(mode)
+      setDateFrom(from)
+      setDateTo(to)
+    }
+  }
+  const updateDateFrom = (value: string) => { setPeriodMode('custom'); setDateFrom(value) }
+  const updateDateTo = (value: string) => { setPeriodMode('custom'); setDateTo(value) }
+  const refreshStatistics = () => queryClient.invalidateQueries({ queryKey: ['stats-v2'] })
 
   const { data: districts } = useQuery({ queryKey: ['districts'], queryFn: districtsApi.list })
   const dashboard = useQuery({
@@ -53,7 +67,7 @@ export default function DashboardPage() {
     <header className="bg-primary-800 text-white px-4 py-3 flex items-center gap-3 shrink-0">
       <button onClick={() => navigate(user?.role === 'admin' ? '/admin' : '/')} className="p-2"><ArrowLeft /></button>
       <div className="flex-1"><h1 className="font-bold text-lg">Статистика v2</h1><p className="text-xs text-blue-200">МСК · сформировано {generated}</p></div>
-      <button onClick={() => dashboard.refetch()} className="p-2"><RefreshCw className="w-5" /></button>
+      <button aria-label="Обновить статистику" onClick={refreshStatistics} className="p-2"><RefreshCw className="w-5" /></button>
     </header>
 
     <section className="bg-white border-b p-3 flex gap-2 flex-wrap">
@@ -61,8 +75,11 @@ export default function DashboardPage() {
         : <select className="input-field text-sm !w-64" value={districtId} onChange={e => setDistrictId(e.target.value)}>
             <option value="">Все районы</option>{districts?.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
           </select>}
-      <input className="input-field text-sm !w-40" type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
-      <input className="input-field text-sm !w-40" type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} />
+      <div className="flex rounded-md border overflow-hidden" role="group" aria-label="Период статистики">
+        {([['day', 'День'], ['week', 'Неделя'], ['month', 'Месяц'], ['all', 'Все время']] as const).map(([mode, label]) => <button key={mode} onClick={() => selectPreset(mode)} className={`px-3 py-2 text-sm ${periodMode === mode ? 'bg-primary-700 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>{label}</button>)}
+      </div>
+      <input aria-label="Дата начала" className="input-field text-sm !w-40" type="date" value={dateFrom} onChange={e => updateDateFrom(e.target.value)} disabled={periodMode === 'all'} />
+      <input aria-label="Дата окончания" className="input-field text-sm !w-40" type="date" value={dateTo} onChange={e => updateDateTo(e.target.value)} disabled={periodMode === 'all'} />
       <button className="btn-outline flex gap-2 items-center text-sm" onClick={exportXlsx}><FileSpreadsheet className="w-4" />Excel</button>
     </section>
 
@@ -76,7 +93,7 @@ export default function DashboardPage() {
         {tab === 'dynamics' && (dynamics.data ? <Dynamics data={dynamics.data.days} /> : <State text="Загрузка динамики…" />)}
         {tab === 'categories' && (categories.data ? <Categories data={categories.data.categories} /> : <State text="Загрузка категорий…" />)}
         {tab === 'districts' && <DistrictTable rows={dashboard.data.districts} onSelect={lockedDistrict ? undefined : setDistrictId} />}
-        {tab === 'shtab' && <Shtab districtId={districtId || undefined} />}
+        {tab === 'shtab' && <Shtab params={params} />}
       </>}
     </main>
   </div>
@@ -119,14 +136,11 @@ function Categories({ data }: { data: { category_id: string; name: string; found
 function DistrictTable({ rows, onSelect }: { rows: StatsDistrictRow[]; onSelect?: (id: string) => void }) {
   const [sort, setSort] = useState<keyof StatsDistrictRow>('district_name')
   const ordered = useMemo(() => [...rows].sort((a,b) => typeof a[sort] === 'number' ? Number(b[sort])-Number(a[sort]) : String(a[sort]).localeCompare(String(b[sort]), 'ru')), [rows, sort])
-  const cols: [keyof StatsDistrictRow, string][] = [['district_name','Район'],['total_sites','Площадок'],['sites_inspected','Обойдено'],['coverage_pct','Охват %'],['inspections_total','Обходов'],['inspections_green','Зелёных'],['inspections_with_defects','С наруш.'],['issues_found','Выявлено'],['issues_closed','Устранено'],['issues_revision','Доработка'],['issues_not_fixed','Не устранено'],['issues_overdue','Просрочено'],['issues_closed_pct','Устранение %']]
-  return <div className="card overflow-x-auto"><table className="w-full text-xs"><thead><tr>{cols.map(([key,label]) => <th key={key} onClick={() => setSort(key)} className="p-2 whitespace-nowrap cursor-pointer bg-gray-100">{label}</th>)}</tr></thead><tbody>{ordered.map(r => <tr key={r.district_id} onClick={() => onSelect?.(r.district_id)} className={onSelect ? 'border-t text-center cursor-pointer hover:bg-blue-50' : 'border-t text-center'}>{cols.map(([key]) => <td key={key} className="p-2 whitespace-nowrap" style={key === 'coverage_pct' || key === 'issues_closed_pct' ? {background:percentageColor(Number(r[key]))}:undefined}>{key === 'coverage_pct' || key === 'issues_closed_pct' ? `${r[key]}%` : r[key]}</td>)}</tr>)}</tbody></table></div>
+  const cols: [keyof StatsDistrictRow, string][] = [['district_name','Район'],['total_sites','Площадок'],['sites_inspected','Проверено'],['coverage_pct','Охват %'],['inspections_total','Обходов'],['inspections_green','Без нарушений'],['inspections_with_defects','С наруш.'],['issues_found','Выявлено'],['issues_closed','Устранено'],['issues_revision','Доработка'],['issues_not_fixed','Не устранено'],['issues_overdue','Просрочено'],['issues_closed_pct','Устранение %']]
+  return <div className="card overflow-x-auto"><table className="w-full text-xs border border-slate-400"><thead><tr>{cols.map(([key,label]) => <th key={key} onClick={() => setSort(key)} className="p-2 whitespace-nowrap cursor-pointer bg-primary-100 border border-slate-400">{label}</th>)}</tr></thead><tbody>{ordered.map(r => <tr key={r.district_id} onClick={() => onSelect?.(r.district_id)} className={onSelect ? 'border-t text-center cursor-pointer hover:bg-blue-50' : 'border-t text-center'}>{cols.map(([key]) => <td key={key} className="p-2 whitespace-nowrap border border-slate-300" style={key === 'coverage_pct' || key === 'issues_closed_pct' ? {background:percentageColor(Number(r[key]))}:undefined}>{key === 'coverage_pct' || key === 'issues_closed_pct' ? `${r[key]}%` : r[key]}</td>)}</tr>)}</tbody></table></div>
 }
-function Shtab({ districtId }: { districtId?: string }) {
-  const [initialFrom, initialTo] = previousMskWeek()
-  const [from, setFrom] = useState(initialFrom), [to, setTo] = useState(initialTo)
-  const params = { date_from: from, date_to: to, district_id: districtId }
+function Shtab({ params }: { params: { date_from: string; date_to: string; district_id?: string; all_time?: boolean } }) {
   const preview = useQuery({ queryKey:['shtab-preview', params], queryFn:() => statsApi.dashboard(params) })
   const download = () => toast.promise(statsApi.downloadShtab(params), { loading:'Формирую PPTX…', success:'PPTX скачан', error:'Ошибка выгрузки' })
-  return <div className="space-y-4"><div className="card flex flex-wrap items-end gap-3"><label className="text-sm">С даты<input className="input-field mt-1" type="date" value={from} onChange={e=>setFrom(e.target.value)}/></label><label className="text-sm">По дату<input className="input-field mt-1" type="date" value={to} onChange={e=>setTo(e.target.value)}/></label><button onClick={download} className="btn-primary flex items-center gap-2"><Download className="w-4"/>Скачать PPTX</button></div>{preview.data ? <DistrictTable rows={preview.data.districts}/> : <State text="Загрузка превью…"/>}</div>
+  return <div className="space-y-4"><div className="card flex flex-wrap items-end gap-3"><p className="text-sm text-gray-600">Используется выбранный выше период: {params.all_time ? 'всё время' : `${params.date_from} — ${params.date_to}`}</p><button onClick={download} className="btn-primary flex items-center gap-2"><Download className="w-4"/>Скачать PPTX</button></div>{preview.data ? <DistrictTable rows={preview.data.districts}/> : <State text="Загрузка превью…"/>}</div>
 }

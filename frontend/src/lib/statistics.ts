@@ -1,4 +1,5 @@
 const MSK_TIMEZONE = 'Europe/Moscow'
+export type StatisticsPreset = 'day' | 'week' | 'month'
 
 export function mskDateString(now = new Date()): string {
   const parts = new Intl.DateTimeFormat('en', {
@@ -25,6 +26,13 @@ export function currentMskWeek(now = new Date()): readonly [string, string] {
 export function previousMskWeek(now = new Date()): readonly [string, string] {
   const [thisMonday] = currentMskWeek(now)
   return [shiftCalendarDate(thisMonday, -7), shiftCalendarDate(thisMonday, -1)] as const
+}
+
+export function periodRange(preset: StatisticsPreset, now = new Date()): readonly [string, string] {
+  const today = mskDateString(now)
+  if (preset === 'day') return [today, today] as const
+  if (preset === 'week') return currentMskWeek(now)
+  return [`${today.slice(0, 7)}-01`, today] as const
 }
 
 export function percentageColor(value: number): string {

@@ -79,6 +79,11 @@ async def test_stats_contract_and_pptx(client, admin_headers):
     assert len(presentation.slides) == 2
     assert presentation.slide_width == Inches(13.333)
     assert presentation.slide_height == Inches(7.5)
+    first_slide_text = "\n".join(shape.text for shape in presentation.slides[0].shapes if hasattr(shape, "text"))
+    second_slide_text = "\n".join(shape.text for shape in presentation.slides[1].shapes if hasattr(shape, "text"))
+    assert "УПРАВЛЕНИЕ ЖИЛИЩНО-КОММУНАЛЬНОГО ХОЗЯЙСТВА" in first_slide_text
+    assert "1.1" in first_slide_text
+    assert "1.2" in second_slide_text
     district_table = next(shape.table for shape in presentation.slides[0].shapes if shape.has_table)
     assert len(district_table.rows) == len(payload["districts"]) + 2
 
@@ -86,6 +91,11 @@ async def test_stats_contract_and_pptx(client, admin_headers):
     assert excel.status_code == 200, excel.text
     workbook = load_workbook(BytesIO(excel.content), data_only=True)
     summary = workbook["Сводка по районам"]
+    assert [cell.value for cell in summary[1]][:13] == [
+        "Район", "Площадок", "Проверено", "Охват %", "Обходов",
+        "Без нарушений", "С наруш.", "Выявлено", "Устранено",
+        "Доработка", "Не устранено", "Просрочено", "Устранение %",
+    ]
     excel_by_name = {summary.cell(row, 1).value: summary.cell(row, 2).value
                      for row in range(2, summary.max_row + 1)}
     assert excel_by_name == {
@@ -107,6 +117,15 @@ async def test_stats_rejects_invalid_or_excessive_period(client, admin_headers):
         headers=admin_headers,
     )
     assert excessive.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_stats_all_time_is_an_explicit_unbounded_period(client, admin_headers):
+    response = await client.get(
+        "/api/v1/stats/dashboard", params={"all_time": "true"}, headers=admin_headers,
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["period"]["date_from"] == "2000-01-01"
 
 
 @pytest.mark.asyncio

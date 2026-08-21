@@ -338,7 +338,7 @@ export const reportsApi = {
 }
 
 // ── Statistics v2 ──
-type StatsParams = { district_id?: string; date_from?: string; date_to?: string }
+type StatsParams = { district_id?: string; date_from?: string; date_to?: string; all_time?: boolean }
 
 export const statsApi = {
   dashboard: (params?: StatsParams) =>

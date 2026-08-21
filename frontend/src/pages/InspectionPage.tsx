@@ -94,11 +94,12 @@ export default function InspectionPage() {
 
   // Is this inspection returned for revision?
   const isRevision = inspection?.status === 'in_progress' && !!inspection?.reviewer_comment && isInspector
+  const usesLegacyChecklist = inspection?.uses_legacy_checklist === true
 
   const { data: checklists } = useQuery<ChecklistTemplateOut[]>({
     queryKey: ['checklist-template', inspection?.site?.type],
     queryFn: () => checklistsApi.template({ site_type: inspection!.site.type }),
-    enabled: !!inspection?.site?.type,
+    enabled: usesLegacyChecklist && !!inspection?.site?.type,
   })
 
   const { data: issueCategories = [] } = useQuery({
@@ -253,7 +254,7 @@ export default function InspectionPage() {
         title: issueTitle,
         description: issueDesc || undefined,
         criticality: issueCriticality,
-        category_id: issueCategoryId || undefined,
+        category_id: issueCategoryId,
       }),
     onSuccess: (issue) => {
       toast.success('Замечание создано')
@@ -403,17 +404,15 @@ export default function InspectionPage() {
         <div className="flex-1 min-w-0">
           <h1 className="font-bold text-lg truncate">{inspection.site?.courtyard?.name ?? 'Обход'}</h1>
           <div className="flex gap-3 text-xs text-blue-200 mt-0.5">
-            <span>✓ {stats.ok}</span>
-            <span>✕ {stats.nok}</span>
-            <span>? {stats.pending}</span>
+            {usesLegacyChecklist ? <><span>✓ {stats.ok}</span><span>✕ {stats.nok}</span><span>? {stats.pending}</span></> : <span>Нарушений: {existingIssues?.length ?? 0}</span>}
             {isReadOnly && <span className="opacity-70">| {STATUS_LABELS[inspection.status] ?? inspection.status}</span>}
           </div>
         </div>
         {isInspector && inspection.status === 'in_progress' && (
           <>
-            <button onClick={() => saveMutation.mutate()} className="text-xs bg-white/20 px-3 py-1.5 rounded-lg hover:bg-white/30">
+            {usesLegacyChecklist && <button onClick={() => saveMutation.mutate()} className="text-xs bg-white/20 px-3 py-1.5 rounded-lg hover:bg-white/30">
               Сохранить
-            </button>
+            </button>}
             <button
               onClick={() => setShowCompleteConfirm(true)}
               className="text-xs bg-green-600 px-3 py-1.5 rounded-lg hover:bg-green-700 font-medium"
@@ -531,10 +530,11 @@ export default function InspectionPage() {
         <div className="bg-white border-b p-3 shrink-0 space-y-3">
           <div className="text-sm font-semibold text-gray-800">Завершить обход</div>
           <p className="text-xs text-gray-500">
-            Проверено ✓{stats.ok} пунктов, выявлено ✕{stats.nok} нарушений.
-            {stats.pending > 0 && ` Осталось ${stats.pending} непроверенных.`}
+            {usesLegacyChecklist
+              ? <>Проверено ✓{stats.ok} пунктов, выявлено ✕{stats.nok} нарушений.{stats.pending > 0 && ` Осталось ${stats.pending} непроверенных.`}</>
+              : <>Создано нарушений: {existingIssues?.length ?? 0}. Итоговый статус определит сервер.</>}
           </p>
-          {missingRequiredPhotoItems.length > 0 && (
+          {usesLegacyChecklist && missingRequiredPhotoItems.length > 0 && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-700 flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
               <div>
@@ -554,12 +554,12 @@ export default function InspectionPage() {
             </button>
             <button
               onClick={() => completeMutation.mutate('completed')}
-              disabled={completeMutation.isPending || missingRequiredPhotoItems.length > 0}
+              disabled={completeMutation.isPending || (usesLegacyChecklist && missingRequiredPhotoItems.length > 0)}
               className="flex-1 py-2 text-sm bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-40"
             >
-              ✓ Всё в порядке
+              {usesLegacyChecklist ? '✓ Всё в порядке' : 'Завершить обход'}
             </button>
-            {stats.nok > 0 && (
+            {usesLegacyChecklist && stats.nok > 0 && (
               <button
                 onClick={() => completeMutation.mutate('issues_found')}
                 disabled={completeMutation.isPending || missingRequiredPhotoItems.length > 0}
@@ -662,15 +662,15 @@ export default function InspectionPage() {
       )}
 
       {/* Прогресс-бар */}
-      <div className="h-1 bg-gray-200 shrink-0">
+      {usesLegacyChecklist && <div className="h-1 bg-gray-200 shrink-0">
         <div
           className="h-full bg-green-500 transition-all duration-300"
           style={{ width: `${stats.total > 0 ? ((stats.ok + stats.nok) / stats.total) * 100 : 0}%` }}
         />
-      </div>
+      </div>}
 
       <div className="overflow-y-auto flex-1 p-4 space-y-3">
-        {allItems.map((item) => {
+        {usesLegacyChecklist && allItems.map((item) => {
           const itemPhotos = photosByAnswer[item.id] ?? []
           return (
           <div key={item.id} className={`card transition-colors ${activeItemId === item.id ? 'border-primary-400 ring-2 ring-primary-100' : ''}`}>
@@ -761,19 +761,19 @@ export default function InspectionPage() {
       </div>
 
       {/* Нижняя панель (только для инспектора) */}
-      {!isReadOnly && activeItem && (
+      {!isReadOnly && (usesLegacyChecklist ? activeItem : true) && (
         <div className="bg-white border-t p-4 shrink-0 max-h-[40vh] overflow-y-auto">
-          <div className="flex items-center justify-between mb-3">
+          {activeItem && <div className="flex items-center justify-between mb-3">
             <h3 className="font-semibold text-sm text-gray-800 truncate flex-1">{activeItem.question}</h3>
             <button onClick={() => setActiveItemId(null)} className="p-1 hover:bg-gray-100 rounded-lg">
               <X className="w-4 h-4 text-gray-400" />
             </button>
-          </div>
-          <textarea
+          </div>}
+          {activeItem && <textarea
             className="input-field mb-3 text-sm" rows={2} placeholder="Комментарий..."
             value={answers[activeItem.id]?.comment ?? ''}
             onChange={(e) => handleComment(activeItem.id, e.target.value)}
-          />
+          />}
           {issuePhotoTargetId ? (
             <div className="space-y-2">
               <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-xs text-green-800">
@@ -809,8 +809,8 @@ export default function InspectionPage() {
             <div className="space-y-2">
               <input className="input-field text-sm" placeholder="Заголовок замечания" value={issueTitle} onChange={(e) => setIssueTitle(e.target.value)} />
               <textarea className="input-field text-sm" rows={2} placeholder="Описание (необязательно)" value={issueDesc} onChange={(e) => setIssueDesc(e.target.value)} />
-              <select className="input-field text-sm" value={issueCategoryId} onChange={(e) => setIssueCategoryId(e.target.value)}>
-                <option value="">Категория: Прочее</option>
+              <select aria-label="Категория" className="input-field text-sm" value={issueCategoryId} onChange={(e) => setIssueCategoryId(e.target.value)}>
+                <option value="">Выберите категорию</option>
                 {issueCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
               </select>
               <div className="flex gap-2">
@@ -820,7 +820,7 @@ export default function InspectionPage() {
                   <option value="high">Высокая</option>
                   <option value="critical">Критическая</option>
                 </select>
-                <button onClick={() => { if (issueTitle.trim()) createIssueMutation.mutate() }} disabled={!issueTitle.trim()} className="btn-primary py-2 px-4 text-sm">
+                <button onClick={() => { if (issueTitle.trim() && issueCategoryId) createIssueMutation.mutate() }} disabled={!issueTitle.trim() || !issueCategoryId} className="btn-primary py-2 px-4 text-sm">
                   <Send className="w-4 h-4" />
                 </button>
               </div>

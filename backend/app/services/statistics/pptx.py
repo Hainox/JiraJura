@@ -103,7 +103,7 @@ def render_shtab(dashboard: StatsDashboardOut, categories: StatsCategoriesOut) -
 
     slide = prs.slides.add_slide(blank)
     _add_chrome(slide, "1.1")
-    _add_title(slide, "Обходы детских и спортивных площадок САО — итоги недели")
+    _add_title(slide, "Обходы детских и спортивных площадок САО — итоги периода")
 
     rows = sorted(
         dashboard.districts,

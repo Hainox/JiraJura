@@ -22,6 +22,16 @@ def _exec(sql, params=None):
         conn.close()
 
 
+def _active_category_id() -> str:
+    conn = psycopg2.connect(SYNC_DB_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM issue_categories WHERE is_active = true ORDER BY sort_order, name LIMIT 1")
+            return str(cur.fetchone()[0])
+    finally:
+        conn.close()
+
+
 def _query_all(sql, params=None):
     conn = psycopg2.connect(SYNC_DB_URL)
     try:
@@ -173,7 +183,8 @@ async def test_dashboard_issue_status_buckets_ignore_date_filter(client: AsyncCl
     )
     insp_id = start.json()["id"]
     issue = await client.post("/api/v1/issues/", json={
-        "inspection_id": insp_id, "title": "Старое замечание", "criticality": "medium",
+        "inspection_id": insp_id, "category_id": _active_category_id(),
+        "title": "Старое замечание", "criticality": "medium",
     }, headers=inspector_headers)
     issue_id = issue.json()["id"]
 

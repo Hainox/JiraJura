@@ -28,6 +28,16 @@ def _exec(sql, params=None):
         conn.close()
 
 
+def _active_category_id() -> str:
+    conn = psycopg2.connect(SYNC_DB_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM issue_categories WHERE is_active = true ORDER BY sort_order, name LIMIT 1")
+            return str(cur.fetchone()[0])
+    finally:
+        conn.close()
+
+
 async def _invite_and_login(client: AsyncClient, admin_headers, login: str, full_name: str,
                              role: str, district_id: str, password: str) -> dict:
     invite = await client.post("/api/v1/auth/invites", json={
@@ -63,7 +73,8 @@ async def _new_district_site_issue(client: AsyncClient, admin_headers, suffix: s
     insp_id = start.json()["id"]
 
     created = await client.post("/api/v1/issues/", json={
-        "inspection_id": insp_id, "title": f"Замечание {suffix}", "criticality": "medium",
+        "inspection_id": insp_id, "category_id": _active_category_id(),
+        "title": f"Замечание {suffix}", "criticality": "medium",
     }, headers=admin_headers)
     assert created.status_code == 200, created.text
     return did, created.json()["id"]

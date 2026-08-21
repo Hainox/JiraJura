@@ -307,6 +307,7 @@ class InspectionOut(BaseModel):
     reviewed_at: Optional[datetime] = None
     created_at: datetime
     site: SiteOut
+    uses_legacy_checklist: bool = False
     answers: list[ChecklistAnswerOut] = []
     issues_count: int = 0
     is_green: bool = False
@@ -343,10 +344,10 @@ class InspectionBulkAcceptOut(BaseModel):
 
 class IssueCreate(BaseModel):
     inspection_id: UUID
+    category_id: UUID
     title: str
     description: Optional[str] = None
     criticality: str = "medium"
-    category_id: Optional[UUID] = None
 
 
 class IssueCategoryOut(BaseModel):

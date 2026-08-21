@@ -41,3 +41,7 @@ export function percentageColor(value: number): string {
   if (value >= 50) return '#F4B183'
   return '#E06666'
 }
+
+export function withTotalsRow<T>(rows: readonly T[], totals: T): T[] {
+  return [...rows, totals]
+}

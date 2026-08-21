@@ -9,7 +9,7 @@ import { ArrowLeft, Download, FileSpreadsheet, RefreshCw } from 'lucide-react'
 import { districtsApi, reportsApi, statsApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
 import { notify as toast } from '@/lib/toast'
-import { currentMskWeek, percentageColor, periodRange, type StatisticsPreset } from '@/lib/statistics'
+import { currentMskWeek, percentageColor, periodRange, withTotalsRow, type StatisticsPreset } from '@/lib/statistics'
 import type { StatsDistrictRow } from '@/types'
 
 type Tab = 'overview' | 'dynamics' | 'categories' | 'districts' | 'shtab'
@@ -92,7 +92,7 @@ export default function DashboardPage() {
         {tab === 'overview' && <Overview total={dashboard.data.totals} />}
         {tab === 'dynamics' && (dynamics.data ? <Dynamics data={dynamics.data.days} /> : <State text="Загрузка динамики…" />)}
         {tab === 'categories' && (categories.data ? <Categories data={categories.data.categories} /> : <State text="Загрузка категорий…" />)}
-        {tab === 'districts' && <DistrictTable rows={dashboard.data.districts} onSelect={lockedDistrict ? undefined : setDistrictId} />}
+        {tab === 'districts' && <DistrictTable rows={dashboard.data.districts} totals={dashboard.data.totals} onSelect={lockedDistrict ? undefined : setDistrictId} />}
         {tab === 'shtab' && <Shtab params={params} />}
       </>}
     </main>
@@ -133,14 +133,14 @@ function Categories({ data }: { data: { category_id: string; name: string; found
   return <div className="space-y-4"><ChartCard title="Нарушения по категориям"><ResponsiveContainer width="100%" height={360}><BarChart data={sorted} layout="vertical"><CartesianGrid strokeDasharray="3 3"/><XAxis type="number"/><YAxis dataKey="name" type="category" width={150}/><Tooltip/><Bar dataKey="found" name="Выявлено" fill="#9E2B25"/></BarChart></ResponsiveContainer></ChartCard>
     <div className="card overflow-x-auto"><table className="w-full text-sm"><thead><tr><th>Категория</th><th>Выявлено</th><th>Устранено</th><th>Не устранено</th><th>Просрочено</th><th>%</th></tr></thead><tbody>{data.map(r => <tr className="border-t text-center" key={r.category_id}><td className="p-2 text-left">{r.name}</td><td>{r.found}</td><td>{r.closed}</td><td>{r.not_fixed}</td><td>{r.overdue}</td><td style={{background:percentageColor(r.closed_pct)}}>{r.closed_pct}%</td></tr>)}</tbody></table></div></div>
 }
-function DistrictTable({ rows, onSelect }: { rows: StatsDistrictRow[]; onSelect?: (id: string) => void }) {
+function DistrictTable({ rows, totals, onSelect }: { rows: StatsDistrictRow[]; totals: StatsDistrictRow; onSelect?: (id: string) => void }) {
   const [sort, setSort] = useState<keyof StatsDistrictRow>('district_name')
   const ordered = useMemo(() => [...rows].sort((a,b) => typeof a[sort] === 'number' ? Number(b[sort])-Number(a[sort]) : String(a[sort]).localeCompare(String(b[sort]), 'ru')), [rows, sort])
   const cols: [keyof StatsDistrictRow, string][] = [['district_name','Район'],['total_sites','Площадок'],['sites_inspected','Проверено'],['coverage_pct','Охват %'],['inspections_total','Обходов'],['inspections_green','Без нарушений'],['inspections_with_defects','С наруш.'],['issues_found','Выявлено'],['issues_closed','Устранено'],['issues_revision','Доработка'],['issues_not_fixed','Не устранено'],['issues_overdue','Просрочено'],['issues_closed_pct','Устранение %']]
-  return <div className="card overflow-x-auto"><table className="w-full text-xs border border-slate-400"><thead><tr>{cols.map(([key,label]) => <th key={key} onClick={() => setSort(key)} className="p-2 whitespace-nowrap cursor-pointer bg-primary-100 border border-slate-400">{label}</th>)}</tr></thead><tbody>{ordered.map(r => <tr key={r.district_id} onClick={() => onSelect?.(r.district_id)} className={onSelect ? 'border-t text-center cursor-pointer hover:bg-blue-50' : 'border-t text-center'}>{cols.map(([key]) => <td key={key} className="p-2 whitespace-nowrap border border-slate-300" style={key === 'coverage_pct' || key === 'issues_closed_pct' ? {background:percentageColor(Number(r[key]))}:undefined}>{key === 'coverage_pct' || key === 'issues_closed_pct' ? `${r[key]}%` : r[key]}</td>)}</tr>)}</tbody></table></div>
+  return <div className="card overflow-x-auto"><table className="w-full text-xs border border-slate-400"><thead><tr>{cols.map(([key,label]) => <th key={key} onClick={() => setSort(key)} className="p-2 whitespace-nowrap cursor-pointer bg-primary-100 border border-slate-400">{label}</th>)}</tr></thead><tbody>{withTotalsRow(ordered, totals).map(r => <tr key={r.district_id} onClick={() => r.district_id !== totals.district_id && onSelect?.(r.district_id)} className={r.district_id === totals.district_id ? 'border-t text-center bg-slate-700 text-white font-bold' : onSelect ? 'border-t text-center cursor-pointer hover:bg-blue-50' : 'border-t text-center'}>{cols.map(([key]) => <td key={key} className="p-2 whitespace-nowrap border border-slate-300" style={r.district_id !== totals.district_id && (key === 'coverage_pct' || key === 'issues_closed_pct') ? {background:percentageColor(Number(r[key]))}:undefined}>{key === 'district_name' && r.district_id === totals.district_id ? 'ИТОГО' : key === 'coverage_pct' || key === 'issues_closed_pct' ? `${r[key]}%` : r[key]}</td>)}</tr>)}</tbody></table></div>
 }
 function Shtab({ params }: { params: { date_from: string; date_to: string; district_id?: string; all_time?: boolean } }) {
   const preview = useQuery({ queryKey:['shtab-preview', params], queryFn:() => statsApi.dashboard(params) })
   const download = () => toast.promise(statsApi.downloadShtab(params), { loading:'Формирую PPTX…', success:'PPTX скачан', error:'Ошибка выгрузки' })
-  return <div className="space-y-4"><div className="card flex flex-wrap items-end gap-3"><p className="text-sm text-gray-600">Используется выбранный выше период: {params.all_time ? 'всё время' : `${params.date_from} — ${params.date_to}`}</p><button onClick={download} className="btn-primary flex items-center gap-2"><Download className="w-4"/>Скачать PPTX</button></div>{preview.data ? <DistrictTable rows={preview.data.districts}/> : <State text="Загрузка превью…"/>}</div>
+  return <div className="space-y-4"><div className="card flex flex-wrap items-end gap-3"><p className="text-sm text-gray-600">Используется выбранный выше период: {params.all_time ? 'всё время' : `${params.date_from} — ${params.date_to}`}</p><button onClick={download} className="btn-primary flex items-center gap-2"><Download className="w-4"/>Скачать PPTX</button></div>{preview.data ? <DistrictTable rows={preview.data.districts} totals={preview.data.totals}/> : <State text="Загрузка превью…"/>}</div>
 }

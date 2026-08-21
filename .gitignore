@@ -23,6 +23,13 @@ lerna-debug.log*
 # === Logs ===
 logs/
 *.log
+# Локальные результаты проверок и визуальные предпросмотры (не артефакты релиза)
+backend/backend-*.out
+backend/backend-*.err
+frontend/frontend-*.out
+frontend/frontend-*.err
+reference-page-*.png
+backend/shtab-style-preview.pptx
 
 # === Персональные данные сотрудников (списки для bulk_invite.py) ===
 /rosters/
@@ -60,6 +67,9 @@ deploy/certbot/www/*
 
 # === Freebuff (локальное состояние агента) ===
 .freebuff/
+
+# === Isolated agent worktrees ===
+.worktrees/
 
 # === Editor / OS ===
 .vscode/*

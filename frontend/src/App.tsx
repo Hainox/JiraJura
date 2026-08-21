@@ -34,7 +34,6 @@ const DashboardPage = lazy(routeLoaders['/dashboard'])
 const MyInspectionsPage = lazy(routeLoaders['/my-inspections'])
 const AdminPanelPage = lazy(routeLoaders['/admin'])
 const AdminSitesPage = lazy(routeLoaders['/admin/sites'])
-const AdminChecklistsPage = lazy(routeLoaders['/admin/checklists'])
 const AdminReviewsPage = lazy(routeLoaders['/admin/reviews'])
 const AdminIssueControlPage = lazy(routeLoaders['/admin/control'])
 const AdminSystemPage = lazy(routeLoaders['/admin/system'])
@@ -148,14 +147,6 @@ export default function App() {
           element={
             <ProtectedRoute roles={['admin']}>
               <AdminSitesPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/admin/checklists"
-          element={
-            <ProtectedRoute roles={['admin']}>
-              <AdminChecklistsPage />
             </ProtectedRoute>
           }
         />

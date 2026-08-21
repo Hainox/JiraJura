@@ -23,7 +23,6 @@ const routes: Array<{ pattern: string; load: RouteLoader }> = [
   { pattern: '/admin', load: () => import('@/pages/AdminPanelPage') },
   { pattern: '/admin/users', load: () => import('@/pages/AdminUsersPage') },
   { pattern: '/admin/sites', load: () => import('@/pages/AdminSitesPage') },
-  { pattern: '/admin/checklists', load: () => import('@/pages/AdminChecklistsPage') },
   { pattern: '/admin/reviews', load: () => import('@/pages/AdminReviewsPage') },
   { pattern: '/admin/control', load: () => import('@/pages/AdminIssueControlPage') },
   { pattern: '/admin/issues', load: () => import('@/pages/IssuesPage') },

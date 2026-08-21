@@ -100,7 +100,7 @@ async def test_stats_contract_and_pptx(client, admin_headers):
                      for row in range(2, summary.max_row + 1)}
     assert excel_by_name == {
         row["district_name"]: row["total_sites"] for row in payload["districts"]
-    }
+    } | {"ИТОГО": payload["totals"]["total_sites"]}
 
 
 @pytest.mark.asyncio
@@ -125,7 +125,7 @@ async def test_stats_all_time_is_an_explicit_unbounded_period(client, admin_head
         "/api/v1/stats/dashboard", params={"all_time": "true"}, headers=admin_headers,
     )
     assert response.status_code == 200, response.text
-    assert response.json()["period"]["date_from"] == "2000-01-01"
+    assert response.json()["period"]["date_from"] == "2026-06-01"
 
 
 @pytest.mark.asyncio

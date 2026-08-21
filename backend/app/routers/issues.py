@@ -111,14 +111,11 @@ async def create_issue(
         if not in_district_scope(current_user, district_id):
             raise HTTPException(403, "Обход вне вашего района")
 
-    if data.category_id is not None:
-        category = await db.get(IssueCategory, data.category_id)
-        if category is None:
-            raise HTTPException(400, "Категория не найдена")
-    else:
-        category = (await db.execute(
-            select(IssueCategory).where(IssueCategory.name == "Прочее")
-        )).scalar_one_or_none()
+    category = await db.get(IssueCategory, data.category_id)
+    if category is None:
+        raise HTTPException(400, "Категория не найдена")
+    if not category.is_active:
+        raise HTTPException(400, "Категория неактивна")
 
     issue = Issue(
         inspection_id=data.inspection_id,
@@ -126,7 +123,7 @@ async def create_issue(
         title=data.title,
         description=data.description,
         criticality=data.criticality,
-        category_id=category.id if category else None,
+        category_id=category.id,
         status="open",
         created_by=current_user.id,
     )

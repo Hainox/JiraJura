@@ -46,12 +46,15 @@ async def test_new_issue_requires_an_active_category(client: AsyncClient, admin_
 
     category = (await client.get("/api/v1/issues/categories", headers=admin_headers)).json()[0]
     _exec("UPDATE issue_categories SET is_active=false WHERE id=%(id)s", {"id": category["id"]})
-    inactive_category = await client.post("/api/v1/issues/", json={
-        "inspection_id": inspection.json()["id"], "category_id": category["id"],
-        "title": "Трещина покрытия", "criticality": "medium",
-    }, headers=admin_headers)
-    assert inactive_category.status_code == 400
-    assert inactive_category.json()["detail"] == "Категория неактивна"
+    try:
+        inactive_category = await client.post("/api/v1/issues/", json={
+            "inspection_id": inspection.json()["id"], "category_id": category["id"],
+            "title": "Трещина покрытия", "criticality": "medium",
+        }, headers=admin_headers)
+        assert inactive_category.status_code == 400
+        assert inactive_category.json()["detail"] == "Категория неактивна"
+    finally:
+        _exec("UPDATE issue_categories SET is_active=true WHERE id=%(id)s", {"id": category["id"]})
 
 
 @pytest.mark.asyncio

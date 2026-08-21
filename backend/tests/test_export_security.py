@@ -27,6 +27,16 @@ def _exec(sql, params=None):
         conn.close()
 
 
+def _active_category_id() -> str:
+    conn = psycopg2.connect(SYNC_DB_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM issue_categories WHERE is_active = true ORDER BY sort_order, name LIMIT 1")
+            return str(cur.fetchone()[0])
+    finally:
+        conn.close()
+
+
 @pytest.mark.asyncio
 async def test_issue_export_neutralizes_formula_injection(client, admin_headers):
     did, court_id, site_id = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
@@ -48,7 +58,8 @@ async def test_issue_export_neutralizes_formula_injection(client, admin_headers)
     insp_id = start.json()["id"]
 
     created = await client.post("/api/v1/issues/", json={
-        "inspection_id": insp_id, "title": _PAYLOAD, "description": _PAYLOAD, "criticality": "medium",
+        "inspection_id": insp_id, "category_id": _active_category_id(),
+        "title": _PAYLOAD, "description": _PAYLOAD, "criticality": "medium",
     }, headers=admin_headers)
     assert created.status_code == 200, created.text
 

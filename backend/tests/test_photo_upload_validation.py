@@ -31,6 +31,16 @@ def _exec(sql, params=None):
         conn.close()
 
 
+def _active_category_id() -> str:
+    conn = psycopg2.connect(SYNC_DB_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM issue_categories WHERE is_active = true ORDER BY sort_order, name LIMIT 1")
+            return str(cur.fetchone()[0])
+    finally:
+        conn.close()
+
+
 async def _create_inspection(
     client: AsyncClient, admin_headers, court_id: str, site_id: str, label: str,
 ) -> str:
@@ -86,7 +96,8 @@ async def test_issue_photo_rejects_non_image_extension(client: AsyncClient, admi
         "фото замечания",
     )
     created = await client.post("/api/v1/issues/", json={
-        "inspection_id": insp_id, "title": "Тестовое замечание", "criticality": "medium",
+        "inspection_id": insp_id, "category_id": _active_category_id(),
+        "title": "Тестовое замечание", "criticality": "medium",
     }, headers=admin_headers)
     assert created.status_code == 200, created.text
     issue_id = created.json()["id"]

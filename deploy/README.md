@@ -80,6 +80,27 @@ docker compose -f docker-compose.prod.yml ps
 
 Проверка: `curl -I http://obhod-sao.ru/` должен отдать фронтенд.
 
+### Обновление действующего окружения
+
+Перед применением релиза с унифицированными нарушениями сделайте бэкап и
+зафиксируйте текущую ревизию. Миграция relink-ит исторические фотографии, но не
+удаляет строки чек-листов, нарушений или файлов.
+
+```bash
+cd /opt/jirajura
+docker compose -f docker-compose.prod.yml exec db pg_dump -U postgres -Fc sao_inspection > backup-before-unified-issues.dump
+git pull --ff-only
+docker compose -f docker-compose.prod.yml build
+docker compose -f docker-compose.prod.yml run --rm api alembic upgrade head
+docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml exec api alembic current
+```
+
+После обновления создайте один новый обход: чек-лист не должен открываться,
+нарушение требует категорию, а статус завершённого обхода определяется по
+созданным нарушениям. Затем проверьте «За всё время» (с 01.06.2026) и строку
+«ИТОГО» в дашборде, Excel и PPTX.
+
 Заведите первого админа (регистрация только по приглашению, а приглашать пока некому — один раз вручную):
 ```bash
 docker compose -f docker-compose.prod.yml exec db psql -U postgres -d sao_inspection -c "

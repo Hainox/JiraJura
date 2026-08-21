@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Users, Clock, KeyRound, MapPinned, ClipboardList, AlertCircle, ClipboardCheck, ShieldCheck, BarChart3, Clapperboard, Wrench, MessageSquareWarning } from 'lucide-react'
+import { ArrowLeft, Users, Clock, KeyRound, MapPinned, AlertCircle, ClipboardCheck, ShieldCheck, BarChart3, Clapperboard, Wrench, MessageSquareWarning } from 'lucide-react'
 import { useDemoModeStore } from '@/stores/demoMode'
 import { useAuthStore } from '@/stores/auth'
 
@@ -18,7 +18,6 @@ const REVIEW_SECTIONS = [
 const SECTIONS = [
   { to: '/admin/users', icon: Users, title: 'Пользователи', desc: 'Приглашения, роли, районы, сброс паролей' },
   { to: '/admin/sites', icon: MapPinned, title: 'Районы и площадки', desc: 'Переименование/объединение районов, дворы, площадки' },
-  { to: '/admin/checklists', icon: ClipboardList, title: 'Чек-листы', desc: 'Пункты чек-листа для детских и спортивных площадок' },
   { to: '/admin/audit', icon: Clock, title: 'Журнал аудита', desc: 'Кто и что менял в системе' },
   { to: '/admin/login-history', icon: KeyRound, title: 'История входов', desc: 'Успешные и неудачные попытки входа по логину и IP' },
 ]

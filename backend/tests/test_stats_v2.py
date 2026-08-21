@@ -100,7 +100,7 @@ async def test_stats_contract_and_pptx(client, admin_headers):
                      for row in range(2, summary.max_row + 1)}
     assert excel_by_name == {
         row["district_name"]: row["total_sites"] for row in payload["districts"]
-    }
+    } | {"ИТОГО": payload["totals"]["total_sites"]}
 
 
 @pytest.mark.asyncio

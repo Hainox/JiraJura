@@ -567,6 +567,13 @@ async def export_xlsx(
         )
         for row in stats_dashboard.districts
     ]
+    totals = stats_dashboard.totals
+    summary_rows = [*summary_data, (
+        "ИТОГО", totals.total_sites, totals.sites_inspected, totals.coverage_pct,
+        totals.inspections_total, totals.inspections_green, totals.inspections_with_defects,
+        totals.issues_found, totals.issues_closed, totals.issues_revision,
+        totals.issues_not_fixed, totals.issues_overdue, totals.issues_closed_pct,
+    )]
 
     # ── Динамика по дням (инспектор × дата) ──
     # Группируем по User.id, а не по ФИО — у full_name нет уникальности в
@@ -908,16 +915,21 @@ async def export_xlsx(
         ["Район", "Площадок", "Проверено", "Охват %", "Обходов",
          "Без нарушений", "С наруш.", "Выявлено", "Устранено",
          "Доработка", "Не устранено", "Просрочено", "Устранение %"],
-        summary_data, [24, 12, 12, 11, 10, 15, 11, 11, 11, 11, 13, 11, 14])
-    for row_idx, row in enumerate(summary_data, start=2):
+        summary_rows, [24, 12, 12, 11, 10, 15, 11, 11, 11, 11, 13, 11, 14])
+    for row_idx, row in enumerate(summary_rows, start=2):
         for column_idx in (4, 13):
             value = row[column_idx - 1]
             color = "63BE7B" if value >= 100 else "FFD966" if value >= 70 else "F4B183" if value >= 50 else "E06666"
             summary_ws.cell(row_idx, column_idx).fill = PatternFill("solid", fgColor=color)
     summary_ws["O1"], summary_ws["P1"] = "Проверено", "Не проверено"
-    for row_idx, row in enumerate(summary_data, start=2):
+    for row_idx, row in enumerate(summary_rows, start=2):
         summary_ws.cell(row_idx, 15, row[2])
         summary_ws.cell(row_idx, 16, max(row[1] - row[2], 0))
+    total_row_idx = len(summary_rows) + 1
+    for column_idx in range(1, 14):
+        cell = summary_ws.cell(total_row_idx, column_idx)
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="595959")
     summary_ws.column_dimensions["O"].hidden = True
     summary_ws.column_dimensions["P"].hidden = True
 

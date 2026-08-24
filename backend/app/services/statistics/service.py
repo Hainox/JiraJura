@@ -179,6 +179,12 @@ class StatisticsService:
         snapshot_issue_rows = (await self.db.execute(
             select(
                 Courtyard.district_id,
+                func.count(Issue.id).label("snapshot_total"),
+                func.count(Issue.id).filter(
+                    (Issue.created_at >= f.start_utc)
+                    & (Issue.created_at < f.end_utc)
+                    & (snapshot_status == "closed")
+                ).label("cohort_closed_as_of"),
                 func.count(Issue.id).filter(snapshot_status.in_(ON_CHECK_STATUSES)).label("pending_final"),
                 func.count(Issue.id).filter(
                     snapshot_status.in_(("open", "assigned", "in_work", "revision_needed"))
@@ -213,6 +219,11 @@ class StatisticsService:
             inspected = int(quality.sites if quality else 0)
             clean_sites = int(quality.clean if quality else 0)
             defect_sites = int(quality.defects if quality else 0)
+            snapshot_total = int(snapshot_issues_row.snapshot_total if snapshot_issues_row else 0)
+            cohort_closed_as_of = int(
+                snapshot_issues_row.cohort_closed_as_of if snapshot_issues_row else 0
+            )
+            requires_work = int(snapshot_issues_row.requires_work if snapshot_issues_row else 0)
             result.append(StatsDistrictRow(
                 district_id=str(district.id), district_name=district.name,
                 total_sites=total_sites, sites_inspected=inspected,
@@ -225,11 +236,15 @@ class StatisticsService:
                 inspections_green=int(ins.green if ins else 0),
                 inspections_with_defects=int(ins.defects if ins else 0),
                 issues_found=found,
+                issues_cohort_closed_as_of=cohort_closed_as_of,
+                issues_cohort_closed_pct=percent(cohort_closed_as_of, found) if found else None,
                 issues_fixed_events=int(events.fixed_events if events else 0),
                 issues_closed_events=int(events.closed_events if events else 0),
                 issues_revision_events=int(events.revision_events if events else 0),
                 issues_pending_final_current=int(snapshot_issues_row.pending_final if snapshot_issues_row else 0),
-                issues_requires_work_current=int(snapshot_issues_row.requires_work if snapshot_issues_row else 0),
+                issues_requires_work_current=requires_work,
+                issues_snapshot_total=snapshot_total,
+                issues_requires_work_pct=percent(requires_work, snapshot_total) if snapshot_total else None,
                 issues_overdue_current=int(snapshot_issues_row.overdue if snapshot_issues_row else 0),
                 issues_closed=closed,
                 issues_on_check=int(iss.on_check if iss else 0),
@@ -245,7 +260,8 @@ class StatisticsService:
             for name in StatsDistrictRow.model_fields
             if name not in {
                 "district_id", "district_name", "coverage_pct", "clean_sites_pct",
-                "defect_sites_pct", "issues_closed_pct",
+                "defect_sites_pct", "issues_closed_pct", "issues_cohort_closed_pct",
+                "issues_requires_work_pct",
             }
         }
         totals = StatsDistrictRow(
@@ -260,6 +276,14 @@ class StatisticsService:
                 if totals_values["sites_inspected"] else None
             ),
             issues_closed_pct=percent(totals_values["issues_closed"], totals_values["issues_found"]),
+            issues_cohort_closed_pct=(
+                percent(totals_values["issues_cohort_closed_as_of"], totals_values["issues_found"])
+                if totals_values["issues_found"] else None
+            ),
+            issues_requires_work_pct=(
+                percent(totals_values["issues_requires_work_current"], totals_values["issues_snapshot_total"])
+                if totals_values["issues_snapshot_total"] else None
+            ),
         )
         return StatsDashboardOut(
             period=self._period, generated_at=self.generated_at,

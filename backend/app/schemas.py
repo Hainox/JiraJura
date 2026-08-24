@@ -485,11 +485,15 @@ class StatsDistrictRow(BaseModel):
     inspections_green: int = 0
     inspections_with_defects: int = 0
     issues_found: int = 0
+    issues_cohort_closed_as_of: int = 0
+    issues_cohort_closed_pct: Optional[int] = None
     issues_fixed_events: int = 0
     issues_closed_events: int = 0
     issues_revision_events: int = 0
     issues_pending_final_current: int = 0
     issues_requires_work_current: int = 0
+    issues_snapshot_total: int = 0
+    issues_requires_work_pct: Optional[int] = None
     issues_overdue_current: int = 0
     issues_closed: int = 0
     issues_on_check: int = 0

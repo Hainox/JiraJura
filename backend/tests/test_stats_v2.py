@@ -235,11 +235,14 @@ async def test_dashboard_site_quality_is_null_without_completed_inspections(clie
 async def test_dashboard_uses_period_end_issue_snapshot_and_period_quality(client, admin_headers):
     me = await client.get("/api/v1/auth/me", headers=admin_headers)
     user_id = me.json()["id"]
-    district_id, courtyard_id, site_id = [str(uuid.uuid4()) for _ in range(3)]
-    july_inspection_id, august_inspection_id, issue_id = [str(uuid.uuid4()) for _ in range(3)]
+    district_id, empty_district_id, courtyard_id, site_id = [str(uuid.uuid4()) for _ in range(4)]
+    july_inspection_id, august_inspection_id, july_closed_id, july_open_id, august_issue_id = [
+        str(uuid.uuid4()) for _ in range(5)
+    ]
 
     _exec(
         "INSERT INTO districts(id,name,code) VALUES (%(district_id)s,%(district_name)s,%(code)s);"
+        "INSERT INTO districts(id,name,code) VALUES (%(empty_district_id)s,'Пустой район',%(empty_code)s);"
         "INSERT INTO courtyards(id,district_id,name) VALUES (%(courtyard_id)s,%(district_id)s,'Двор периода');"
         "INSERT INTO sites(id,courtyard_id,type,area_m2,geometry,is_active) VALUES "
         "(%(site_id)s,%(courtyard_id)s,'Детская площадка',100,ST_GeomFromText("
@@ -248,15 +251,21 @@ async def test_dashboard_uses_period_end_issue_snapshot_and_period_quality(clien
         "(%(july_inspection_id)s,%(site_id)s,%(user_id)s,'regular','completed','2026-07-15T08:00:00Z','2026-07-15T09:00:00Z'),"
         "(%(august_inspection_id)s,%(site_id)s,%(user_id)s,'regular','completed','2026-08-15T08:00:00Z','2026-08-15T09:00:00Z');"
         "INSERT INTO issues(id,inspection_id,site_id,category_id,title,status,due_date,created_by,created_at) VALUES "
-        "(%(issue_id)s,%(july_inspection_id)s,%(site_id)s,(SELECT id FROM issue_categories WHERE name='Прочее'),'Историческое замечание','closed','2026-07-20',%(user_id)s,'2026-07-15T10:00:00Z');"
+        "(%(july_closed_id)s,%(july_inspection_id)s,%(site_id)s,(SELECT id FROM issue_categories WHERE name='Прочее'),'Закрыто в июле','closed','2026-07-20',%(user_id)s,'2026-07-15T10:00:00Z'),"
+        "(%(july_open_id)s,%(july_inspection_id)s,%(site_id)s,(SELECT id FROM issue_categories WHERE name='Прочее'),'Закрыто в августе','closed','2026-07-20',%(user_id)s,'2026-07-16T10:00:00Z'),"
+        "(%(august_issue_id)s,%(august_inspection_id)s,%(site_id)s,(SELECT id FROM issue_categories WHERE name='Прочее'),'Создано в августе','closed','2026-08-20',%(user_id)s,'2026-08-15T10:00:00Z');"
         "INSERT INTO issue_status_history(issue_id,old_status,new_status,changed_by,created_at) VALUES "
-        "(%(issue_id)s,'open','fixed',%(user_id)s,'2026-08-10T09:00:00Z'),"
-        "(%(issue_id)s,'fixed','closed',%(user_id)s,'2026-08-20T09:00:00Z');",
+        "(%(july_closed_id)s,'open','closed',%(user_id)s,'2026-07-20T09:00:00Z'),"
+        "(%(july_open_id)s,'open','fixed',%(user_id)s,'2026-08-10T09:00:00Z'),"
+        "(%(july_open_id)s,'fixed','closed',%(user_id)s,'2026-08-20T09:00:00Z'),"
+        "(%(august_issue_id)s,'open','closed',%(user_id)s,'2026-08-20T09:00:00Z');",
         {
             "district_id": district_id, "district_name": f"Snapshot {district_id[:8]}",
-            "code": district_id[:8], "courtyard_id": courtyard_id, "site_id": site_id,
+            "code": district_id[:8], "empty_district_id": empty_district_id,
+            "empty_code": empty_district_id[:8], "courtyard_id": courtyard_id, "site_id": site_id,
             "july_inspection_id": july_inspection_id, "august_inspection_id": august_inspection_id,
-            "issue_id": issue_id, "user_id": user_id,
+            "july_closed_id": july_closed_id, "july_open_id": july_open_id,
+            "august_issue_id": august_issue_id, "user_id": user_id,
         },
     )
 
@@ -270,13 +279,27 @@ async def test_dashboard_uses_period_end_issue_snapshot_and_period_quality(clien
         params={"date_from": "2026-08-01", "date_to": "2026-08-31", "district_id": district_id},
         headers=admin_headers,
     )
+    empty = await client.get(
+        "/api/v1/stats/dashboard",
+        params={"date_from": "2026-07-01", "date_to": "2026-07-31", "district_id": empty_district_id},
+        headers=admin_headers,
+    )
 
     assert july.status_code == 200, july.text
     assert august.status_code == 200, august.text
+    assert empty.status_code == 200, empty.text
     july_row = july.json()["districts"][0]
     august_row = august.json()["districts"][0]
     assert july_row["clean_sites_pct"] == 0
     assert august_row["clean_sites_pct"] == 100
+    assert july_row["issues_found"] == 2
+    assert july_row["issues_cohort_closed_as_of"] == 1
+    assert july_row["issues_cohort_closed_pct"] == 50
+    assert july_row["issues_snapshot_total"] == 2
+    assert july_row["issues_requires_work_pct"] == 50
+    empty_row = empty.json()["districts"][0]
+    assert empty_row["issues_cohort_closed_pct"] is None
+    assert empty_row["issues_requires_work_pct"] is None
     # Today the Issue row is closed, but in July it was still initially open:
     # the period snapshot must read history as of the selected end, not Issue.status.
     assert july_row["issues_requires_work_current"] == 1

@@ -19,7 +19,7 @@ type DistrictMetricGroup = 'sites' | 'inspections' | 'issues'
 const districtMetricGroups: { id: DistrictMetricGroup; label: string; hint: string; className: string }[] = [
   { id: 'sites', label: 'Площадки', hint: 'объекты и охват', className: 'bg-sky-100 text-sky-950' },
   { id: 'inspections', label: 'Обходы', hint: 'результат обходов', className: 'bg-emerald-100 text-emerald-950' },
-  { id: 'issues', label: 'Замечания', hint: 'устранение нарушений', className: 'bg-orange-100 text-orange-950' },
+  { id: 'issues', label: 'Замечания', hint: 'выявление и устранение', className: 'bg-orange-100 text-orange-950' },
 ]
 
 const districtColumns: { key: keyof StatsDistrictRow; label: string; group?: DistrictMetricGroup; groupStart?: boolean }[] = [
@@ -31,11 +31,12 @@ const districtColumns: { key: keyof StatsDistrictRow; label: string; group?: Dis
   { key: 'inspections_green', label: 'Без нарушений', group: 'inspections' },
   { key: 'inspections_with_defects', label: 'С наруш.', group: 'inspections' },
   { key: 'issues_found', label: 'Выявлено', group: 'issues', groupStart: true },
-  { key: 'issues_closed', label: 'Устранено', group: 'issues' },
+  { key: 'issues_fixed_events', label: 'Исправлено за период', group: 'issues' },
+  { key: 'issues_closed_events', label: 'Устранено за период', group: 'issues' },
   { key: 'issues_revision', label: 'Доработка', group: 'issues' },
   { key: 'issues_not_fixed', label: 'Не устранено', group: 'issues' },
   { key: 'issues_overdue', label: 'Просрочено', group: 'issues' },
-  { key: 'issues_closed_pct', label: 'Устранение %', group: 'issues' },
+  { key: 'issues_closed_pct', label: '% устранения из выявленных', group: 'issues' },
 ]
 
 const tabs: [Tab, string][] = [
@@ -139,6 +140,7 @@ function Overview({ total: t }: { total: StatsDistrictRow }) {
       <Kpi label="Площадок" value={t.total_sites} /><Kpi label="Охват" value={`${t.coverage_pct}%`} detail={`${t.sites_inspected} из ${t.total_sites} площадок проверено`} />
       <Kpi label="Обходов" value={t.inspections_total} /><Kpi label="Зелёных" value={t.inspections_green} />
       <Kpi label="С нарушениями" value={t.inspections_with_defects} /><Kpi label="Выявлено" value={t.issues_found} />
+      <Kpi label="Исправлено за период" value={t.issues_fixed_events} /><Kpi label="Устранено за период" value={t.issues_closed_events} />
       <Kpi label="Устранение" value={`${t.issues_closed_pct}%`} detail={`${t.issues_closed} из ${t.issues_found} нарушений устранено`} /><Kpi label="На доработке" value={t.issues_revision} />
     </div>
     <div className="grid lg:grid-cols-2 gap-4">
@@ -161,7 +163,8 @@ function DistrictTable({ rows, totals, onSelect }: { rows: StatsDistrictRow[]; t
   const [sort, setSort] = useState<keyof StatsDistrictRow>('district_name')
   const ordered = useMemo(() => [...rows].sort((a,b) => typeof a[sort] === 'number' ? Number(b[sort])-Number(a[sort]) : String(a[sort]).localeCompare(String(b[sort]), 'ru')), [rows, sort])
   return <div className="card overflow-x-auto">
-    <table className="w-full min-w-[1080px] text-xs border border-slate-300">
+    <p className="mb-3 text-sm text-slate-600">«Исправлено» и «Устранено» показывают все изменения статусов за выбранные даты. Процент устранения рассчитывается по замечаниям, выявленным за этот период.</p>
+    <table className="w-full min-w-[1240px] text-xs border border-slate-300">
       <thead>
         <tr>
           <th rowSpan={2} aria-sort={sort === 'district_name' ? 'ascending' : 'none'} className="border border-slate-300 bg-slate-100 p-0 text-left text-slate-800">

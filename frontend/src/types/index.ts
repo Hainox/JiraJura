@@ -296,6 +296,8 @@ export interface StatsDistrictRow {
   inspections_green: number
   inspections_with_defects: number
   issues_found: number
+  issues_fixed_events: number
+  issues_closed_events: number
   issues_closed: number
   issues_on_check: number
   issues_revision: number

@@ -477,6 +477,10 @@ class StatsDistrictRow(BaseModel):
     total_sites: int = 0
     sites_inspected: int = 0
     coverage_pct: int = 0
+    sites_latest_clean: int = 0
+    sites_latest_with_defects: int = 0
+    clean_sites_pct: Optional[int] = None
+    defect_sites_pct: Optional[int] = None
     inspections_total: int = 0
     inspections_green: int = 0
     inspections_with_defects: int = 0

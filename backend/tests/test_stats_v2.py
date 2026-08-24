@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 import psycopg2
+from psycopg2.extras import execute_values
 from pptx import Presentation
 from pptx.util import Inches
 from openpyxl import load_workbook
@@ -23,6 +24,12 @@ def _exec(sql, params=None):
     with psycopg2.connect(SYNC_DB_URL) as connection:
         with connection.cursor() as cursor:
             cursor.execute(sql, params or {})
+
+
+def _exec_values(sql, values, template=None):
+    with psycopg2.connect(SYNC_DB_URL) as connection:
+        with connection.cursor() as cursor:
+            execute_values(cursor, sql, values, template=template)
 
 
 @pytest.mark.parametrize(
@@ -127,6 +134,71 @@ async def test_stats_all_time_is_an_explicit_unbounded_period(client, admin_head
     )
     assert response.status_code == 200, response.text
     assert response.json()["period"]["date_from"] == "2026-06-01"
+
+
+@pytest.mark.asyncio
+async def test_dashboard_site_quality_uses_latest_completed_inspection(client, admin_headers):
+    me = await client.get("/api/v1/auth/me", headers=admin_headers)
+    user_id = me.json()["id"]
+    district_id, courtyard_id = [str(uuid.uuid4()) for _ in range(2)]
+    site_ids = [str(uuid.uuid4()) for _ in range(94)]
+    latest_inspection_ids = [str(uuid.uuid4()) for _ in site_ids]
+    historical_inspection_ids = [str(uuid.uuid4()) for _ in range(30)]
+    issue_ids = [str(uuid.uuid4()) for _ in historical_inspection_ids]
+
+    _exec(
+        "INSERT INTO districts(id,name,code) VALUES (%(district_id)s,%(district_name)s,%(code)s);"
+        "INSERT INTO courtyards(id,district_id,name) VALUES (%(courtyard_id)s,%(district_id)s,'Двор качества');",
+        {"district_id": district_id, "district_name": f"Quality {district_id[:8]}",
+         "code": district_id[:8], "courtyard_id": courtyard_id},
+    )
+    _exec_values(
+        "INSERT INTO sites(id,courtyard_id,type,area_m2,geometry,is_active) VALUES %s",
+        [(site_id, courtyard_id, "Детская площадка", 100) for site_id in site_ids],
+        template="(%s, %s, %s, %s, ST_GeomFromText("
+        "'POLYGON((41 55,41.01 55,41.01 55.01,41 55.01,41 55))',4326), true)",
+    )
+    _exec_values(
+        "INSERT INTO inspections(id,site_id,inspector_id,type,status,created_at,completed_at) VALUES %s",
+        [
+            (inspection_id, site_id, user_id, "regular", "completed",
+             "2026-08-19T08:00:00Z", "2026-08-19T09:00:00Z")
+            for site_id, inspection_id in zip(site_ids, latest_inspection_ids)
+        ],
+    )
+    _exec_values(
+        "INSERT INTO inspections(id,site_id,inspector_id,type,status,created_at,completed_at) VALUES %s",
+        [
+            (inspection_id, site_id, user_id, "regular", "completed",
+             "2026-08-18T08:00:00Z", "2026-08-18T09:00:00Z")
+            for site_id, inspection_id in zip(site_ids, historical_inspection_ids)
+        ],
+    )
+    _exec_values(
+        "INSERT INTO issues(id,inspection_id,site_id,category_id,title,status,created_by,created_at) VALUES "
+        "%s",
+        [
+            (issue_id, inspection_id, site_id, "Старое замечание", "open", user_id,
+             "2026-08-18T10:00:00Z")
+            for site_id, inspection_id, issue_id in zip(site_ids, historical_inspection_ids, issue_ids)
+        ],
+        template="(%s, %s, %s, (SELECT id FROM issue_categories WHERE name='Прочее'), %s, %s, %s, %s)",
+    )
+
+    response = await client.get(
+        "/api/v1/stats/dashboard",
+        params={"date_from": "2026-08-19", "date_to": "2026-08-19", "district_id": district_id},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200, response.text
+    row = response.json()["districts"][0]
+    assert row["sites_inspected"] == 94
+    assert row["sites_latest_clean"] == 94
+    assert row["sites_latest_with_defects"] == 0
+    assert row["clean_sites_pct"] == 100
+    assert row["defect_sites_pct"] == 0
+    assert row["issues_requires_work_current"] == 30
 
 
 @pytest.mark.asyncio

@@ -170,8 +170,9 @@ async def test_dashboard_site_quality_uses_latest_completed_inspection(client, a
         "INSERT INTO inspections(id,site_id,inspector_id,type,status,created_at,completed_at) VALUES %s",
         [
             (inspection_id, site_id, user_id, "regular", "completed",
-             "2026-08-18T08:00:00Z", "2026-08-18T09:00:00Z")
-            for site_id, inspection_id in zip(site_ids, historical_inspection_ids)
+             "2026-08-19T07:00:00Z" if index == 0 else "2026-08-18T08:00:00Z",
+             "2026-08-19T08:00:00Z" if index == 0 else "2026-08-18T09:00:00Z")
+            for index, (site_id, inspection_id) in enumerate(zip(site_ids, historical_inspection_ids))
         ],
     )
     _exec_values(
@@ -193,12 +194,37 @@ async def test_dashboard_site_quality_uses_latest_completed_inspection(client, a
 
     assert response.status_code == 200, response.text
     row = response.json()["districts"][0]
+    # The first site has an older defective DONE inspection in this same MSK
+    # period and a later clean one, so events number 95 while site quality
+    # includes the site exactly once as clean.
+    assert row["inspections_total"] == 95
     assert row["sites_inspected"] == 94
     assert row["sites_latest_clean"] == 94
     assert row["sites_latest_with_defects"] == 0
     assert row["clean_sites_pct"] == 100
     assert row["defect_sites_pct"] == 0
     assert row["issues_requires_work_current"] == 30
+
+
+@pytest.mark.asyncio
+async def test_dashboard_site_quality_is_null_without_completed_inspections(client, admin_headers):
+    district_id = str(uuid.uuid4())
+    _exec(
+        "INSERT INTO districts(id,name,code) VALUES (%(district_id)s,%(district_name)s,%(code)s)",
+        {"district_id": district_id, "district_name": f"Empty {district_id[:8]}",
+         "code": district_id[:8]},
+    )
+
+    response = await client.get(
+        "/api/v1/stats/dashboard",
+        params={"date_from": "2026-08-19", "date_to": "2026-08-19", "district_id": district_id},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200, response.text
+    row = response.json()["districts"][0]
+    assert row["clean_sites_pct"] is None
+    assert row["defect_sites_pct"] is None
 
 
 @pytest.mark.asyncio
@@ -318,4 +344,4 @@ async def test_dashboard_query_count_does_not_grow_with_districts():
         event.remove(engine.sync_engine, "before_cursor_execute", record_statement)
         await engine.dispose()
 
-    assert len(statements) == 6
+    assert len(statements) == 7

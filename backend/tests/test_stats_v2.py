@@ -309,6 +309,79 @@ async def test_dashboard_uses_period_end_issue_snapshot_and_period_quality(clien
 
 
 @pytest.mark.asyncio
+async def test_dashboard_remediation_percentages_use_snapshot_and_aggregate_denominators(
+    client, admin_headers,
+):
+    me = await client.get("/api/v1/auth/me", headers=admin_headers)
+    user_id = me.json()["id"]
+    district_a_id, district_b_id, courtyard_a_id, courtyard_b_id, site_a_id, site_b_id = [
+        str(uuid.uuid4()) for _ in range(6)
+    ]
+    inspection_a_id, inspection_b_id, old_open_id, july_closed_a_id, july_open_id, july_closed_b_id = [
+        str(uuid.uuid4()) for _ in range(6)
+    ]
+
+    _exec(
+        "INSERT INTO districts(id,name,code) VALUES "
+        "(%(district_a_id)s,%(district_a_name)s,%(district_a_code)s),"
+        "(%(district_b_id)s,%(district_b_name)s,%(district_b_code)s);"
+        "INSERT INTO courtyards(id,district_id,name) VALUES "
+        "(%(courtyard_a_id)s,%(district_a_id)s,'Двор A'),"
+        "(%(courtyard_b_id)s,%(district_b_id)s,'Двор B');"
+        "INSERT INTO sites(id,courtyard_id,type,area_m2,geometry,is_active) VALUES "
+        "(%(site_a_id)s,%(courtyard_a_id)s,'Детская площадка',100,ST_GeomFromText("
+        "'POLYGON((43 55,43.01 55,43.01 55.01,43 55.01,43 55))',4326),true),"
+        "(%(site_b_id)s,%(courtyard_b_id)s,'Детская площадка',100,ST_GeomFromText("
+        "'POLYGON((44 55,44.01 55,44.01 55.01,44 55.01,44 55))',4326),true);"
+        "INSERT INTO inspections(id,site_id,inspector_id,type,status,created_at,completed_at) VALUES "
+        "(%(inspection_a_id)s,%(site_a_id)s,%(user_id)s,'regular','completed','2000-07-15T08:00:00Z','2000-07-15T09:00:00Z'),"
+        "(%(inspection_b_id)s,%(site_b_id)s,%(user_id)s,'regular','completed','2000-07-15T08:00:00Z','2000-07-15T09:00:00Z');"
+        "INSERT INTO issues(id,inspection_id,site_id,category_id,title,status,created_by,created_at) VALUES "
+        "(%(old_open_id)s,%(inspection_a_id)s,%(site_a_id)s,(SELECT id FROM issue_categories WHERE name='Прочее'),'Старое открытое','closed',%(user_id)s,'2000-06-15T10:00:00Z'),"
+        "(%(july_closed_a_id)s,%(inspection_a_id)s,%(site_a_id)s,(SELECT id FROM issue_categories WHERE name='Прочее'),'Июльское закрытое A','closed',%(user_id)s,'2000-07-15T10:00:00Z'),"
+        "(%(july_open_id)s,%(inspection_a_id)s,%(site_a_id)s,(SELECT id FROM issue_categories WHERE name='Прочее'),'Июльское открытое','closed',%(user_id)s,'2000-07-16T10:00:00Z'),"
+        "(%(july_closed_b_id)s,%(inspection_b_id)s,%(site_b_id)s,(SELECT id FROM issue_categories WHERE name='Прочее'),'Июльское закрытое B','closed',%(user_id)s,'2000-07-15T10:00:00Z');"
+        "INSERT INTO issue_status_history(issue_id,old_status,new_status,changed_by,created_at) VALUES "
+        "(%(july_closed_a_id)s,'open','closed',%(user_id)s,'2000-07-20T10:00:00Z'),"
+        "(%(july_closed_b_id)s,'open','closed',%(user_id)s,'2000-07-20T10:00:00Z');",
+        {
+            "district_a_id": district_a_id, "district_a_name": f"Aggregate A {district_a_id[:8]}",
+            "district_a_code": district_a_id[:8], "district_b_id": district_b_id,
+            "district_b_name": f"Aggregate B {district_b_id[:8]}", "district_b_code": district_b_id[:8],
+            "courtyard_a_id": courtyard_a_id, "courtyard_b_id": courtyard_b_id,
+            "site_a_id": site_a_id, "site_b_id": site_b_id,
+            "inspection_a_id": inspection_a_id, "inspection_b_id": inspection_b_id,
+            "old_open_id": old_open_id, "july_closed_a_id": july_closed_a_id,
+            "july_open_id": july_open_id, "july_closed_b_id": july_closed_b_id,
+            "user_id": user_id,
+        },
+    )
+
+    response = await client.get(
+        "/api/v1/stats/dashboard",
+        params={"date_from": "2000-07-01", "date_to": "2000-07-31"},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    rows = {row["district_id"]: row for row in payload["districts"]}
+    district_a = rows[district_a_id]
+    district_b = rows[district_b_id]
+    assert district_a["issues_found"] == 2
+    assert district_a["issues_snapshot_total"] == 3
+    assert district_a["issues_requires_work_current"] == 2
+    assert district_a["issues_requires_work_pct"] == 67
+    assert district_a["issues_cohort_closed_pct"] == 50
+    assert district_b["issues_found"] == 1
+    assert district_b["issues_snapshot_total"] == 1
+    assert district_b["issues_requires_work_pct"] == 0
+    assert district_b["issues_cohort_closed_pct"] == 100
+    assert payload["totals"]["issues_requires_work_pct"] == 50
+    assert payload["totals"]["issues_cohort_closed_pct"] == 67
+
+
+@pytest.mark.asyncio
 async def test_dashboard_uses_completed_at_and_computed_overdue(client, admin_headers):
     me = await client.get("/api/v1/auth/me", headers=admin_headers)
     user_id = me.json()["id"]

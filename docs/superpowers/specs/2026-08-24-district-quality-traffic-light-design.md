@@ -10,6 +10,7 @@ On 2026-08-24 production data for `Молжаниновский` showed 94 activ
 
 ## Period semantics
 
+- The UI, API payload, Excel, and PPTX explicitly label the timezone as `МСК (UTC+3)`. Calendar boundaries use `Europe/Moscow`, never the browser's local timezone or UTC.
 - `day`, `week`, `month`, and custom ranges include DONE inspections whose `completed_at` is inside the selected MSK interval; `all_time` includes all DONE inspections.
 - A site's result is its latest DONE inspection inside the selected interval. A later inspection cannot rewrite an earlier interval.
 - `coverage_pct` remains distinct inspected active sites divided by active sites now. The project has no site-activity history, so this is current-inventory coverage rather than historical SLA.
@@ -50,4 +51,3 @@ Excel and PPTX receive the same two fields, colour palette, no-data convention, 
 - Empty periods yield null quality percentages and neutral UI.
 - Frontend tests cover every direct and reverse palette boundary.
 - No migration or production-data mutation is required.
-

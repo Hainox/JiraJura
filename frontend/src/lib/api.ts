@@ -188,6 +188,21 @@ export function describeRegistrationError(error: unknown): string {
   return 'Не удалось завершить регистрацию. Попробуйте ещё раз или обратитесь к администратору.'
 }
 
+// Как и describeRegistrationError — после отсева на сервере
+// (validate_password_strength: длина, буквы+цифры для короче 12 символов,
+// словарь тривиальных заготовок вроде «12345678») пользователь должен видеть
+// именно эту причину, а не общий «не удалось сменить пароль».
+export function describePasswordError(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.code === 'ECONNABORTED') return 'Сервер отвечает слишком долго — проверьте связь и попробуйте ещё раз'
+    if (!error.response) return 'Нет соединения с сервером — проверьте интернет'
+    const data = error.response.data as { detail?: unknown } | null
+    const detail = typeof data?.detail === 'string' ? data.detail : ''
+    if (detail) return detail
+  }
+  return 'Не удалось сменить пароль. Попробуйте ещё раз.'
+}
+
 // ── Auth ──
 export const authApi = {
   login: (data: LoginRequest) =>

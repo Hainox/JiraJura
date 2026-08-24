@@ -26,7 +26,7 @@
 
 - Backend: `cd backend && pytest -q` — все тесты зелёные. Новая логика —
   новый тест, не просто «работает у меня локально».
-- Frontend: `npm run lint && npm run build && npm test -- --run`.
+- Frontend: `cd frontend && npm run lint && npm run build && npm test -- --run`.
 - Миграции Alembic: `alembic upgrade head`, `alembic downgrade -1`, снова
   `alembic upgrade head` — проверить, что откат и повторный накат не падают.
 - Секреты, реальные пароли, персональные данные пользователей — не

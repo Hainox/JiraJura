@@ -47,7 +47,8 @@ Frontend: `cd frontend && npm run lint && npm run build && npm test -- --run`.
 psql -c "CREATE DATABASE jirajura_migtest"
 psql -d jirajura_migtest -c "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";"
 psql -d jirajura_migtest -f backend/schema.sql
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/jirajura_migtest alembic -c backend/alembic.ini stamp <ревизия-до-новой>
+cd backend
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/jirajura_migtest alembic stamp <ревизия-до-новой>
 DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/jirajura_migtest alembic upgrade head
 ```
 Проверить upgrade, downgrade -1, повторный upgrade (идемпотентность).

@@ -14,7 +14,7 @@ from app.schemas import (
     StatsDynamicsDay, StatsDynamicsOut, StatsPeriodOut,
 )
 from app.services.timezone import MSK
-from .definitions import DONE_STATUSES, NIL_UUID, percent
+from .definitions import DONE_STATUSES, NIL_UUID, ON_CHECK_STATUSES, OVERDUE_STATUSES, percent
 from .filters import StatisticsFilter
 from .queries import issue_bucket_columns
 
@@ -100,6 +100,9 @@ class StatisticsService:
                 func.count(IssueStatusHistory.id)
                 .filter(IssueStatusHistory.new_status == "closed")
                 .label("closed_events"),
+                func.count(IssueStatusHistory.id)
+                .filter(IssueStatusHistory.new_status == "revision_needed")
+                .label("revision_events"),
             )
             .join(Issue, Issue.id == IssueStatusHistory.issue_id)
             .join(Site, Site.id == Issue.site_id)
@@ -113,11 +116,33 @@ class StatisticsService:
         )).all() if ids else []
         status_events = {row.district_id: row for row in status_event_rows}
 
+        # Текущий остаток — отдельный срез, не зависящий от даты создания
+        # замечания. Он нужен для честной оценки риска, а не для оценки
+        # сегодняшней активности района.
+        current_issue_rows = (await self.db.execute(
+            select(
+                Courtyard.district_id,
+                func.count(Issue.id).filter(Issue.status.in_(ON_CHECK_STATUSES)).label("pending_final"),
+                func.count(Issue.id).filter(Issue.status.in_(("open", "assigned", "in_work", "revision_needed"))).label("requires_work"),
+                func.count(Issue.id).filter(
+                    Issue.status.in_(OVERDUE_STATUSES)
+                    & Issue.due_date.is_not(None)
+                    & (Issue.due_date < today)
+                ).label("overdue"),
+            )
+            .join(Site, Site.id == Issue.site_id)
+            .join(Courtyard, Courtyard.id == Site.courtyard_id)
+            .where(Courtyard.district_id.in_(ids))
+            .group_by(Courtyard.district_id)
+        )).all() if ids else []
+        current_issues = {row.district_id: row for row in current_issue_rows}
+
         result = []
         for district in districts:
             ins = inspections.get(district.id)
             iss = issues.get(district.id)
             events = status_events.get(district.id)
+            current_issues_row = current_issues.get(district.id)
             found = int(iss.found if iss else 0)
             closed = int(iss.closed if iss else 0)
             total_sites = int(site_counts.get(district.id, 0))
@@ -132,6 +157,10 @@ class StatisticsService:
                 issues_found=found,
                 issues_fixed_events=int(events.fixed_events if events else 0),
                 issues_closed_events=int(events.closed_events if events else 0),
+                issues_revision_events=int(events.revision_events if events else 0),
+                issues_pending_final_current=int(current_issues_row.pending_final if current_issues_row else 0),
+                issues_requires_work_current=int(current_issues_row.requires_work if current_issues_row else 0),
+                issues_overdue_current=int(current_issues_row.overdue if current_issues_row else 0),
                 issues_closed=closed,
                 issues_on_check=int(iss.on_check if iss else 0),
                 issues_revision=int(iss.revision if iss else 0),

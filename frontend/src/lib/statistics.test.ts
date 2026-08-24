@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { currentMskWeek, mskDateString, percentageColor, periodRange, previousMskWeek, withTotalsRow } from './statistics'
+import { coverageColor, currentMskWeek, mskDateString, percentageColor, periodRange, previousMskWeek, withTotalsRow } from './statistics'
 import type { StatsDistrictRow } from '@/types'
 
 describe('statistics calendar helpers', () => {
@@ -22,6 +22,12 @@ describe('statistics calendar helpers', () => {
     [70, '#FFD966'], [99, '#FFD966'], [100, '#63BE7B']] as const)(
     'maps %s to the shared report color', (value, color) => {
       expect(percentageColor(value)).toBe(color)
+    },
+  )
+
+  it.each([[0, '#E06666'], [20, '#F4B183'], [40, '#FFD966'], [60, '#DDEB9A'], [75, '#A9D18E'], [90, '#63BE7B']] as const)(
+    'uses a softer six-step traffic light for coverage: %s', (value, color) => {
+      expect(coverageColor(value)).toBe(color)
     },
   )
 

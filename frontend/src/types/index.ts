@@ -298,6 +298,10 @@ export interface StatsDistrictRow {
   issues_found: number
   issues_fixed_events: number
   issues_closed_events: number
+  issues_revision_events: number
+  issues_pending_final_current: number
+  issues_requires_work_current: number
+  issues_overdue_current: number
   issues_closed: number
   issues_on_check: number
   issues_revision: number

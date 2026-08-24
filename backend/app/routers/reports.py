@@ -561,7 +561,7 @@ async def export_xlsx(
             row.issues_found,
             row.issues_fixed_events,
             row.issues_closed_events,
-            row.issues_revision,
+            row.issues_revision_events,
             row.issues_not_fixed,
             row.issues_overdue,
             row.issues_closed_pct,
@@ -572,7 +572,7 @@ async def export_xlsx(
     summary_rows = [*summary_data, (
         "ИТОГО", totals.total_sites, totals.sites_inspected, totals.coverage_pct,
         totals.inspections_total, totals.inspections_green, totals.inspections_with_defects,
-        totals.issues_found, totals.issues_fixed_events, totals.issues_closed_events, totals.issues_revision,
+        totals.issues_found, totals.issues_fixed_events, totals.issues_closed_events, totals.issues_revision_events,
         totals.issues_not_fixed, totals.issues_overdue, totals.issues_closed_pct,
     )]
 
@@ -915,8 +915,8 @@ async def export_xlsx(
         assignment_data, [24, 40, 20, 26, 16, 18, 22])
     summary_ws = _sheet(wb, "Сводка по районам",
         ["Район", "Площадок", "Проверено", "Охват %", "Обходов",
-         "Без нарушений", "С наруш.", "Выявлено", "Исправлено за период",
-         "Устранено за период", "Доработка", "Не устранено", "Просрочено",
+         "Без нарушений", "С наруш.", "Выявлено", "На финальной проверке",
+         "Исправлено за период", "Доработка за период", "Не устранено", "Просрочено",
          "% устранения из выявленных"],
         summary_rows, [24, 12, 12, 11, 10, 15, 11, 11, 19, 19, 11, 13, 11, 24])
     for row_idx, row in enumerate(summary_rows, start=2):

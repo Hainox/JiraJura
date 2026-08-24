@@ -42,8 +42,10 @@ def test_percent_uses_half_up(numerator, denominator, expected):
 
 @pytest.mark.parametrize(
     ("value", "expected"),
-    [(49, "E06666"), (50, "F4B183"), (69, "F4B183"),
-     (70, "FFD966"), (99, "FFD966"), (100, "63BE7B")],
+    [(0, "E06666"), (19, "E06666"), (20, "F4B183"), (39, "F4B183"),
+     (40, "F9CB9C"), (59, "F9CB9C"), (60, "FFD966"), (74, "FFD966"),
+     (75, "A9D18E"), (89, "A9D18E"), (90, "63BE7B"), (100, "63BE7B"),
+     (None, "D9E2F3")],
 )
 def test_pptx_percentage_color_boundaries(value, expected):
     assert percentage_color(value) == expected
@@ -93,16 +95,18 @@ async def test_stats_contract_and_pptx(client, admin_headers):
     assert "1.2" in second_slide_text
     district_table = next(shape.table for shape in presentation.slides[0].shapes if shape.has_table)
     assert len(district_table.rows) == len(payload["districts"]) + 2
+    assert "Чистые площадки" in [cell.text for cell in district_table.rows[0].cells]
+    assert "МСК (UTC+3)" in first_slide_text
 
     excel = await client.get("/api/v1/reports/export.xlsx", params=params, headers=admin_headers)
     assert excel.status_code == 200, excel.text
     workbook = load_workbook(BytesIO(excel.content), data_only=True)
     summary = workbook["Сводка по районам"]
-    assert [cell.value for cell in summary[1]][:14] == [
+    assert [cell.value for cell in summary[1]][:15] == [
         "Район", "Площадок", "Проверено", "Охват %", "Обходов",
-        "Без нарушений", "С наруш.", "Выявлено", "На финальной проверке",
-        "Исправлено за период", "Доработка за период", "Не устранено", "Просрочено",
-        "% устранения из выявленных",
+        "Чистые площадки", "% чистых площадок", "Площадки с нарушениями",
+        "% площадок с нарушениями", "Без нарушений", "С наруш.", "Выявлено",
+        "На финальной проверке", "Требует устранения", "Просрочено",
     ]
     excel_by_name = {summary.cell(row, 1).value: summary.cell(row, 2).value
                      for row in range(2, summary.max_row + 1)}
@@ -225,6 +229,60 @@ async def test_dashboard_site_quality_is_null_without_completed_inspections(clie
     row = response.json()["districts"][0]
     assert row["clean_sites_pct"] is None
     assert row["defect_sites_pct"] is None
+
+
+@pytest.mark.asyncio
+async def test_dashboard_uses_period_end_issue_snapshot_and_period_quality(client, admin_headers):
+    me = await client.get("/api/v1/auth/me", headers=admin_headers)
+    user_id = me.json()["id"]
+    district_id, courtyard_id, site_id = [str(uuid.uuid4()) for _ in range(3)]
+    july_inspection_id, august_inspection_id, issue_id = [str(uuid.uuid4()) for _ in range(3)]
+
+    _exec(
+        "INSERT INTO districts(id,name,code) VALUES (%(district_id)s,%(district_name)s,%(code)s);"
+        "INSERT INTO courtyards(id,district_id,name) VALUES (%(courtyard_id)s,%(district_id)s,'Двор периода');"
+        "INSERT INTO sites(id,courtyard_id,type,area_m2,geometry,is_active) VALUES "
+        "(%(site_id)s,%(courtyard_id)s,'Детская площадка',100,ST_GeomFromText("
+        "'POLYGON((42 55,42.01 55,42.01 55.01,42 55.01,42 55))',4326),true);"
+        "INSERT INTO inspections(id,site_id,inspector_id,type,status,created_at,completed_at) VALUES "
+        "(%(july_inspection_id)s,%(site_id)s,%(user_id)s,'regular','completed','2026-07-15T08:00:00Z','2026-07-15T09:00:00Z'),"
+        "(%(august_inspection_id)s,%(site_id)s,%(user_id)s,'regular','completed','2026-08-15T08:00:00Z','2026-08-15T09:00:00Z');"
+        "INSERT INTO issues(id,inspection_id,site_id,category_id,title,status,due_date,created_by,created_at) VALUES "
+        "(%(issue_id)s,%(july_inspection_id)s,%(site_id)s,(SELECT id FROM issue_categories WHERE name='Прочее'),'Историческое замечание','closed','2026-07-20',%(user_id)s,'2026-07-15T10:00:00Z');"
+        "INSERT INTO issue_status_history(issue_id,old_status,new_status,changed_by,created_at) VALUES "
+        "(%(issue_id)s,'open','fixed',%(user_id)s,'2026-08-10T09:00:00Z'),"
+        "(%(issue_id)s,'fixed','closed',%(user_id)s,'2026-08-20T09:00:00Z');",
+        {
+            "district_id": district_id, "district_name": f"Snapshot {district_id[:8]}",
+            "code": district_id[:8], "courtyard_id": courtyard_id, "site_id": site_id,
+            "july_inspection_id": july_inspection_id, "august_inspection_id": august_inspection_id,
+            "issue_id": issue_id, "user_id": user_id,
+        },
+    )
+
+    july = await client.get(
+        "/api/v1/stats/dashboard",
+        params={"date_from": "2026-07-01", "date_to": "2026-07-31", "district_id": district_id},
+        headers=admin_headers,
+    )
+    august = await client.get(
+        "/api/v1/stats/dashboard",
+        params={"date_from": "2026-08-01", "date_to": "2026-08-31", "district_id": district_id},
+        headers=admin_headers,
+    )
+
+    assert july.status_code == 200, july.text
+    assert august.status_code == 200, august.text
+    july_row = july.json()["districts"][0]
+    august_row = august.json()["districts"][0]
+    assert july_row["clean_sites_pct"] == 0
+    assert august_row["clean_sites_pct"] == 100
+    # Today the Issue row is closed, but in July it was still initially open:
+    # the period snapshot must read history as of the selected end, not Issue.status.
+    assert july_row["issues_requires_work_current"] == 1
+    assert july_row["issues_pending_final_current"] == 0
+    assert july_row["issues_overdue_current"] == 1
+    assert august_row["issues_requires_work_current"] == 0
 
 
 @pytest.mark.asyncio

@@ -9,6 +9,7 @@ from pptx.enum.text import PP_ALIGN
 from pptx.util import Inches, Pt
 
 from app.schemas import StatsCategoriesOut, StatsDashboardOut
+from app.services.timezone import MSK
 
 FONT = "Century Gothic"
 RED = "E30613"
@@ -17,12 +18,18 @@ HEADER = "B4C7E7"
 TOTAL = "595959"
 
 
-def percentage_color(value: int) -> str:
-    if value >= 100:
+def percentage_color(value: int | None) -> str:
+    if value is None:
+        return "D9E2F3"
+    if value >= 90:
         return "63BE7B"
-    if value >= 70:
+    if value >= 75:
+        return "A9D18E"
+    if value >= 60:
         return "FFD966"
-    if value >= 50:
+    if value >= 40:
+        return "F9CB9C"
+    if value >= 20:
         return "F4B183"
     return "E06666"
 
@@ -85,10 +92,10 @@ def _add_title(slide, text: str, top=0.72):
 
 
 def _add_metadata(slide, dashboard: StatsDashboardOut):
-    generated = dashboard.generated_at.strftime("%d.%m.%Y %H:%M UTC")
+    generated = dashboard.generated_at.astimezone(MSK).strftime("%d.%m.%Y %H:%M")
     box = slide.shapes.add_textbox(Inches(9.1), Inches(7.08), Inches(3.35), Inches(0.16))
     paragraph = box.text_frame.paragraphs[0]
-    paragraph.text = f"Методика v2 · МСК · сформировано {generated}"
+    paragraph.text = f"Методика v2 · МСК (UTC+3) · сформировано {generated}"
     paragraph.alignment = PP_ALIGN.RIGHT
     for run in paragraph.runs:
         run.font.name, run.font.size = FONT, Pt(6)
@@ -107,14 +114,14 @@ def render_shtab(dashboard: StatsDashboardOut, categories: StatsCategoriesOut) -
 
     rows = sorted(
         dashboard.districts,
-        key=lambda r: (-r.issues_closed_pct, -r.coverage_pct, r.district_name),
+        key=lambda r: (-(r.clean_sites_pct if r.clean_sites_pct is not None else -1), -r.coverage_pct, r.district_name),
     )
-    headers = ["№", "Район", "Площадок", "Обойдено", "% охвата", "Выявлено",
-               "Устранено", "На доработке", "Не устранено", "% устранения"]
+    headers = ["№", "Район", "Охват", "Чистые площадки", "Площадки с нарушениями",
+               "Требует устранения", "Просрочено"]
     table = slide.shapes.add_table(
         len(rows) + 2, len(headers), Inches(0.35), Inches(1.12), Inches(12.63), Inches(5.0)
     ).table
-    widths = [0.35, 2.25, 0.85, 0.85, 0.8, 0.85, 0.85, 1.05, 1.0, 0.95]
+    widths = [0.35, 2.15, 1.3, 2.0, 2.05, 1.45, 1.0]
     for column, width in zip(table.columns, widths):
         column.width = Inches(width)
     for index, header in enumerate(headers):
@@ -122,19 +129,42 @@ def render_shtab(dashboard: StatsDashboardOut, categories: StatsCategoriesOut) -
         _fill(table.cell(0, index), HEADER)
         _style_cell(table.cell(0, index), bold=True, color="FFFFFF")
     for row_index, row in enumerate(rows, start=1):
-        values = [row_index, row.district_name, row.total_sites, row.sites_inspected,
-                  row.coverage_pct, row.issues_found, row.issues_closed,
-                  row.issues_revision, row.issues_not_fixed, row.issues_closed_pct]
+        clean = (
+            f"{row.sites_latest_clean} из {row.sites_inspected} · {row.clean_sites_pct}%"
+            if row.clean_sites_pct is not None else "Нет обходов"
+        )
+        defects = (
+            f"{row.sites_latest_with_defects} из {row.sites_inspected} · {row.defect_sites_pct}%"
+            if row.defect_sites_pct is not None else "Нет обходов"
+        )
+        values = [
+            row_index, row.district_name,
+            f"{row.sites_inspected} из {row.total_sites} · {row.coverage_pct}%",
+            clean, defects, row.issues_requires_work_current, row.issues_overdue_current,
+        ]
         for col, value in enumerate(values):
             table.cell(row_index, col).text = str(value)
             _style_cell(table.cell(row_index, col), align=PP_ALIGN.LEFT if col == 1 else PP_ALIGN.CENTER)
-        for col in (4, 9):
-            _fill(table.cell(row_index, col), percentage_color(int(values[col])))
+        _fill(table.cell(row_index, 2), percentage_color(row.coverage_pct))
+        _fill(table.cell(row_index, 3), percentage_color(row.clean_sites_pct))
+        _fill(
+            table.cell(row_index, 4),
+            percentage_color(100 - row.defect_sites_pct if row.defect_sites_pct is not None else None),
+        )
     total_index = len(rows) + 1
     total = dashboard.totals
-    total_values = ["", "ИТОГО", total.total_sites, total.sites_inspected,
-                    total.coverage_pct, total.issues_found, total.issues_closed,
-                    total.issues_revision, total.issues_not_fixed, total.issues_closed_pct]
+    total_values = [
+        "", "ИТОГО", f"{total.sites_inspected} из {total.total_sites} · {total.coverage_pct}%",
+        (
+            f"{total.sites_latest_clean} из {total.sites_inspected} · {total.clean_sites_pct}%"
+            if total.clean_sites_pct is not None else "Нет обходов"
+        ),
+        (
+            f"{total.sites_latest_with_defects} из {total.sites_inspected} · {total.defect_sites_pct}%"
+            if total.defect_sites_pct is not None else "Нет обходов"
+        ),
+        total.issues_requires_work_current, total.issues_overdue_current,
+    ]
     for col, value in enumerate(total_values):
         table.cell(total_index, col).text = str(value)
         _fill(table.cell(total_index, col), TOTAL)
@@ -142,11 +172,12 @@ def render_shtab(dashboard: StatsDashboardOut, categories: StatsCategoriesOut) -
 
     p = dashboard.period
     summary = (
-        f"За период с {p.date_from:%d.%m.%Y} по {p.date_to:%d.%m.%Y} инспекторами САО "
-        f"обойдено {total.sites_inspected} из {total.total_sites} площадок ({total.coverage_pct}%). "
-        f"Выявлено нарушений: {total.issues_found}, из них устранено и принято "
-        f"{total.issues_closed} ({total.issues_closed_pct}%), на доработке {total.issues_revision}, "
-        f"работы не начаты или в работе {total.issues_open + total.issues_in_work}."
+        f"Период: {p.date_from:%d.%m.%Y}–{p.date_to:%d.%m.%Y} МСК (UTC+3). "
+        f"Обойдены {total.sites_inspected} из {total.total_sites} площадок ({total.coverage_pct}%); "
+        f"чистые по последнему обходу в периоде — {total.sites_latest_clean} из "
+        f"{total.sites_inspected} ({total.clean_sites_pct if total.clean_sites_pct is not None else '—'}%). "
+        f"На конец периода требуют устранения {total.issues_requires_work_current}, "
+        f"просрочено {total.issues_overdue_current}."
     )
     _shape(slide, MSO_SHAPE.RECTANGLE, 0.35, 6.32, 0.02, 0.7, RED)
     box = slide.shapes.add_textbox(Inches(0.48), Inches(6.34), Inches(12.0), Inches(0.6))

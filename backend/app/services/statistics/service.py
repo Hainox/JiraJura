@@ -156,26 +156,49 @@ class StatisticsService:
         )).all() if ids else []
         status_events = {row.district_id: row for row in status_event_rows}
 
-        # Текущий остаток — отдельный срез, не зависящий от даты создания
-        # замечания. Он нужен для честной оценки риска, а не для оценки
-        # сегодняшней активности района.
-        current_issue_rows = (await self.db.execute(
+        # Срез устранения берётся на конец выбранного периода. Нельзя читать
+        # сегодняшнее Issue.status: повторное формирование июльского отчёта
+        # после августовского закрытия иначе переписывает историю. Если
+        # переходов ещё не было, начальное состояние замечания — open.
+        latest_issue_status = (
+            select(
+                IssueStatusHistory.issue_id,
+                IssueStatusHistory.new_status.label("status"),
+                func.row_number().over(
+                    partition_by=IssueStatusHistory.issue_id,
+                    order_by=(IssueStatusHistory.created_at.desc(), IssueStatusHistory.id.desc()),
+                ).label("rank"),
+            )
+            .where(IssueStatusHistory.created_at < f.end_utc)
+            .subquery()
+        )
+        snapshot_status = func.coalesce(
+            latest_issue_status.c.status,
+            cast("open", IssueStatusHistory.new_status.type),
+        )
+        snapshot_issue_rows = (await self.db.execute(
             select(
                 Courtyard.district_id,
-                func.count(Issue.id).filter(Issue.status.in_(ON_CHECK_STATUSES)).label("pending_final"),
-                func.count(Issue.id).filter(Issue.status.in_(("open", "assigned", "in_work", "revision_needed"))).label("requires_work"),
+                func.count(Issue.id).filter(snapshot_status.in_(ON_CHECK_STATUSES)).label("pending_final"),
                 func.count(Issue.id).filter(
-                    Issue.status.in_(OVERDUE_STATUSES)
+                    snapshot_status.in_(("open", "assigned", "in_work", "revision_needed"))
+                ).label("requires_work"),
+                func.count(Issue.id).filter(
+                    snapshot_status.in_(OVERDUE_STATUSES)
                     & Issue.due_date.is_not(None)
-                    & (Issue.due_date < today)
+                    & (Issue.due_date < f.date_to)
                 ).label("overdue"),
             )
             .join(Site, Site.id == Issue.site_id)
             .join(Courtyard, Courtyard.id == Site.courtyard_id)
-            .where(Courtyard.district_id.in_(ids))
+            .outerjoin(
+                latest_issue_status,
+                (latest_issue_status.c.issue_id == Issue.id) & (latest_issue_status.c.rank == 1),
+            )
+            .where(Issue.created_at < f.end_utc, Courtyard.district_id.in_(ids))
             .group_by(Courtyard.district_id)
         )).all() if ids else []
-        current_issues = {row.district_id: row for row in current_issue_rows}
+        snapshot_issues = {row.district_id: row for row in snapshot_issue_rows}
 
         result = []
         for district in districts:
@@ -183,7 +206,7 @@ class StatisticsService:
             quality = site_quality.get(district.id)
             iss = issues.get(district.id)
             events = status_events.get(district.id)
-            current_issues_row = current_issues.get(district.id)
+            snapshot_issues_row = snapshot_issues.get(district.id)
             found = int(iss.found if iss else 0)
             closed = int(iss.closed if iss else 0)
             total_sites = int(site_counts.get(district.id, 0))
@@ -205,9 +228,9 @@ class StatisticsService:
                 issues_fixed_events=int(events.fixed_events if events else 0),
                 issues_closed_events=int(events.closed_events if events else 0),
                 issues_revision_events=int(events.revision_events if events else 0),
-                issues_pending_final_current=int(current_issues_row.pending_final if current_issues_row else 0),
-                issues_requires_work_current=int(current_issues_row.requires_work if current_issues_row else 0),
-                issues_overdue_current=int(current_issues_row.overdue if current_issues_row else 0),
+                issues_pending_final_current=int(snapshot_issues_row.pending_final if snapshot_issues_row else 0),
+                issues_requires_work_current=int(snapshot_issues_row.requires_work if snapshot_issues_row else 0),
+                issues_overdue_current=int(snapshot_issues_row.overdue if snapshot_issues_row else 0),
                 issues_closed=closed,
                 issues_on_check=int(iss.on_check if iss else 0),
                 issues_revision=int(iss.revision if iss else 0),

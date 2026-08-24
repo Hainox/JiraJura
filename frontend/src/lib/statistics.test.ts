@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { coverageColor, currentMskWeek, mskDateString, percentageColor, periodRange, previousMskWeek, withTotalsRow } from './statistics'
+import { coverageColor, currentMskWeek, mskDateString, percentageColor, periodRange, previousMskWeek, qualityColor, withTotalsRow } from './statistics'
 import type { StatsDistrictRow } from '@/types'
 
 describe('statistics calendar helpers', () => {
@@ -30,6 +30,23 @@ describe('statistics calendar helpers', () => {
       expect(coverageColor(value)).toBe(color)
     },
   )
+
+  it.each([
+    [0, 'direct', '#E06666'], [19, 'direct', '#E06666'], [20, 'direct', '#F4B183'],
+    [39, 'direct', '#F4B183'], [40, 'direct', '#F9CB9C'], [59, 'direct', '#F9CB9C'],
+    [60, 'direct', '#FFD966'], [74, 'direct', '#FFD966'], [75, 'direct', '#A9D18E'],
+    [89, 'direct', '#A9D18E'], [90, 'direct', '#63BE7B'], [100, 'direct', '#63BE7B'],
+    [0, 'inverse', '#63BE7B'], [10, 'inverse', '#63BE7B'], [11, 'inverse', '#A9D18E'],
+    [26, 'inverse', '#FFD966'], [41, 'inverse', '#F9CB9C'], [61, 'inverse', '#F4B183'],
+    [81, 'inverse', '#E06666'], [100, 'inverse', '#E06666'],
+  ] as const)('maps %s%% quality in %s direction to %s', (value, direction, color) => {
+    expect(qualityColor(value, direction)).toBe(color)
+  })
+
+  it('does not colour an absent quality denominator as a failure', () => {
+    expect(qualityColor(null, 'direct')).toBeUndefined()
+    expect(qualityColor(null, 'inverse')).toBeUndefined()
+  })
 
   it.each([
     ['day', ['2026-08-17', '2026-08-17']],

@@ -292,6 +292,10 @@ export interface StatsDistrictRow {
   total_sites: number
   sites_inspected: number
   coverage_pct: number
+  sites_latest_clean: number
+  sites_latest_with_defects: number
+  clean_sites_pct: number | null
+  defect_sites_pct: number | null
   inspections_total: number
   inspections_green: number
   inspections_with_defects: number

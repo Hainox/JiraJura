@@ -52,6 +52,23 @@ export function coverageColor(value: number): string {
   return '#E06666'
 }
 
+export type QualityDirection = 'direct' | 'inverse'
+
+/**
+ * Six-step district-quality scale. A missing denominator is intentionally
+ * neutral: no completed inspection in a period is not a poor result.
+ */
+export function qualityColor(value: number | null, direction: QualityDirection): string | undefined {
+  if (value === null) return undefined
+  const direct = direction === 'direct' ? value : 100 - value
+  if (direct >= 90) return '#63BE7B'
+  if (direct >= 75) return '#A9D18E'
+  if (direct >= 60) return '#FFD966'
+  if (direct >= 40) return '#F9CB9C'
+  if (direct >= 20) return '#F4B183'
+  return '#E06666'
+}
+
 export function withTotalsRow<T>(rows: readonly T[], totals: T): T[] {
   return [...rows, totals]
 }

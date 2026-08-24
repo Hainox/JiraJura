@@ -556,24 +556,27 @@ async def export_xlsx(
             row.sites_inspected,
             row.coverage_pct,
             row.inspections_total,
+            row.sites_latest_clean,
+            row.clean_sites_pct,
+            row.sites_latest_with_defects,
+            row.defect_sites_pct,
             row.inspections_green,
             row.inspections_with_defects,
             row.issues_found,
-            row.issues_fixed_events,
-            row.issues_closed_events,
-            row.issues_revision_events,
-            row.issues_not_fixed,
-            row.issues_overdue,
-            row.issues_closed_pct,
+            row.issues_pending_final_current,
+            row.issues_requires_work_current,
+            row.issues_overdue_current,
         )
         for row in stats_dashboard.districts
     ]
     totals = stats_dashboard.totals
     summary_rows = [*summary_data, (
         "ИТОГО", totals.total_sites, totals.sites_inspected, totals.coverage_pct,
-        totals.inspections_total, totals.inspections_green, totals.inspections_with_defects,
-        totals.issues_found, totals.issues_fixed_events, totals.issues_closed_events, totals.issues_revision_events,
-        totals.issues_not_fixed, totals.issues_overdue, totals.issues_closed_pct,
+        totals.inspections_total, totals.sites_latest_clean, totals.clean_sites_pct,
+        totals.sites_latest_with_defects, totals.defect_sites_pct,
+        totals.inspections_green, totals.inspections_with_defects, totals.issues_found,
+        totals.issues_pending_final_current, totals.issues_requires_work_current,
+        totals.issues_overdue_current,
     )]
 
     # ── Динамика по дням (инспектор × дата) ──
@@ -720,9 +723,9 @@ async def export_xlsx(
     now_str = datetime.now(MSK).strftime("%d.%m.%Y %H:%M")
     # Индексы кортежей summary_data (0-based):
     # 0 name, 1 total_sites, 2 sites_inspected, 3 coverage_pct,
-    # 4 inspections, 5 without_defects, 6 with_defects, 7 found,
-    # 8 fixed_events, 9 closed_events, 10 revision, 11 not_fixed,
-    # 12 overdue, 13 closed_pct
+    # 4 inspections, 5 clean sites, 6 clean pct, 7 defect sites,
+    # 8 defect pct, 9 without_defects, 10 with_defects, 11 found,
+    # 12 pending final, 13 requires work, 14 overdue snapshot
     def _sum(idx):
         return sum(x[idx] for x in summary_data) if summary_data else 0
 
@@ -730,14 +733,14 @@ async def export_xlsx(
     sites_inspected_all = _sum(2)
     sites_not_inspected_all = max(total_sites_all - sites_inspected_all, 0)
     total_insp_all = _sum(4)
-    inspections_ok_all = _sum(5)
-    inspections_with_defects_all = _sum(6)
-    total_checklist_defects_all = total_iss_all = _sum(7)
+    inspections_ok_all = _sum(9)
+    inspections_with_defects_all = _sum(10)
+    total_checklist_defects_all = total_iss_all = _sum(11)
     total_iss_open_all = stats_dashboard.totals.issues_open + stats_dashboard.totals.issues_in_work
     total_iss_fixed_all = stats_dashboard.totals.issues_on_check
-    total_iss_revision_all = _sum(10)
+    total_iss_revision_all = stats_dashboard.totals.issues_revision
     total_iss_closed_all = stats_dashboard.totals.issues_closed
-    total_iss_overdue_all = _sum(12)
+    total_iss_overdue_all = _sum(14)
     total_insp_done_all = inspections_ok_all + inspections_with_defects_all
     total_insp_in_progress_all = total_insp_all - total_insp_done_all
 
@@ -772,12 +775,12 @@ async def export_xlsx(
     _row("Сводный отчёт по проекту «Журнал обхода площадок» — САО г. Москвы")
     ov["A1"].font = Font(bold=True, size=14)
     ov["A1"].alignment = CENTER_WRAP
-    _row(f"Снимок на {now_str} (МСК)")
+    _row(f"Снимок на {now_str} (МСК (UTC+3))")
     ov[f"A{ov.max_row}"].alignment = CENTER_WRAP
     _row(
-        f"Методика v2 · Europe/Moscow · период "
+        f"Методика v2 · МСК (UTC+3) · период "
         f"{stats_filter.date_from:%d.%m.%Y}–{stats_filter.date_to:%d.%m.%Y} · "
-        f"сформировано {stats_dashboard.generated_at:%d.%m.%Y %H:%M UTC}"
+        f"сформировано {stats_dashboard.generated_at.astimezone(MSK):%d.%m.%Y %H:%M}"
     )
     ov[f"A{ov.max_row}"].alignment = CENTER_WRAP
     _row()
@@ -915,26 +918,43 @@ async def export_xlsx(
         assignment_data, [24, 40, 20, 26, 16, 18, 22])
     summary_ws = _sheet(wb, "Сводка по районам",
         ["Район", "Площадок", "Проверено", "Охват %", "Обходов",
-         "Без нарушений", "С наруш.", "Выявлено", "На финальной проверке",
-         "Исправлено за период", "Доработка за период", "Не устранено", "Просрочено",
-         "% устранения из выявленных"],
-        summary_rows, [24, 12, 12, 11, 10, 15, 11, 11, 19, 19, 11, 13, 11, 24])
+         "Чистые площадки", "% чистых площадок", "Площадки с нарушениями",
+         "% площадок с нарушениями", "Без нарушений", "С наруш.", "Выявлено",
+         "На финальной проверке", "Требует устранения", "Просрочено"],
+        summary_rows, [24, 12, 12, 11, 10, 17, 18, 22, 22, 15, 11, 11, 19, 19, 11])
+
+    def _quality_fill(value, *, inverse=False):
+        if value is None:
+            return "D9E2F3"
+        score = 100 - value if inverse else value
+        if score >= 90:
+            return "63BE7B"
+        if score >= 75:
+            return "A9D18E"
+        if score >= 60:
+            return "FFD966"
+        if score >= 40:
+            return "F9CB9C"
+        if score >= 20:
+            return "F4B183"
+        return "E06666"
+
     for row_idx, row in enumerate(summary_rows, start=2):
-        for column_idx in (4, 14):
-            value = row[column_idx - 1]
-            color = "63BE7B" if value >= 100 else "FFD966" if value >= 70 else "F4B183" if value >= 50 else "E06666"
-            summary_ws.cell(row_idx, column_idx).fill = PatternFill("solid", fgColor=color)
-    summary_ws["O1"], summary_ws["P1"] = "Проверено", "Не проверено"
+        for column_idx, inverse in ((4, False), (7, False), (9, True)):
+            summary_ws.cell(row_idx, column_idx).fill = PatternFill(
+                "solid", fgColor=_quality_fill(row[column_idx - 1], inverse=inverse)
+            )
+    summary_ws["P1"], summary_ws["Q1"] = "Проверено", "Не проверено"
     for row_idx, row in enumerate(summary_rows, start=2):
-        summary_ws.cell(row_idx, 15, row[2])
-        summary_ws.cell(row_idx, 16, max(row[1] - row[2], 0))
+        summary_ws.cell(row_idx, 16, row[2])
+        summary_ws.cell(row_idx, 17, max(row[1] - row[2], 0))
     total_row_idx = len(summary_rows) + 1
-    for column_idx in range(1, 15):
+    for column_idx in range(1, 16):
         cell = summary_ws.cell(total_row_idx, column_idx)
         cell.font = Font(bold=True, color="FFFFFF")
         cell.fill = PatternFill("solid", fgColor="595959")
-    summary_ws.column_dimensions["O"].hidden = True
     summary_ws.column_dimensions["P"].hidden = True
+    summary_ws.column_dimensions["Q"].hidden = True
 
     # Сравнение районов — раньше на этом листе не было ни одного графика,
     # хотя это самая насыщенная сравнительная таблица отчёта. Две сгруппи-
@@ -962,9 +982,9 @@ async def export_xlsx(
             summary_ws.add_chart(chart, anchor)
 
         chart_row = last_row + 3
-        _grouped_bar("Охват по районам: проверено / не проверено", 15, 16,
+        _grouped_bar("Охват по районам: проверено / не проверено", 16, 17,
                      f"A{chart_row}", (CHART_GOOD, CHART_MUTED))
-        _grouped_bar("Результат по районам: без / с нарушениями", 6, 7,
+        _grouped_bar("Результат по районам: без / с нарушениями", 10, 11,
                      f"A{chart_row + 19}", (CHART_GOOD, CHART_CRITICAL))
     _sheet(wb, "Обходы",
         ["Дата", "Район", "Двор", "Тип площадки", "Инспектор", "Телефон", "Статус", "Начат", "Завершён", "Пунктов ОК", "Дефектов", "Фото", "Комментарий"],

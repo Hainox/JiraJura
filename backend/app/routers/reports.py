@@ -559,7 +559,8 @@ async def export_xlsx(
             row.inspections_green,
             row.inspections_with_defects,
             row.issues_found,
-            row.issues_closed,
+            row.issues_fixed_events,
+            row.issues_closed_events,
             row.issues_revision,
             row.issues_not_fixed,
             row.issues_overdue,
@@ -571,7 +572,7 @@ async def export_xlsx(
     summary_rows = [*summary_data, (
         "ИТОГО", totals.total_sites, totals.sites_inspected, totals.coverage_pct,
         totals.inspections_total, totals.inspections_green, totals.inspections_with_defects,
-        totals.issues_found, totals.issues_closed, totals.issues_revision,
+        totals.issues_found, totals.issues_fixed_events, totals.issues_closed_events, totals.issues_revision,
         totals.issues_not_fixed, totals.issues_overdue, totals.issues_closed_pct,
     )]
 
@@ -720,7 +721,8 @@ async def export_xlsx(
     # Индексы кортежей summary_data (0-based):
     # 0 name, 1 total_sites, 2 sites_inspected, 3 coverage_pct,
     # 4 inspections, 5 without_defects, 6 with_defects, 7 found,
-    # 8 closed, 9 revision, 10 not_fixed, 11 overdue, 12 closed_pct
+    # 8 fixed_events, 9 closed_events, 10 revision, 11 not_fixed,
+    # 12 overdue, 13 closed_pct
     def _sum(idx):
         return sum(x[idx] for x in summary_data) if summary_data else 0
 
@@ -733,9 +735,9 @@ async def export_xlsx(
     total_checklist_defects_all = total_iss_all = _sum(7)
     total_iss_open_all = stats_dashboard.totals.issues_open + stats_dashboard.totals.issues_in_work
     total_iss_fixed_all = stats_dashboard.totals.issues_on_check
-    total_iss_revision_all = _sum(9)
-    total_iss_closed_all = _sum(8)
-    total_iss_overdue_all = _sum(11)
+    total_iss_revision_all = _sum(10)
+    total_iss_closed_all = stats_dashboard.totals.issues_closed
+    total_iss_overdue_all = _sum(12)
     total_insp_done_all = inspections_ok_all + inspections_with_defects_all
     total_insp_in_progress_all = total_insp_all - total_insp_done_all
 
@@ -913,11 +915,12 @@ async def export_xlsx(
         assignment_data, [24, 40, 20, 26, 16, 18, 22])
     summary_ws = _sheet(wb, "Сводка по районам",
         ["Район", "Площадок", "Проверено", "Охват %", "Обходов",
-         "Без нарушений", "С наруш.", "Выявлено", "Устранено",
-         "Доработка", "Не устранено", "Просрочено", "Устранение %"],
-        summary_rows, [24, 12, 12, 11, 10, 15, 11, 11, 11, 11, 13, 11, 14])
+         "Без нарушений", "С наруш.", "Выявлено", "Исправлено за период",
+         "Устранено за период", "Доработка", "Не устранено", "Просрочено",
+         "% устранения из выявленных"],
+        summary_rows, [24, 12, 12, 11, 10, 15, 11, 11, 19, 19, 11, 13, 11, 24])
     for row_idx, row in enumerate(summary_rows, start=2):
-        for column_idx in (4, 13):
+        for column_idx in (4, 14):
             value = row[column_idx - 1]
             color = "63BE7B" if value >= 100 else "FFD966" if value >= 70 else "F4B183" if value >= 50 else "E06666"
             summary_ws.cell(row_idx, column_idx).fill = PatternFill("solid", fgColor=color)
@@ -926,7 +929,7 @@ async def export_xlsx(
         summary_ws.cell(row_idx, 15, row[2])
         summary_ws.cell(row_idx, 16, max(row[1] - row[2], 0))
     total_row_idx = len(summary_rows) + 1
-    for column_idx in range(1, 14):
+    for column_idx in range(1, 15):
         cell = summary_ws.cell(total_row_idx, column_idx)
         cell.font = Font(bold=True, color="FFFFFF")
         cell.fill = PatternFill("solid", fgColor="595959")

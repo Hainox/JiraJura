@@ -481,6 +481,8 @@ class StatsDistrictRow(BaseModel):
     inspections_green: int = 0
     inspections_with_defects: int = 0
     issues_found: int = 0
+    issues_fixed_events: int = 0
+    issues_closed_events: int = 0
     issues_closed: int = 0
     issues_on_check: int = 0
     issues_revision: int = 0

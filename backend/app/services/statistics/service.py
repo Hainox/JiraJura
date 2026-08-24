@@ -87,10 +87,37 @@ class StatisticsService:
         )).all() if ids else []
         issues = {row.district_id: row for row in issue_rows}
 
+        # Статус замечания меняется после его создания: район может передать
+        # исправление на проверку, а затем оно может быть принято или возвращено
+        # на доработку. Для отчёта за период считаем эти переходы отдельно от
+        # среза замечаний, созданных в самом периоде.
+        status_event_rows = (await self.db.execute(
+            select(
+                Courtyard.district_id,
+                func.count(IssueStatusHistory.id)
+                .filter(IssueStatusHistory.new_status == "fixed")
+                .label("fixed_events"),
+                func.count(IssueStatusHistory.id)
+                .filter(IssueStatusHistory.new_status == "closed")
+                .label("closed_events"),
+            )
+            .join(Issue, Issue.id == IssueStatusHistory.issue_id)
+            .join(Site, Site.id == Issue.site_id)
+            .join(Courtyard, Courtyard.id == Site.courtyard_id)
+            .where(
+                IssueStatusHistory.created_at >= f.start_utc,
+                IssueStatusHistory.created_at < f.end_utc,
+                Courtyard.district_id.in_(ids),
+            )
+            .group_by(Courtyard.district_id)
+        )).all() if ids else []
+        status_events = {row.district_id: row for row in status_event_rows}
+
         result = []
         for district in districts:
             ins = inspections.get(district.id)
             iss = issues.get(district.id)
+            events = status_events.get(district.id)
             found = int(iss.found if iss else 0)
             closed = int(iss.closed if iss else 0)
             total_sites = int(site_counts.get(district.id, 0))
@@ -102,7 +129,10 @@ class StatisticsService:
                 inspections_total=int(ins.total if ins else 0),
                 inspections_green=int(ins.green if ins else 0),
                 inspections_with_defects=int(ins.defects if ins else 0),
-                issues_found=found, issues_closed=closed,
+                issues_found=found,
+                issues_fixed_events=int(events.fixed_events if events else 0),
+                issues_closed_events=int(events.closed_events if events else 0),
+                issues_closed=closed,
                 issues_on_check=int(iss.on_check if iss else 0),
                 issues_revision=int(iss.revision if iss else 0),
                 issues_in_work=int(iss.in_work if iss else 0),

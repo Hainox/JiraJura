@@ -91,10 +91,11 @@ async def test_stats_contract_and_pptx(client, admin_headers):
     assert excel.status_code == 200, excel.text
     workbook = load_workbook(BytesIO(excel.content), data_only=True)
     summary = workbook["Сводка по районам"]
-    assert [cell.value for cell in summary[1]][:13] == [
+    assert [cell.value for cell in summary[1]][:14] == [
         "Район", "Площадок", "Проверено", "Охват %", "Обходов",
-        "Без нарушений", "С наруш.", "Выявлено", "Устранено",
-        "Доработка", "Не устранено", "Просрочено", "Устранение %",
+        "Без нарушений", "С наруш.", "Выявлено", "Исправлено за период",
+        "Устранено за период", "Доработка", "Не устранено", "Просрочено",
+        "% устранения из выявленных",
     ]
     excel_by_name = {summary.cell(row, 1).value: summary.cell(row, 2).value
                      for row in range(2, summary.max_row + 1)}
@@ -177,6 +178,42 @@ async def test_dashboard_uses_completed_at_and_computed_overdue(client, admin_he
 
 
 @pytest.mark.asyncio
+async def test_dashboard_counts_fix_and_closure_events_for_the_selected_period(client, admin_headers):
+    me = await client.get("/api/v1/auth/me", headers=admin_headers)
+    user_id = me.json()["id"]
+    district_id, courtyard_id, site_id, inspection_id, issue_id = [str(uuid.uuid4()) for _ in range(5)]
+    _exec(
+        "INSERT INTO districts(id,name,code) VALUES (%(d)s,%(n)s,%(c)s);"
+        "INSERT INTO courtyards(id,district_id,name) VALUES (%(y)s,%(d)s,%(yn)s);"
+        "INSERT INTO sites(id,courtyard_id,type,area_m2,geometry,is_active) VALUES "
+        "(%(s)s,%(y)s,'Детская площадка',100,ST_GeomFromText("
+        "'POLYGON((40 55,40.01 55,40.01 55.01,40 55.01,40 55))',4326),true);"
+        "INSERT INTO inspections(id,site_id,inspector_id,type,status,created_at,completed_at) VALUES "
+        "(%(i)s,%(s)s,%(u)s,'regular','completed','2026-08-18T08:00:00Z','2026-08-18T09:00:00Z');"
+        "INSERT INTO issues(id,inspection_id,site_id,category_id,title,status,created_by,created_at) VALUES "
+        "(%(q)s,%(i)s,%(s)s,(SELECT id FROM issue_categories WHERE name='Прочее'),'Исправление вне дня создания',"
+        "'closed',%(u)s,'2026-08-18T10:00:00Z');"
+        "INSERT INTO issue_status_history(id,issue_id,old_status,new_status,changed_by,created_at) VALUES "
+        "(%(h1)s,%(q)s,'in_work','fixed',%(u)s,'2026-08-19T10:00:00Z'),"
+        "(%(h2)s,%(q)s,'fixed','closed',%(u)s,'2026-08-19T11:00:00Z');",
+        {"d": district_id, "n": f"Events {district_id[:8]}", "c": district_id[:8],
+         "y": courtyard_id, "yn": "Двор events", "s": site_id, "i": inspection_id,
+         "q": issue_id, "h1": str(uuid.uuid4()), "h2": str(uuid.uuid4()), "u": user_id},
+    )
+    response = await client.get(
+        "/api/v1/stats/dashboard",
+        params={"date_from": "2026-08-19", "date_to": "2026-08-19", "district_id": district_id},
+        headers=admin_headers,
+    )
+    assert response.status_code == 200, response.text
+    row = response.json()["districts"][0]
+    # The issue was created yesterday, but its repair and closure both happened today.
+    assert row["issues_found"] == 0
+    assert row["issues_fixed_events"] == 1
+    assert row["issues_closed_events"] == 1
+
+
+@pytest.mark.asyncio
 async def test_admin_cannot_use_reviewer_bulk_accept(client, admin_headers):
     response = await client.post(
         "/api/v1/inspections/bulk-accept",
@@ -206,4 +243,4 @@ async def test_dashboard_query_count_does_not_grow_with_districts():
         event.remove(engine.sync_engine, "before_cursor_execute", record_statement)
         await engine.dispose()
 
-    assert len(statements) == 4
+    assert len(statements) == 5

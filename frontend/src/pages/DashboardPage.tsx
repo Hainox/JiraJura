@@ -164,7 +164,11 @@ function DistrictTable({ rows, totals, onSelect }: { rows: StatsDistrictRow[]; t
     <table className="w-full min-w-[1080px] text-xs border border-slate-300">
       <thead>
         <tr>
-          <th rowSpan={2} className="border border-slate-300 bg-slate-100 px-3 py-2 text-left font-semibold text-slate-800">Район</th>
+          <th rowSpan={2} aria-sort={sort === 'district_name' ? 'ascending' : 'none'} className="border border-slate-300 bg-slate-100 p-0 text-left text-slate-800">
+            <button type="button" onClick={() => setSort('district_name')} className="h-full w-full px-3 py-2 text-left font-semibold hover:bg-slate-200 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary-700">
+              Район
+            </button>
+          </th>
           {districtMetricGroups.map((group) => (
             <th key={group.id} colSpan={districtColumns.filter((column) => column.group === group.id).length} className={`border border-slate-300 px-2 py-1.5 text-center font-bold ${group.className}`}>
               {group.label}<span className="ml-1 font-normal opacity-70">· {group.hint}</span>
@@ -174,7 +178,7 @@ function DistrictTable({ rows, totals, onSelect }: { rows: StatsDistrictRow[]; t
         <tr>
           {districtColumns.slice(1).map(({ key, label, group, groupStart }) => {
             const groupClass = districtMetricGroups.find((item) => item.id === group)?.className ?? 'bg-slate-100 text-slate-800'
-            return <th key={key} aria-sort={sort === key ? (key === 'district_name' ? 'ascending' : 'descending') : 'none'} className={`border border-slate-300 p-0 whitespace-nowrap ${groupClass} ${groupStart ? 'border-l-2 border-l-slate-500' : ''}`}>
+            return <th key={key} aria-sort={sort === key ? 'descending' : 'none'} className={`border border-slate-300 p-0 whitespace-nowrap ${groupClass} ${groupStart ? 'border-l-2 border-l-slate-500' : ''}`}>
               <button type="button" onClick={() => setSort(key)} className="w-full px-2 py-2 text-center font-semibold hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary-700">
                 {label}
               </button>

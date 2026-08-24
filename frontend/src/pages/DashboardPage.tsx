@@ -9,15 +9,16 @@ import { ArrowLeft, Download, FileSpreadsheet, RefreshCw } from 'lucide-react'
 import { districtsApi, reportsApi, statsApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
 import { notify as toast } from '@/lib/toast'
-import { coverageColor, currentMskWeek, percentageColor, periodRange, withTotalsRow, type StatisticsPreset } from '@/lib/statistics'
+import { coverageColor, currentMskWeek, percentageColor, periodRange, qualityColor, withTotalsRow, type StatisticsPreset } from '@/lib/statistics'
 import type { StatsDistrictRow } from '@/types'
 
 type Tab = 'overview' | 'dynamics' | 'categories' | 'districts' | 'remediation' | 'shtab'
 type PeriodMode = StatisticsPreset | 'all' | 'custom'
-type DistrictMetricGroup = 'sites' | 'inspections'
+type DistrictMetricGroup = 'sites' | 'quality' | 'inspections'
 
 const districtMetricGroups: { id: DistrictMetricGroup; label: string; hint: string; className: string }[] = [
   { id: 'sites', label: 'Площадки', hint: 'объекты и охват', className: 'bg-sky-100 text-sky-950' },
+  { id: 'quality', label: 'Качество площадок', hint: 'последний обход за период', className: 'bg-violet-100 text-violet-950' },
   { id: 'inspections', label: 'Обходы', hint: 'результат обходов', className: 'bg-emerald-100 text-emerald-950' },
 ]
 
@@ -26,6 +27,8 @@ const districtColumns: { key: keyof StatsDistrictRow; label: string; group?: Dis
   { key: 'total_sites', label: 'Площадок', group: 'sites', groupStart: true },
   { key: 'sites_inspected', label: 'Проверено', group: 'sites' },
   { key: 'coverage_pct', label: 'Охват %', group: 'sites' },
+  { key: 'clean_sites_pct', label: 'Чистые', group: 'quality', groupStart: true },
+  { key: 'defect_sites_pct', label: 'С нарушениями', group: 'quality' },
   { key: 'inspections_total', label: 'Обходов', group: 'inspections', groupStart: true },
   { key: 'inspections_green', label: 'Без нарушений', group: 'inspections' },
   { key: 'inspections_with_defects', label: 'С наруш.', group: 'inspections' },
@@ -83,7 +86,7 @@ export default function DashboardPage() {
   return <div className="h-full flex flex-col bg-slate-50">
     <header className="bg-primary-800 text-white px-4 py-3 flex items-center gap-3 shrink-0">
       <button onClick={() => navigate(user?.role === 'admin' ? '/admin' : '/')} className="p-2"><ArrowLeft /></button>
-      <div className="flex-1"><h1 className="font-bold text-lg">Статистика v2</h1><p className="text-xs text-blue-200">МСК · сформировано {generated}</p></div>
+      <div className="flex-1"><h1 className="font-bold text-lg">Статистика v2</h1><p className="text-xs text-blue-200">МСК (UTC+3) · сформировано {generated}</p></div>
       <button aria-label="Обновить статистику" onClick={refreshStatistics} className="p-2"><RefreshCw className="w-5" /></button>
     </header>
 
@@ -186,9 +189,25 @@ function DistrictTable({ rows, totals, onSelect }: { rows: StatsDistrictRow[]; t
         {withTotalsRow(ordered, totals).map((r) => {
           const isTotal = r.district_id === totals.district_id
           return <tr key={r.district_id} onClick={() => !isTotal && onSelect?.(r.district_id)} className={isTotal ? 'border-t text-center bg-slate-700 text-white font-bold' : onSelect ? 'border-t text-center cursor-pointer hover:bg-blue-50' : 'border-t text-center'}>
-            {districtColumns.map(({ key, groupStart }) => <td key={key} className={`border border-slate-300 p-2 whitespace-nowrap ${groupStart ? isTotal ? 'border-l-2 border-l-white/50' : 'border-l-2 border-l-slate-400' : ''} ${!isTotal && key === 'inspections_with_defects' && Number(r[key]) === 0 && Number(r.inspections_total) > 0 ? 'bg-emerald-50 text-emerald-800 font-semibold' : ''}`} style={!isTotal && key === 'coverage_pct' ? { background: coverageColor(Number(r[key])) } : undefined}>
-              {key === 'district_name' && isTotal ? 'ИТОГО' : key === 'coverage_pct' ? `${r[key]}%` : r[key]}
-            </td>)}
+          {districtColumns.map(({ key, groupStart }) => {
+            const qualityKey = key === 'clean_sites_pct' || key === 'defect_sites_pct'
+            const qualityValue: number | null = qualityKey ? r[key] as number | null : null
+            const qualityNumerator = key === 'clean_sites_pct' ? r.sites_latest_clean : r.sites_latest_with_defects
+            const qualityDirection = key === 'clean_sites_pct' ? 'direct' as const : 'inverse' as const
+            const noQualityData = qualityKey && qualityValue === null
+            const style = !isTotal && key === 'coverage_pct'
+              ? { background: coverageColor(Number(r[key])) }
+              : !isTotal && qualityKey && qualityValue !== null
+                ? { background: qualityColor(qualityValue, qualityDirection) }
+                : undefined
+            const value = key === 'district_name' && isTotal ? 'ИТОГО'
+              : key === 'coverage_pct' ? `${r[key]}%`
+              : qualityKey ? (noQualityData ? '—' : `${qualityNumerator} из ${r.sites_inspected} · ${qualityValue}%`)
+              : r[key]
+            return <td key={key} title={noQualityData ? 'Нет завершённых обходов за период' : undefined} className={`border border-slate-300 p-2 whitespace-nowrap ${groupStart ? isTotal ? 'border-l-2 border-l-white/50' : 'border-l-2 border-l-slate-400' : ''} ${noQualityData ? 'bg-slate-100 text-slate-500' : ''} ${!isTotal && key === 'inspections_with_defects' && Number(r[key]) === 0 && Number(r.inspections_total) > 0 ? 'bg-emerald-50 text-emerald-800 font-semibold' : ''}`} style={style}>
+              {value}
+            </td>
+          })}
           </tr>
         })}
       </tbody>

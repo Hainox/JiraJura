@@ -253,7 +253,7 @@ async def test_dashboard_uses_period_end_issue_snapshot_and_period_quality(clien
         "INSERT INTO issues(id,inspection_id,site_id,category_id,title,status,due_date,created_by,created_at) VALUES "
         "(%(july_closed_id)s,%(july_inspection_id)s,%(site_id)s,(SELECT id FROM issue_categories WHERE name='Прочее'),'Закрыто в июле','closed','2026-07-20',%(user_id)s,'2026-07-15T10:00:00Z'),"
         "(%(july_open_id)s,%(july_inspection_id)s,%(site_id)s,(SELECT id FROM issue_categories WHERE name='Прочее'),'Закрыто в августе','closed','2026-07-20',%(user_id)s,'2026-07-16T10:00:00Z'),"
-        "(%(august_issue_id)s,%(august_inspection_id)s,%(site_id)s,(SELECT id FROM issue_categories WHERE name='Прочее'),'Создано в августе','closed','2026-08-20',%(user_id)s,'2026-08-15T10:00:00Z');"
+        "(%(august_issue_id)s,%(july_inspection_id)s,%(site_id)s,(SELECT id FROM issue_categories WHERE name='Прочее'),'Создано в августе','closed','2026-08-20',%(user_id)s,'2026-08-15T10:00:00Z');"
         "INSERT INTO issue_status_history(issue_id,old_status,new_status,changed_by,created_at) VALUES "
         "(%(july_closed_id)s,'open','closed',%(user_id)s,'2026-07-20T09:00:00Z'),"
         "(%(july_open_id)s,'open','fixed',%(user_id)s,'2026-08-10T09:00:00Z'),"

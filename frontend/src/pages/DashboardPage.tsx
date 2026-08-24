@@ -14,6 +14,30 @@ import type { StatsDistrictRow } from '@/types'
 
 type Tab = 'overview' | 'dynamics' | 'categories' | 'districts' | 'shtab'
 type PeriodMode = StatisticsPreset | 'all' | 'custom'
+type DistrictMetricGroup = 'sites' | 'inspections' | 'issues'
+
+const districtMetricGroups: { id: DistrictMetricGroup; label: string; hint: string; className: string }[] = [
+  { id: 'sites', label: 'Площадки', hint: 'объекты и охват', className: 'bg-sky-100 text-sky-950' },
+  { id: 'inspections', label: 'Обходы', hint: 'результат обходов', className: 'bg-emerald-100 text-emerald-950' },
+  { id: 'issues', label: 'Замечания', hint: 'устранение нарушений', className: 'bg-orange-100 text-orange-950' },
+]
+
+const districtColumns: { key: keyof StatsDistrictRow; label: string; group?: DistrictMetricGroup; groupStart?: boolean }[] = [
+  { key: 'district_name', label: 'Район' },
+  { key: 'total_sites', label: 'Площадок', group: 'sites', groupStart: true },
+  { key: 'sites_inspected', label: 'Проверено', group: 'sites' },
+  { key: 'coverage_pct', label: 'Охват %', group: 'sites' },
+  { key: 'inspections_total', label: 'Обходов', group: 'inspections', groupStart: true },
+  { key: 'inspections_green', label: 'Без нарушений', group: 'inspections' },
+  { key: 'inspections_with_defects', label: 'С наруш.', group: 'inspections' },
+  { key: 'issues_found', label: 'Выявлено', group: 'issues', groupStart: true },
+  { key: 'issues_closed', label: 'Устранено', group: 'issues' },
+  { key: 'issues_revision', label: 'Доработка', group: 'issues' },
+  { key: 'issues_not_fixed', label: 'Не устранено', group: 'issues' },
+  { key: 'issues_overdue', label: 'Просрочено', group: 'issues' },
+  { key: 'issues_closed_pct', label: 'Устранение %', group: 'issues' },
+]
+
 const tabs: [Tab, string][] = [
   ['overview', 'Обзор'], ['dynamics', 'Динамика'], ['categories', 'Категории'],
   ['districts', 'По районам'], ['shtab', 'Штаб-отчёт'],
@@ -136,8 +160,40 @@ function Categories({ data }: { data: { category_id: string; name: string; found
 function DistrictTable({ rows, totals, onSelect }: { rows: StatsDistrictRow[]; totals: StatsDistrictRow; onSelect?: (id: string) => void }) {
   const [sort, setSort] = useState<keyof StatsDistrictRow>('district_name')
   const ordered = useMemo(() => [...rows].sort((a,b) => typeof a[sort] === 'number' ? Number(b[sort])-Number(a[sort]) : String(a[sort]).localeCompare(String(b[sort]), 'ru')), [rows, sort])
-  const cols: [keyof StatsDistrictRow, string][] = [['district_name','Район'],['total_sites','Площадок'],['sites_inspected','Проверено'],['coverage_pct','Охват %'],['inspections_total','Обходов'],['inspections_green','Без нарушений'],['inspections_with_defects','С наруш.'],['issues_found','Выявлено'],['issues_closed','Устранено'],['issues_revision','Доработка'],['issues_not_fixed','Не устранено'],['issues_overdue','Просрочено'],['issues_closed_pct','Устранение %']]
-  return <div className="card overflow-x-auto"><table className="w-full text-xs border border-slate-400"><thead><tr>{cols.map(([key,label]) => <th key={key} onClick={() => setSort(key)} className="p-2 whitespace-nowrap cursor-pointer bg-primary-100 border border-slate-400">{label}</th>)}</tr></thead><tbody>{withTotalsRow(ordered, totals).map(r => <tr key={r.district_id} onClick={() => r.district_id !== totals.district_id && onSelect?.(r.district_id)} className={r.district_id === totals.district_id ? 'border-t text-center bg-slate-700 text-white font-bold' : onSelect ? 'border-t text-center cursor-pointer hover:bg-blue-50' : 'border-t text-center'}>{cols.map(([key]) => <td key={key} className="p-2 whitespace-nowrap border border-slate-300" style={r.district_id !== totals.district_id && (key === 'coverage_pct' || key === 'issues_closed_pct') ? {background:percentageColor(Number(r[key]))}:undefined}>{key === 'district_name' && r.district_id === totals.district_id ? 'ИТОГО' : key === 'coverage_pct' || key === 'issues_closed_pct' ? `${r[key]}%` : r[key]}</td>)}</tr>)}</tbody></table></div>
+  return <div className="card overflow-x-auto">
+    <table className="w-full min-w-[1080px] text-xs border border-slate-300">
+      <thead>
+        <tr>
+          <th rowSpan={2} className="border border-slate-300 bg-slate-100 px-3 py-2 text-left font-semibold text-slate-800">Район</th>
+          {districtMetricGroups.map((group) => (
+            <th key={group.id} colSpan={districtColumns.filter((column) => column.group === group.id).length} className={`border border-slate-300 px-2 py-1.5 text-center font-bold ${group.className}`}>
+              {group.label}<span className="ml-1 font-normal opacity-70">· {group.hint}</span>
+            </th>
+          ))}
+        </tr>
+        <tr>
+          {districtColumns.slice(1).map(({ key, label, group, groupStart }) => {
+            const groupClass = districtMetricGroups.find((item) => item.id === group)?.className ?? 'bg-slate-100 text-slate-800'
+            return <th key={key} aria-sort={sort === key ? (key === 'district_name' ? 'ascending' : 'descending') : 'none'} className={`border border-slate-300 p-0 whitespace-nowrap ${groupClass} ${groupStart ? 'border-l-2 border-l-slate-500' : ''}`}>
+              <button type="button" onClick={() => setSort(key)} className="w-full px-2 py-2 text-center font-semibold hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary-700">
+                {label}
+              </button>
+            </th>
+          })}
+        </tr>
+      </thead>
+      <tbody>
+        {withTotalsRow(ordered, totals).map((r) => {
+          const isTotal = r.district_id === totals.district_id
+          return <tr key={r.district_id} onClick={() => !isTotal && onSelect?.(r.district_id)} className={isTotal ? 'border-t text-center bg-slate-700 text-white font-bold' : onSelect ? 'border-t text-center cursor-pointer hover:bg-blue-50' : 'border-t text-center'}>
+            {districtColumns.map(({ key, groupStart }) => <td key={key} className={`border border-slate-300 p-2 whitespace-nowrap ${groupStart ? isTotal ? 'border-l-2 border-l-white/50' : 'border-l-2 border-l-slate-400' : ''}`} style={!isTotal && (key === 'coverage_pct' || key === 'issues_closed_pct') ? { background: percentageColor(Number(r[key])) } : undefined}>
+              {key === 'district_name' && isTotal ? 'ИТОГО' : key === 'coverage_pct' || key === 'issues_closed_pct' ? `${r[key]}%` : r[key]}
+            </td>)}
+          </tr>
+        })}
+      </tbody>
+    </table>
+  </div>
 }
 function Shtab({ params }: { params: { date_from: string; date_to: string; district_id?: string; all_time?: boolean } }) {
   const preview = useQuery({ queryKey:['shtab-preview', params], queryFn:() => statsApi.dashboard(params) })

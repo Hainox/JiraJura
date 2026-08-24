@@ -141,7 +141,7 @@ function Overview({ total: t }: { total: StatsDistrictRow }) {
       <Kpi label="Обходов" value={t.inspections_total} /><Kpi label="Зелёных" value={t.inspections_green} />
       <Kpi label="С нарушениями" value={t.inspections_with_defects} /><Kpi label="Выявлено за период" value={t.issues_found} />
       <Kpi label="На финальной проверке" value={t.issues_fixed_events} /><Kpi label="Исправлено за период" value={t.issues_closed_events} />
-      <Kpi label="Возвращено на доработку" value={t.issues_revision_events} /><Kpi label="Просрочено сейчас" value={t.issues_overdue_current} />
+      <Kpi label="Возвращено на доработку" value={t.issues_revision_events} /><Kpi label="Просрочено на конец периода" value={t.issues_overdue_current} />
     </div>
     <div className="grid lg:grid-cols-2 gap-4">
       <ChartCard title="Статус замечаний, выявленных за период"><ResponsiveContainer width="100%" height={280}><BarChart data={funnel} layout="vertical"><CartesianGrid strokeDasharray="3 3"/><XAxis type="number"/><YAxis dataKey="name" type="category" width={95}/><Tooltip/><Bar dataKey="value" fill="#9E2B25" /></BarChart></ResponsiveContainer></ChartCard>

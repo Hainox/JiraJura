@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
-import { authApi } from '@/lib/api'
+import { authApi, describePasswordError } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
 import { ArrowLeft, Save, Lock, User, Phone, Shield, MessageSquareWarning } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
@@ -43,10 +43,7 @@ export default function ProfilePage() {
       setConfirmPassword('')
       setShowPasswordForm(false)
     },
-    onError: (err: unknown) => {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      toast.error(msg || 'Ошибка смены пароля')
-    },
+    onError: (err: unknown) => toast.error(describePasswordError(err)),
   })
 
   const handlePasswordChange = () => {
@@ -155,6 +152,10 @@ export default function ProfilePage() {
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
               />
+              <p className="text-xs text-gray-500 -mt-2">
+                Если короче 12 символов — нужны и буквы, и цифры. Простые пароли
+                («12345678», «qwerty» и т.&nbsp;п.) не подойдут.
+              </p>
               <input
                 type="password"
                 className="input-field"

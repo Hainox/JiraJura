@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/auth'
-import { authApi } from '@/lib/api'
+import { authApi, describePasswordError } from '@/lib/api'
 import { notify as toast } from '@/lib/toast'
 import { Lock } from 'lucide-react'
 
@@ -29,8 +29,8 @@ export default function ChangePasswordPage() {
       localStorage.removeItem('force_pw_change')
       toast.success(`Добро пожаловать, ${res.user.full_name}!`)
       navigate('/')
-    } catch {
-      toast.error('Не удалось сменить пароль')
+    } catch (error) {
+      toast.error(describePasswordError(error))
     } finally {
       setLoading(false)
     }
@@ -60,11 +60,14 @@ export default function ChangePasswordPage() {
               className="input-field"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Минимум 8 символов"
               autoComplete="new-password"
               required
               autoFocus
             />
+            <p className="text-xs text-gray-500 mt-1">
+              Минимум 8 символов; если короче 12 — нужны и буквы, и цифры. Простые пароли
+              («12345678», «qwerty» и т.&nbsp;п.) не подойдут.
+            </p>
           </div>
           <div className="mb-6">
             <label className="label" htmlFor="confirm-password">

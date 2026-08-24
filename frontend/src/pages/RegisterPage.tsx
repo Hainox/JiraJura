@@ -84,6 +84,10 @@ export default function RegisterPage() {
                   minLength={8}
                   required
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  Минимум 8 символов; если короче 12 — нужны и буквы, и цифры. Простые пароли
+                  («12345678», «qwerty» и т.&nbsp;п.) не подойдут.
+                </p>
               </div>
               <div className="mb-6">
                 <label className="label" htmlFor="confirm">Повторите пароль</label>

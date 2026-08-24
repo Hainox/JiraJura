@@ -29,4 +29,3 @@ For a defect percentage, reverse the scale so 0% is green.
 ## Interaction
 
 Use 44px minimum tap targets for core actions, plain Russian copy, and never rely on colour without a numeric percent and text label.
-

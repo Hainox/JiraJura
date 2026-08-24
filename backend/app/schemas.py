@@ -483,6 +483,10 @@ class StatsDistrictRow(BaseModel):
     issues_found: int = 0
     issues_fixed_events: int = 0
     issues_closed_events: int = 0
+    issues_revision_events: int = 0
+    issues_pending_final_current: int = 0
+    issues_requires_work_current: int = 0
+    issues_overdue_current: int = 0
     issues_closed: int = 0
     issues_on_check: int = 0
     issues_revision: int = 0

@@ -93,8 +93,8 @@ async def test_stats_contract_and_pptx(client, admin_headers):
     summary = workbook["Сводка по районам"]
     assert [cell.value for cell in summary[1]][:14] == [
         "Район", "Площадок", "Проверено", "Охват %", "Обходов",
-        "Без нарушений", "С наруш.", "Выявлено", "Исправлено за период",
-        "Устранено за период", "Доработка", "Не устранено", "Просрочено",
+        "Без нарушений", "С наруш.", "Выявлено", "На финальной проверке",
+        "Исправлено за период", "Доработка за период", "Не устранено", "Просрочено",
         "% устранения из выявленных",
     ]
     excel_by_name = {summary.cell(row, 1).value: summary.cell(row, 2).value
@@ -211,6 +211,9 @@ async def test_dashboard_counts_fix_and_closure_events_for_the_selected_period(c
     assert row["issues_found"] == 0
     assert row["issues_fixed_events"] == 1
     assert row["issues_closed_events"] == 1
+    assert row["issues_revision_events"] == 0
+    assert row["issues_pending_final_current"] == 0
+    assert row["issues_requires_work_current"] == 0
 
 
 @pytest.mark.asyncio
@@ -243,4 +246,4 @@ async def test_dashboard_query_count_does_not_grow_with_districts():
         event.remove(engine.sync_engine, "before_cursor_execute", record_statement)
         await engine.dispose()
 
-    assert len(statements) == 5
+    assert len(statements) == 6

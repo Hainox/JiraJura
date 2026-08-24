@@ -42,6 +42,16 @@ export function percentageColor(value: number): string {
   return '#E06666'
 }
 
+/** Soft six-step coverage scale. Zero is data, not an automatic failure. */
+export function coverageColor(value: number): string {
+  if (value >= 90) return '#63BE7B'
+  if (value >= 75) return '#A9D18E'
+  if (value >= 60) return '#DDEB9A'
+  if (value >= 40) return '#FFD966'
+  if (value >= 20) return '#F4B183'
+  return '#E06666'
+}
+
 export function withTotalsRow<T>(rows: readonly T[], totals: T): T[] {
   return [...rows, totals]
 }

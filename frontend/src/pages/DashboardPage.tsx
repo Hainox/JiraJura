@@ -9,17 +9,16 @@ import { ArrowLeft, Download, FileSpreadsheet, RefreshCw } from 'lucide-react'
 import { districtsApi, reportsApi, statsApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
 import { notify as toast } from '@/lib/toast'
-import { currentMskWeek, percentageColor, periodRange, withTotalsRow, type StatisticsPreset } from '@/lib/statistics'
+import { coverageColor, currentMskWeek, percentageColor, periodRange, withTotalsRow, type StatisticsPreset } from '@/lib/statistics'
 import type { StatsDistrictRow } from '@/types'
 
-type Tab = 'overview' | 'dynamics' | 'categories' | 'districts' | 'shtab'
+type Tab = 'overview' | 'dynamics' | 'categories' | 'districts' | 'remediation' | 'shtab'
 type PeriodMode = StatisticsPreset | 'all' | 'custom'
-type DistrictMetricGroup = 'sites' | 'inspections' | 'issues'
+type DistrictMetricGroup = 'sites' | 'inspections'
 
 const districtMetricGroups: { id: DistrictMetricGroup; label: string; hint: string; className: string }[] = [
   { id: 'sites', label: 'Площадки', hint: 'объекты и охват', className: 'bg-sky-100 text-sky-950' },
   { id: 'inspections', label: 'Обходы', hint: 'результат обходов', className: 'bg-emerald-100 text-emerald-950' },
-  { id: 'issues', label: 'Замечания', hint: 'выявление и устранение', className: 'bg-orange-100 text-orange-950' },
 ]
 
 const districtColumns: { key: keyof StatsDistrictRow; label: string; group?: DistrictMetricGroup; groupStart?: boolean }[] = [
@@ -30,18 +29,11 @@ const districtColumns: { key: keyof StatsDistrictRow; label: string; group?: Dis
   { key: 'inspections_total', label: 'Обходов', group: 'inspections', groupStart: true },
   { key: 'inspections_green', label: 'Без нарушений', group: 'inspections' },
   { key: 'inspections_with_defects', label: 'С наруш.', group: 'inspections' },
-  { key: 'issues_found', label: 'Выявлено', group: 'issues', groupStart: true },
-  { key: 'issues_fixed_events', label: 'Исправлено за период', group: 'issues' },
-  { key: 'issues_closed_events', label: 'Устранено за период', group: 'issues' },
-  { key: 'issues_revision', label: 'Доработка', group: 'issues' },
-  { key: 'issues_not_fixed', label: 'Не устранено', group: 'issues' },
-  { key: 'issues_overdue', label: 'Просрочено', group: 'issues' },
-  { key: 'issues_closed_pct', label: '% устранения из выявленных', group: 'issues' },
 ]
 
 const tabs: [Tab, string][] = [
   ['overview', 'Обзор'], ['dynamics', 'Динамика'], ['categories', 'Категории'],
-  ['districts', 'По районам'], ['shtab', 'Штаб-отчёт'],
+  ['districts', 'Обходы'], ['remediation', 'Устранение'], ['shtab', 'Штаб-отчёт'],
 ]
 
 export default function DashboardPage() {
@@ -118,6 +110,7 @@ export default function DashboardPage() {
         {tab === 'dynamics' && (dynamics.data ? <Dynamics data={dynamics.data.days} /> : <State text="Загрузка динамики…" />)}
         {tab === 'categories' && (categories.data ? <Categories data={categories.data.categories} /> : <State text="Загрузка категорий…" />)}
         {tab === 'districts' && <DistrictTable rows={dashboard.data.districts} totals={dashboard.data.totals} onSelect={lockedDistrict ? undefined : setDistrictId} />}
+        {tab === 'remediation' && <RemediationTable rows={dashboard.data.districts} totals={dashboard.data.totals} />}
         {tab === 'shtab' && <Shtab params={params} />}
       </>}
     </main>
@@ -139,12 +132,12 @@ function Overview({ total: t }: { total: StatsDistrictRow }) {
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       <Kpi label="Площадок" value={t.total_sites} /><Kpi label="Охват" value={`${t.coverage_pct}%`} detail={`${t.sites_inspected} из ${t.total_sites} площадок проверено`} />
       <Kpi label="Обходов" value={t.inspections_total} /><Kpi label="Зелёных" value={t.inspections_green} />
-      <Kpi label="С нарушениями" value={t.inspections_with_defects} /><Kpi label="Выявлено" value={t.issues_found} />
-      <Kpi label="Исправлено за период" value={t.issues_fixed_events} /><Kpi label="Устранено за период" value={t.issues_closed_events} />
-      <Kpi label="Устранение" value={`${t.issues_closed_pct}%`} detail={`${t.issues_closed} из ${t.issues_found} нарушений устранено`} /><Kpi label="На доработке" value={t.issues_revision} />
+      <Kpi label="С нарушениями" value={t.inspections_with_defects} /><Kpi label="Выявлено за период" value={t.issues_found} />
+      <Kpi label="На финальной проверке" value={t.issues_fixed_events} /><Kpi label="Исправлено за период" value={t.issues_closed_events} />
+      <Kpi label="Возвращено на доработку" value={t.issues_revision_events} /><Kpi label="Просрочено сейчас" value={t.issues_overdue_current} />
     </div>
     <div className="grid lg:grid-cols-2 gap-4">
-      <ChartCard title="Воронка нарушений"><ResponsiveContainer width="100%" height={280}><BarChart data={funnel} layout="vertical"><CartesianGrid strokeDasharray="3 3"/><XAxis type="number"/><YAxis dataKey="name" type="category" width={95}/><Tooltip/><Bar dataKey="value" fill="#9E2B25" /></BarChart></ResponsiveContainer></ChartCard>
+      <ChartCard title="Статус замечаний, выявленных за период"><ResponsiveContainer width="100%" height={280}><BarChart data={funnel} layout="vertical"><CartesianGrid strokeDasharray="3 3"/><XAxis type="number"/><YAxis dataKey="name" type="category" width={95}/><Tooltip/><Bar dataKey="value" fill="#9E2B25" /></BarChart></ResponsiveContainer></ChartCard>
       <ChartCard title="Охват"><ResponsiveContainer width="100%" height={280}><PieChart><Pie data={coverage} dataKey="value" nameKey="name" innerRadius={65} outerRadius={105} label>{coverage.map((_, i) => <Cell key={i} fill={i ? '#D9D9D9' : '#63BE7B'} />)}</Pie><Tooltip/><Legend/></PieChart></ResponsiveContainer></ChartCard>
     </div>
   </div>
@@ -163,8 +156,8 @@ function DistrictTable({ rows, totals, onSelect }: { rows: StatsDistrictRow[]; t
   const [sort, setSort] = useState<keyof StatsDistrictRow>('district_name')
   const ordered = useMemo(() => [...rows].sort((a,b) => typeof a[sort] === 'number' ? Number(b[sort])-Number(a[sort]) : String(a[sort]).localeCompare(String(b[sort]), 'ru')), [rows, sort])
   return <div className="card overflow-x-auto">
-    <p className="mb-3 text-sm text-slate-600">«Исправлено» и «Устранено» показывают все изменения статусов за выбранные даты. Процент устранения рассчитывается по замечаниям, выявленным за этот период.</p>
-    <table className="w-full min-w-[1240px] text-xs border border-slate-300">
+    <p className="mb-3 text-sm text-slate-600">Сводка только по обходам за выбранный период. Район без выявленных нарушений — хороший результат, а не нулевой показатель устранения.</p>
+    <table className="w-full min-w-[760px] text-xs border border-slate-300">
       <thead>
         <tr>
           <th rowSpan={2} aria-sort={sort === 'district_name' ? 'ascending' : 'none'} className="border border-slate-300 bg-slate-100 p-0 text-left text-slate-800">
@@ -193,12 +186,35 @@ function DistrictTable({ rows, totals, onSelect }: { rows: StatsDistrictRow[]; t
         {withTotalsRow(ordered, totals).map((r) => {
           const isTotal = r.district_id === totals.district_id
           return <tr key={r.district_id} onClick={() => !isTotal && onSelect?.(r.district_id)} className={isTotal ? 'border-t text-center bg-slate-700 text-white font-bold' : onSelect ? 'border-t text-center cursor-pointer hover:bg-blue-50' : 'border-t text-center'}>
-            {districtColumns.map(({ key, groupStart }) => <td key={key} className={`border border-slate-300 p-2 whitespace-nowrap ${groupStart ? isTotal ? 'border-l-2 border-l-white/50' : 'border-l-2 border-l-slate-400' : ''}`} style={!isTotal && (key === 'coverage_pct' || key === 'issues_closed_pct') ? { background: percentageColor(Number(r[key])) } : undefined}>
-              {key === 'district_name' && isTotal ? 'ИТОГО' : key === 'coverage_pct' || key === 'issues_closed_pct' ? `${r[key]}%` : r[key]}
+            {districtColumns.map(({ key, groupStart }) => <td key={key} className={`border border-slate-300 p-2 whitespace-nowrap ${groupStart ? isTotal ? 'border-l-2 border-l-white/50' : 'border-l-2 border-l-slate-400' : ''} ${!isTotal && key === 'inspections_with_defects' && Number(r[key]) === 0 && Number(r.inspections_total) > 0 ? 'bg-emerald-50 text-emerald-800 font-semibold' : ''}`} style={!isTotal && key === 'coverage_pct' ? { background: coverageColor(Number(r[key])) } : undefined}>
+              {key === 'district_name' && isTotal ? 'ИТОГО' : key === 'coverage_pct' ? `${r[key]}%` : r[key]}
             </td>)}
           </tr>
         })}
       </tbody>
+    </table>
+  </div>
+}
+function RemediationTable({ rows, totals }: { rows: StatsDistrictRow[]; totals: StatsDistrictRow }) {
+  const [sort, setSort] = useState<keyof StatsDistrictRow>('district_name')
+  const columns: { key: keyof StatsDistrictRow; label: string; group: string }[] = [
+    { key: 'issues_found', label: 'Выявлено', group: 'За период' },
+    { key: 'issues_fixed_events', label: 'На финальной проверке', group: 'За период' },
+    { key: 'issues_closed_events', label: 'Исправлено', group: 'За период' },
+    { key: 'issues_revision_events', label: 'Доработка', group: 'За период' },
+    { key: 'issues_pending_final_current', label: 'На проверке', group: 'Сейчас' },
+    { key: 'issues_requires_work_current', label: 'Требуют работы', group: 'Сейчас' },
+    { key: 'issues_overdue_current', label: 'Просрочено', group: 'Сейчас' },
+  ]
+  const ordered = useMemo(() => [...rows].sort((a, b) => typeof a[sort] === 'number' ? Number(b[sort]) - Number(a[sort]) : String(a[sort]).localeCompare(String(b[sort]), 'ru')), [rows, sort])
+  const groups = ['За период', 'Сейчас']
+  return <div className="card overflow-x-auto">
+    <p className="mb-3 text-sm text-slate-600">«Исправлено» — замечания, принятые окончательно. «На финальной проверке» — материалы переданы и ожидают решения. При отсутствии замечаний показатели не окрашиваются как проблемные.</p>
+    <table className="w-full min-w-[980px] text-xs border border-slate-300"><thead><tr>
+      <th rowSpan={2} aria-sort={sort === 'district_name' ? 'ascending' : 'none'} className="border border-slate-300 bg-slate-100 p-0 text-left"><button type="button" onClick={() => setSort('district_name')} className="h-full w-full px-2 py-2 text-left font-semibold hover:bg-slate-200 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary-700">Район</button></th>
+      {groups.map(group => <th key={group} colSpan={columns.filter(c => c.group === group).length} className={`border border-slate-300 p-2 ${group === 'За период' ? 'bg-orange-100 text-orange-950' : 'bg-slate-100 text-slate-800'}`}>{group}</th>)}
+    </tr><tr>{columns.map(({ key, label, group }) => <th key={key} className={`border border-slate-300 p-0 ${group === 'За период' ? 'bg-orange-50' : 'bg-slate-50'}`}><button type="button" onClick={() => setSort(key)} className="w-full px-2 py-2 font-semibold hover:bg-slate-100">{label}</button></th>)}</tr></thead>
+    <tbody>{withTotalsRow(ordered, totals).map(r => { const total = r.district_id === totals.district_id; return <tr key={r.district_id} className={total ? 'bg-slate-700 text-center font-bold text-white' : 'text-center'}><td className="border border-slate-300 p-2 text-left">{total ? 'ИТОГО' : r.district_name}</td>{columns.map(({ key }) => <td key={key} className={`border border-slate-300 p-2 ${!total && key === 'issues_closed_events' && Number(r[key]) > 0 ? 'bg-emerald-50 text-emerald-800 font-semibold' : ''} ${!total && key === 'issues_overdue_current' && Number(r[key]) > 0 ? 'bg-red-100 text-red-900 font-semibold' : ''}`}>{r[key]}</td>)}</tr>})}</tbody>
     </table>
   </div>
 }

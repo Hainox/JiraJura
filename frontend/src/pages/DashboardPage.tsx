@@ -9,12 +9,16 @@ import { ArrowLeft, Download, FileSpreadsheet, RefreshCw } from 'lucide-react'
 import { districtsApi, reportsApi, statsApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
 import { notify as toast } from '@/lib/toast'
-import { coverageColor, currentMskWeek, percentageColor, periodRange, qualityColor, withTotalsRow, type StatisticsPreset } from '@/lib/statistics'
+import {
+  coverageColor, currentMskWeek, percentageColor, periodRange, qualityColor,
+  remediationMetricLabel, withTotalsRow, type StatisticsPreset,
+} from '@/lib/statistics'
 import type { StatsDistrictRow } from '@/types'
 
 type Tab = 'overview' | 'dynamics' | 'categories' | 'districts' | 'remediation' | 'shtab'
 type PeriodMode = StatisticsPreset | 'all' | 'custom'
 type DistrictMetricGroup = 'sites' | 'quality' | 'inspections'
+type RemediationMetricKey = 'issues_cohort_closed_pct' | 'issues_requires_work_pct'
 
 const districtMetricGroups: { id: DistrictMetricGroup; label: string; hint: string; className: string }[] = [
   { id: 'sites', label: 'Площадки', hint: 'объекты и охват', className: 'bg-sky-100 text-sky-950' },
@@ -155,6 +159,26 @@ function Categories({ data }: { data: { category_id: string; name: string; found
   return <div className="space-y-4"><ChartCard title="Нарушения по категориям"><ResponsiveContainer width="100%" height={360}><BarChart data={sorted} layout="vertical"><CartesianGrid strokeDasharray="3 3"/><XAxis type="number"/><YAxis dataKey="name" type="category" width={150}/><Tooltip/><Bar dataKey="found" name="Выявлено" fill="#9E2B25"/></BarChart></ResponsiveContainer></ChartCard>
     <div className="card overflow-x-auto"><table className="w-full text-sm"><thead><tr><th>Категория</th><th>Выявлено</th><th>Устранено</th><th>Не устранено</th><th>Просрочено</th><th>%</th></tr></thead><tbody>{data.map(r => <tr className="border-t text-center" key={r.category_id}><td className="p-2 text-left">{r.name}</td><td>{r.found}</td><td>{r.closed}</td><td>{r.not_fixed}</td><td>{r.overdue}</td><td style={{background:percentageColor(r.closed_pct)}}>{r.closed_pct}%</td></tr>)}</tbody></table></div></div>
 }
+
+function remediationMetricMeta(row: StatsDistrictRow, key: RemediationMetricKey) {
+  if (key === 'issues_cohort_closed_pct') {
+    return {
+      numerator: row.issues_cohort_closed_as_of,
+      denominator: row.issues_found,
+      percentage: row.issues_cohort_closed_pct,
+      direction: 'direct' as const,
+      emptyTitle: 'Нет замечаний для расчёта',
+    }
+  }
+  return {
+    numerator: row.issues_requires_work_current,
+    denominator: row.issues_snapshot_total,
+    percentage: row.issues_requires_work_pct,
+    direction: 'inverse' as const,
+    emptyTitle: 'Нет замечаний для расчёта',
+  }
+}
+
 function DistrictTable({ rows, totals, onSelect }: { rows: StatsDistrictRow[]; totals: StatsDistrictRow; onSelect?: (id: string) => void }) {
   const [sort, setSort] = useState<keyof StatsDistrictRow>('district_name')
   const ordered = useMemo(() => [...rows].sort((a,b) => typeof a[sort] === 'number' ? Number(b[sort])-Number(a[sort]) : String(a[sort]).localeCompare(String(b[sort]), 'ru')), [rows, sort])
@@ -217,28 +241,55 @@ function DistrictTable({ rows, totals, onSelect }: { rows: StatsDistrictRow[]; t
 function RemediationTable({ rows, totals }: { rows: StatsDistrictRow[]; totals: StatsDistrictRow }) {
   const [sort, setSort] = useState<keyof StatsDistrictRow>('district_name')
   const columns: { key: keyof StatsDistrictRow; label: string; group: string }[] = [
-    { key: 'issues_found', label: 'Выявлено', group: 'За период' },
-    { key: 'issues_fixed_events', label: 'На финальной проверке', group: 'За период' },
-    { key: 'issues_closed_events', label: 'Исправлено', group: 'За период' },
-    { key: 'issues_revision_events', label: 'Доработка', group: 'За период' },
+    { key: 'issues_found', label: 'Выявлено', group: 'Поток за период' },
+    { key: 'issues_fixed_events', label: 'На финальной проверке', group: 'Поток за период' },
+    { key: 'issues_closed_events', label: 'Исправлено', group: 'Поток за период' },
+    { key: 'issues_revision_events', label: 'Доработка', group: 'Поток за период' },
+    { key: 'issues_cohort_closed_pct', label: 'Устранено из выявленных', group: 'Результат по замечаниям периода' },
     { key: 'issues_pending_final_current', label: 'На проверке', group: 'Состояние на конец периода' },
     { key: 'issues_requires_work_current', label: 'Требуют работы', group: 'Состояние на конец периода' },
     { key: 'issues_overdue_current', label: 'Просрочено', group: 'Состояние на конец периода' },
+    { key: 'issues_requires_work_pct', label: 'Доля требующих устранения', group: 'Состояние на конец периода' },
   ]
   const ordered = useMemo(() => [...rows].sort((a, b) => typeof a[sort] === 'number' ? Number(b[sort]) - Number(a[sort]) : String(a[sort]).localeCompare(String(b[sort]), 'ru')), [rows, sort])
-  const groups = ['За период', 'Состояние на конец периода']
+  const groups = ['Поток за период', 'Результат по замечаниям периода', 'Состояние на конец периода']
   return <div className="card overflow-x-auto">
-    <p className="mb-3 text-sm text-slate-600">«Исправлено» — замечания, принятые окончательно за период. «На финальной проверке» — материалы, переданные за период и ожидающие решения. Правая часть — снимок статусов на конец выбранного периода в МСК (UTC+3), не сегодняшнее состояние карточек.</p>
+    <p className="mb-3 text-sm text-slate-600">Левая группа показывает поток событий за период. «Устранено из выявленных» считает, сколько замечаний, созданных в этом периоде, уже закрыты на его конец. «Доля требующих устранения» считает все замечания, созданные не позднее конца периода, и показывает, какая доля из них ещё требует работы. Всё считается в МСК (UTC+3).</p>
     <table className="w-full min-w-[980px] text-xs border border-slate-300"><thead><tr>
       <th rowSpan={2} aria-sort={sort === 'district_name' ? 'ascending' : 'none'} className="border border-slate-300 bg-slate-100 p-0 text-left"><button type="button" onClick={() => setSort('district_name')} className="h-full w-full px-2 py-2 text-left font-semibold hover:bg-slate-200 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary-700">Район</button></th>
-      {groups.map(group => <th key={group} colSpan={columns.filter(c => c.group === group).length} className={`border border-slate-300 p-2 ${group === 'За период' ? 'bg-orange-100 text-orange-950' : 'bg-slate-100 text-slate-800'}`}>{group}</th>)}
-    </tr><tr>{columns.map(({ key, label, group }) => <th key={key} className={`border border-slate-300 p-0 ${group === 'За период' ? 'bg-orange-50' : 'bg-slate-50'}`}><button type="button" onClick={() => setSort(key)} className="w-full px-2 py-2 font-semibold hover:bg-slate-100">{label}</button></th>)}</tr></thead>
-    <tbody>{withTotalsRow(ordered, totals).map(r => { const total = r.district_id === totals.district_id; return <tr key={r.district_id} className={total ? 'bg-slate-700 text-center font-bold text-white' : 'text-center'}><td className="border border-slate-300 p-2 text-left">{total ? 'ИТОГО' : r.district_name}</td>{columns.map(({ key }) => <td key={key} className={`border border-slate-300 p-2 ${!total && key === 'issues_closed_events' && Number(r[key]) > 0 ? 'bg-emerald-50 text-emerald-800 font-semibold' : ''} ${!total && key === 'issues_overdue_current' && Number(r[key]) > 0 ? 'bg-red-100 text-red-900 font-semibold' : ''}`}>{r[key]}</td>)}</tr>})}</tbody>
+      {groups.map(group => <th key={group} colSpan={columns.filter(c => c.group === group).length} className={`border border-slate-300 p-2 ${group === 'Поток за период' ? 'bg-orange-100 text-orange-950' : group === 'Результат по замечаниям периода' ? 'bg-emerald-100 text-emerald-950' : 'bg-slate-100 text-slate-800'}`}>{group}</th>)}
+    </tr><tr>{columns.map(({ key, label, group }) => <th key={key} className={`border border-slate-300 p-0 ${group === 'Поток за период' ? 'bg-orange-50' : group === 'Результат по замечаниям периода' ? 'bg-emerald-50' : 'bg-slate-50'}`}><button type="button" onClick={() => setSort(key)} className="w-full px-2 py-2 font-semibold hover:bg-slate-100">{label}</button></th>)}</tr></thead>
+    <tbody>{withTotalsRow(ordered, totals).map(r => {
+      const total = r.district_id === totals.district_id
+      return <tr key={r.district_id} className={total ? 'bg-slate-700 text-center font-bold text-white' : 'text-center'}>
+        <td className="border border-slate-300 p-2 text-left">{total ? 'ИТОГО' : r.district_name}</td>
+        {columns.map(({ key }) => {
+          const metricKey = key === 'issues_cohort_closed_pct' || key === 'issues_requires_work_pct'
+            ? key as RemediationMetricKey
+            : null
+          if (metricKey) {
+            const metric = remediationMetricMeta(r, metricKey)
+            const value = remediationMetricLabel(metric.numerator, metric.denominator, metric.percentage)
+            return <td key={key} title={metric.percentage === null ? metric.emptyTitle : undefined} className={`border border-slate-300 p-2 ${metric.percentage === null ? 'bg-slate-100 text-slate-500' : ''}`} style={!total && metric.percentage !== null ? { background: qualityColor(metric.percentage, metric.direction) } : undefined}>{value}</td>
+          }
+          return <td key={key} className={`border border-slate-300 p-2 ${!total && key === 'issues_closed_events' && Number(r[key]) > 0 ? 'bg-emerald-50 text-emerald-800 font-semibold' : ''} ${!total && key === 'issues_overdue_current' && Number(r[key]) > 0 ? 'bg-red-100 text-red-900 font-semibold' : ''}`}>{r[key]}</td>
+        })}
+      </tr>
+    })}</tbody>
     </table>
   </div>
 }
 function Shtab({ params }: { params: { date_from: string; date_to: string; district_id?: string; all_time?: boolean } }) {
   const preview = useQuery({ queryKey:['shtab-preview', params], queryFn:() => statsApi.dashboard(params) })
   const download = () => toast.promise(statsApi.downloadShtab(params), { loading:'Формирую PPTX…', success:'PPTX скачан', error:'Ошибка выгрузки' })
-  return <div className="space-y-4"><div className="card flex flex-wrap items-end gap-3"><p className="text-sm text-gray-600">Используется выбранный выше период: {params.all_time ? 'всё время' : `${params.date_from} — ${params.date_to}`} · МСК (UTC+3)</p><button onClick={download} className="btn-primary flex items-center gap-2"><Download className="w-4"/>Скачать PPTX</button></div>{preview.data ? <DistrictTable rows={preview.data.districts} totals={preview.data.totals}/> : <State text="Загрузка превью…"/>}</div>
+  return <div className="space-y-4"><div className="card flex flex-wrap items-end gap-3"><p className="text-sm text-gray-600">Используется выбранный выше период: {params.all_time ? 'всё время' : `${params.date_from} — ${params.date_to}`} · МСК (UTC+3)</p><button onClick={download} className="btn-primary flex items-center gap-2"><Download className="w-4"/>Скачать PPTX</button></div>{preview.data ? <>
+    <div className="space-y-2">
+      <p className="text-sm text-slate-600">Качество обходов считается по последнему завершённому обходу площадки внутри выбранного периода. Ячейки «Чистые» и «С нарушениями» показывают `X из Y · N%`, где `Y` — все площадки с завершённым обходом за период.</p>
+      <DistrictTable rows={preview.data.districts} totals={preview.data.totals}/>
+    </div>
+    <div className="space-y-2">
+      <p className="text-sm text-slate-600">Устранение замечаний отделено от качества обходов. «Устранено из выявленных» оценивает когорту замечаний периода, а «Доля требующих устранения» показывает остаток на конец периода среди всех замечаний, созданных не позднее этой даты.</p>
+      <RemediationTable rows={preview.data.districts} totals={preview.data.totals}/>
+    </div>
+  </> : <State text="Загрузка превью…"/>}</div>
 }

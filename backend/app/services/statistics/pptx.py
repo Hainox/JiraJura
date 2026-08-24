@@ -34,6 +34,12 @@ def percentage_color(value: int | None) -> str:
     return "E06666"
 
 
+def metric_label(numerator: int, denominator: int, percentage: int | None) -> str:
+    if percentage is None or denominator == 0:
+        return "—"
+    return f"{numerator} из {denominator} · {percentage}%"
+
+
 def _fill(cell, hex_color: str):
     cell.fill.solid()
     cell.fill.fore_color.rgb = RGBColor.from_string(hex_color)
@@ -117,11 +123,11 @@ def render_shtab(dashboard: StatsDashboardOut, categories: StatsCategoriesOut) -
         key=lambda r: (-(r.clean_sites_pct if r.clean_sites_pct is not None else -1), -r.coverage_pct, r.district_name),
     )
     headers = ["№", "Район", "Охват", "Чистые площадки", "Площадки с нарушениями",
-               "Требует устранения", "Просрочено"]
+               "Без нарушений", "С нарушениями"]
     table = slide.shapes.add_table(
         len(rows) + 2, len(headers), Inches(0.35), Inches(1.12), Inches(12.63), Inches(5.0)
     ).table
-    widths = [0.35, 2.15, 1.3, 2.0, 2.05, 1.45, 1.0]
+    widths = [0.35, 2.15, 1.4, 2.0, 2.05, 1.3, 1.2]
     for column, width in zip(table.columns, widths):
         column.width = Inches(width)
     for index, header in enumerate(headers):
@@ -140,7 +146,7 @@ def render_shtab(dashboard: StatsDashboardOut, categories: StatsCategoriesOut) -
         values = [
             row_index, row.district_name,
             f"{row.sites_inspected} из {row.total_sites} · {row.coverage_pct}%",
-            clean, defects, row.issues_requires_work_current, row.issues_overdue_current,
+            clean, defects, row.inspections_green, row.inspections_with_defects,
         ]
         for col, value in enumerate(values):
             table.cell(row_index, col).text = str(value)
@@ -163,7 +169,7 @@ def render_shtab(dashboard: StatsDashboardOut, categories: StatsCategoriesOut) -
             f"{total.sites_latest_with_defects} из {total.sites_inspected} · {total.defect_sites_pct}%"
             if total.defect_sites_pct is not None else "Нет обходов"
         ),
-        total.issues_requires_work_current, total.issues_overdue_current,
+        total.inspections_green, total.inspections_with_defects,
     ]
     for col, value in enumerate(total_values):
         table.cell(total_index, col).text = str(value)
@@ -176,8 +182,8 @@ def render_shtab(dashboard: StatsDashboardOut, categories: StatsCategoriesOut) -
         f"Обойдены {total.sites_inspected} из {total.total_sites} площадок ({total.coverage_pct}%); "
         f"чистые по последнему обходу в периоде — {total.sites_latest_clean} из "
         f"{total.sites_inspected} ({total.clean_sites_pct if total.clean_sites_pct is not None else '—'}%). "
-        f"На конец периода требуют устранения {total.issues_requires_work_current}, "
-        f"просрочено {total.issues_overdue_current}."
+        f"Площадки с нарушениями — {total.sites_latest_with_defects} из {total.sites_inspected} "
+        f"({total.defect_sites_pct if total.defect_sites_pct is not None else '—'}%)."
     )
     _shape(slide, MSO_SHAPE.RECTANGLE, 0.35, 6.32, 0.02, 0.7, RED)
     box = slide.shapes.add_textbox(Inches(0.48), Inches(6.34), Inches(12.0), Inches(0.6))
@@ -188,30 +194,98 @@ def render_shtab(dashboard: StatsDashboardOut, categories: StatsCategoriesOut) -
 
     slide2 = prs.slides.add_slide(blank)
     _add_chrome(slide2, "1.2")
-    _add_title(slide2, "Нарушения по категориям")
-    category_rows = categories.categories
-    category_table = slide2.shapes.add_table(
-        len(category_rows) + 1, 4, Inches(1.2), Inches(1.15), Inches(10.9), Inches(4.7)
+    _add_title(slide2, "Устранение замечаний")
+    for left, width, text in (
+        (0.95, 3.6, "Поток за период"),
+        (5.2, 2.25, "Результат по замечаниям периода"),
+        (7.75, 4.6, "Состояние на конец периода"),
+    ):
+        box = slide2.shapes.add_textbox(Inches(left), Inches(1.0), Inches(width), Inches(0.22))
+        paragraph = box.text_frame.paragraphs[0]
+        paragraph.text = text
+        paragraph.alignment = PP_ALIGN.CENTER
+        for run in paragraph.runs:
+            run.font.name, run.font.size, run.font.bold = FONT, Pt(9), True
+            run.font.color.rgb = RGBColor.from_string("4D4D4D")
+
+    remediation_table = slide2.shapes.add_table(
+        len(rows) + 2, 11, Inches(0.35), Inches(1.25), Inches(12.63), Inches(4.95)
     ).table
-    for idx, title in enumerate(("Категория", "Выявлено", "Устранено", "% устранения")):
-        category_table.cell(0, idx).text = title
-        _fill(category_table.cell(0, idx), HEADER)
-        _style_cell(category_table.cell(0, idx), bold=True, color="FFFFFF", size=11)
-    for row_index, row in enumerate(category_rows, start=1):
-        for col, value in enumerate((row.name, row.found, row.closed, row.closed_pct)):
-            category_table.cell(row_index, col).text = str(value)
-            _style_cell(category_table.cell(row_index, col), size=10,
-                        align=PP_ALIGN.LEFT if col == 0 else PP_ALIGN.CENTER)
-        _fill(category_table.cell(row_index, 3), percentage_color(row.closed_pct))
-    if category_rows:
-        problem = sorted(category_rows, key=lambda r: (-r.not_fixed, r.sort_order, r.name))[0]
-        _shape(slide2, MSO_SHAPE.RECTANGLE, 1.05, 6.1, 0.02, 0.55, RED)
-        note = slide2.shapes.add_textbox(Inches(1.2), Inches(6.13), Inches(10.9), Inches(0.4))
-        note.text_frame.paragraphs[0].text = (
-            f"Наиболее проблемная категория: {problem.name} — не устранено {problem.not_fixed}."
+    remediation_headers = [
+        "№", "Район", "Выявлено", "На финальной проверке", "Исправлено", "Доработка",
+        "Устранено из выявленных", "На проверке", "Требуют устранения", "Просрочено",
+        "Доля требующих устранения",
+    ]
+    widths = [0.35, 1.85, 0.75, 1.05, 0.8, 0.8, 1.75, 0.85, 1.05, 0.8, 1.6]
+    for column, width in zip(remediation_table.columns, widths):
+        column.width = Inches(width)
+    for index, header in enumerate(remediation_headers):
+        remediation_table.cell(0, index).text = header
+        _fill(remediation_table.cell(0, index), HEADER)
+        _style_cell(remediation_table.cell(0, index), bold=True, color="FFFFFF")
+    for row_index, row in enumerate(rows, start=1):
+        values = [
+            row_index,
+            row.district_name,
+            row.issues_found,
+            row.issues_fixed_events,
+            row.issues_closed_events,
+            row.issues_revision_events,
+            metric_label(row.issues_cohort_closed_as_of, row.issues_found, row.issues_cohort_closed_pct),
+            row.issues_pending_final_current,
+            row.issues_requires_work_current,
+            row.issues_overdue_current,
+            metric_label(
+                row.issues_requires_work_current, row.issues_snapshot_total, row.issues_requires_work_pct,
+            ),
+        ]
+        for col, value in enumerate(values):
+            remediation_table.cell(row_index, col).text = str(value)
+            _style_cell(
+                remediation_table.cell(row_index, col),
+                align=PP_ALIGN.LEFT if col == 1 else PP_ALIGN.CENTER,
+            )
+        _fill(remediation_table.cell(row_index, 6), percentage_color(row.issues_cohort_closed_pct))
+        _fill(
+            remediation_table.cell(row_index, 10),
+            percentage_color(
+                100 - row.issues_requires_work_pct
+                if row.issues_requires_work_pct is not None else None
+            ),
         )
-        for run in note.text_frame.paragraphs[0].runs:
-            run.font.name, run.font.size, run.font.bold = FONT, Pt(13), True
+
+    remediation_total = [
+        "", "ИТОГО", total.issues_found, total.issues_fixed_events, total.issues_closed_events,
+        total.issues_revision_events,
+        metric_label(
+            total.issues_cohort_closed_as_of, total.issues_found, total.issues_cohort_closed_pct,
+        ),
+        total.issues_pending_final_current,
+        total.issues_requires_work_current,
+        total.issues_overdue_current,
+        metric_label(
+            total.issues_requires_work_current, total.issues_snapshot_total,
+            total.issues_requires_work_pct,
+        ),
+    ]
+    remediation_total_index = len(rows) + 1
+    for col, value in enumerate(remediation_total):
+        remediation_table.cell(remediation_total_index, col).text = str(value)
+        _fill(remediation_table.cell(remediation_total_index, col), TOTAL)
+        _style_cell(remediation_table.cell(remediation_total_index, col), bold=True)
+
+    summary2 = (
+        f"Период: {p.date_from:%d.%m.%Y}–{p.date_to:%d.%m.%Y} МСК (UTC+3). "
+        f"Устранено из выявленных замечаний периода — "
+        f"{metric_label(total.issues_cohort_closed_as_of, total.issues_found, total.issues_cohort_closed_pct)}. "
+        f"Доля требующих устранения на конец периода — "
+        f"{metric_label(total.issues_requires_work_current, total.issues_snapshot_total, total.issues_requires_work_pct)}."
+    )
+    _shape(slide2, MSO_SHAPE.RECTANGLE, 0.35, 6.42, 0.02, 0.52, RED)
+    note = slide2.shapes.add_textbox(Inches(0.48), Inches(6.45), Inches(12.0), Inches(0.42))
+    note.text_frame.paragraphs[0].text = summary2
+    for run in note.text_frame.paragraphs[0].runs:
+        run.font.name, run.font.size = FONT, Pt(10)
     _add_metadata(slide2, dashboard)
 
     output = BytesIO()

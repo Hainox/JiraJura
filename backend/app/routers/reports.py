@@ -549,35 +549,85 @@ async def export_xlsx(
 
     # ── Сводка по районам: единый statistics v2 service ──
     stats_dashboard = await StatisticsService(db, stats_filter).dashboard()
-    summary_data = [
-        (
-            row.district_name,
-            row.total_sites,
-            row.sites_inspected,
-            row.coverage_pct,
-            row.inspections_total,
-            row.sites_latest_clean,
-            row.clean_sites_pct,
-            row.sites_latest_with_defects,
-            row.defect_sites_pct,
-            row.inspections_green,
-            row.inspections_with_defects,
-            row.issues_found,
-            row.issues_pending_final_current,
-            row.issues_requires_work_current,
-            row.issues_overdue_current,
-        )
+    def _metric_label(numerator: int, denominator: int, percentage: int | None) -> str:
+        if percentage is None or denominator == 0:
+            return "—"
+        return f"{numerator} из {denominator} · {percentage}%"
+
+    summary_records = [
+        {
+            "district_name": row.district_name,
+            "total_sites": row.total_sites,
+            "sites_inspected": row.sites_inspected,
+            "coverage_pct": row.coverage_pct,
+            "inspections_total": row.inspections_total,
+            "sites_latest_clean": row.sites_latest_clean,
+            "clean_sites_pct": row.clean_sites_pct,
+            "sites_latest_with_defects": row.sites_latest_with_defects,
+            "defect_sites_pct": row.defect_sites_pct,
+            "inspections_green": row.inspections_green,
+            "inspections_with_defects": row.inspections_with_defects,
+            "issues_found": row.issues_found,
+            "issues_pending_final_current": row.issues_pending_final_current,
+            "issues_requires_work_current": row.issues_requires_work_current,
+            "issues_overdue_current": row.issues_overdue_current,
+            "issues_cohort_closed_label": _metric_label(
+                row.issues_cohort_closed_as_of, row.issues_found, row.issues_cohort_closed_pct,
+            ),
+            "issues_cohort_closed_pct": row.issues_cohort_closed_pct,
+            "issues_requires_work_label": _metric_label(
+                row.issues_requires_work_current, row.issues_snapshot_total, row.issues_requires_work_pct,
+            ),
+            "issues_requires_work_pct": row.issues_requires_work_pct,
+        }
         for row in stats_dashboard.districts
     ]
     totals = stats_dashboard.totals
-    summary_rows = [*summary_data, (
-        "ИТОГО", totals.total_sites, totals.sites_inspected, totals.coverage_pct,
-        totals.inspections_total, totals.sites_latest_clean, totals.clean_sites_pct,
-        totals.sites_latest_with_defects, totals.defect_sites_pct,
-        totals.inspections_green, totals.inspections_with_defects, totals.issues_found,
-        totals.issues_pending_final_current, totals.issues_requires_work_current,
-        totals.issues_overdue_current,
-    )]
+    summary_records.append({
+        "district_name": "ИТОГО",
+        "total_sites": totals.total_sites,
+        "sites_inspected": totals.sites_inspected,
+        "coverage_pct": totals.coverage_pct,
+        "inspections_total": totals.inspections_total,
+        "sites_latest_clean": totals.sites_latest_clean,
+        "clean_sites_pct": totals.clean_sites_pct,
+        "sites_latest_with_defects": totals.sites_latest_with_defects,
+        "defect_sites_pct": totals.defect_sites_pct,
+        "inspections_green": totals.inspections_green,
+        "inspections_with_defects": totals.inspections_with_defects,
+        "issues_found": totals.issues_found,
+        "issues_pending_final_current": totals.issues_pending_final_current,
+        "issues_requires_work_current": totals.issues_requires_work_current,
+        "issues_overdue_current": totals.issues_overdue_current,
+        "issues_cohort_closed_label": _metric_label(
+            totals.issues_cohort_closed_as_of, totals.issues_found, totals.issues_cohort_closed_pct,
+        ),
+        "issues_cohort_closed_pct": totals.issues_cohort_closed_pct,
+        "issues_requires_work_label": _metric_label(
+            totals.issues_requires_work_current, totals.issues_snapshot_total, totals.issues_requires_work_pct,
+        ),
+        "issues_requires_work_pct": totals.issues_requires_work_pct,
+    })
+    summary_data = summary_records[:-1]
+    summary_rows = [(
+        row["district_name"],
+        row["total_sites"],
+        row["sites_inspected"],
+        row["coverage_pct"],
+        row["inspections_total"],
+        row["sites_latest_clean"],
+        row["clean_sites_pct"],
+        row["sites_latest_with_defects"],
+        row["defect_sites_pct"],
+        row["inspections_green"],
+        row["inspections_with_defects"],
+        row["issues_found"],
+        row["issues_pending_final_current"],
+        row["issues_requires_work_current"],
+        row["issues_overdue_current"],
+        row["issues_cohort_closed_label"],
+        row["issues_requires_work_label"],
+    ) for row in summary_records]
 
     # ── Динамика по дням (инспектор × дата) ──
     # Группируем по User.id, а не по ФИО — у full_name нет уникальности в
@@ -721,26 +771,21 @@ async def export_xlsx(
     # ── Обзор — тот же лист, что в generate_summary_report.py (раньше
     # доступен только через ручной запуск скрипта на сервере) ──
     now_str = datetime.now(MSK).strftime("%d.%m.%Y %H:%M")
-    # Индексы кортежей summary_data (0-based):
-    # 0 name, 1 total_sites, 2 sites_inspected, 3 coverage_pct,
-    # 4 inspections, 5 clean sites, 6 clean pct, 7 defect sites,
-    # 8 defect pct, 9 without_defects, 10 with_defects, 11 found,
-    # 12 pending final, 13 requires work, 14 overdue snapshot
-    def _sum(idx):
-        return sum(x[idx] for x in summary_data) if summary_data else 0
+    def _sum(field):
+        return sum(row[field] for row in summary_data) if summary_data else 0
 
-    total_sites_all = _sum(1)
-    sites_inspected_all = _sum(2)
+    total_sites_all = _sum("total_sites")
+    sites_inspected_all = _sum("sites_inspected")
     sites_not_inspected_all = max(total_sites_all - sites_inspected_all, 0)
-    total_insp_all = _sum(4)
-    inspections_ok_all = _sum(9)
-    inspections_with_defects_all = _sum(10)
-    total_checklist_defects_all = total_iss_all = _sum(11)
+    total_insp_all = _sum("inspections_total")
+    inspections_ok_all = _sum("inspections_green")
+    inspections_with_defects_all = _sum("inspections_with_defects")
+    total_checklist_defects_all = total_iss_all = _sum("issues_found")
     total_iss_open_all = stats_dashboard.totals.issues_open + stats_dashboard.totals.issues_in_work
     total_iss_fixed_all = stats_dashboard.totals.issues_on_check
     total_iss_revision_all = stats_dashboard.totals.issues_revision
     total_iss_closed_all = stats_dashboard.totals.issues_closed
-    total_iss_overdue_all = _sum(14)
+    total_iss_overdue_all = _sum("issues_overdue_current")
     total_insp_done_all = inspections_ok_all + inspections_with_defects_all
     total_insp_in_progress_all = total_insp_all - total_insp_done_all
 
@@ -920,8 +965,9 @@ async def export_xlsx(
         ["Район", "Площадок", "Проверено", "Охват %", "Обходов",
          "Чистые площадки", "% чистых площадок", "Площадки с нарушениями",
          "% площадок с нарушениями", "Без нарушений", "С наруш.", "Выявлено",
-         "На финальной проверке", "Требует устранения", "Просрочено"],
-        summary_rows, [24, 12, 12, 11, 10, 17, 18, 22, 22, 15, 11, 11, 19, 19, 11])
+         "На проверке", "Требует устранения", "Просрочено",
+         "Устранено из выявленных", "Доля требующих устранения"],
+        summary_rows, [24, 12, 12, 11, 10, 17, 18, 22, 22, 15, 11, 11, 15, 17, 11, 26, 28])
 
     def _quality_fill(value, *, inverse=False):
         if value is None:
@@ -940,21 +986,33 @@ async def export_xlsx(
         return "E06666"
 
     for row_idx, row in enumerate(summary_rows, start=2):
-        for column_idx, inverse in ((4, False), (7, False), (9, True)):
+        record = summary_records[row_idx - 2]
+        for column_idx, value, inverse in (
+            (4, record["coverage_pct"], False),
+            (7, record["clean_sites_pct"], False),
+            (9, record["defect_sites_pct"], True),
+            (16, record["issues_cohort_closed_pct"], False),
+            (17, record["issues_requires_work_pct"], True),
+        ):
             summary_ws.cell(row_idx, column_idx).fill = PatternFill(
-                "solid", fgColor=_quality_fill(row[column_idx - 1], inverse=inverse)
+                "solid", fgColor=_quality_fill(value, inverse=inverse)
             )
-    summary_ws["P1"], summary_ws["Q1"] = "Проверено", "Не проверено"
+    summary_ws["R1"], summary_ws["S1"] = "Проверено", "Не проверено"
+    summary_ws["T1"], summary_ws["U1"] = "Чистые площадки", "Площадки с нарушениями"
     for row_idx, row in enumerate(summary_rows, start=2):
-        summary_ws.cell(row_idx, 16, row[2])
-        summary_ws.cell(row_idx, 17, max(row[1] - row[2], 0))
+        summary_ws.cell(row_idx, 18, row[2])
+        summary_ws.cell(row_idx, 19, max(row[1] - row[2], 0))
+        summary_ws.cell(row_idx, 20, row[5])
+        summary_ws.cell(row_idx, 21, row[7])
     total_row_idx = len(summary_rows) + 1
-    for column_idx in range(1, 16):
+    for column_idx in range(1, 18):
         cell = summary_ws.cell(total_row_idx, column_idx)
         cell.font = Font(bold=True, color="FFFFFF")
         cell.fill = PatternFill("solid", fgColor="595959")
-    summary_ws.column_dimensions["P"].hidden = True
-    summary_ws.column_dimensions["Q"].hidden = True
+    summary_ws.column_dimensions["R"].hidden = True
+    summary_ws.column_dimensions["S"].hidden = True
+    summary_ws.column_dimensions["T"].hidden = True
+    summary_ws.column_dimensions["U"].hidden = True
 
     # Сравнение районов — раньше на этом листе не было ни одного графика,
     # хотя это самая насыщенная сравнительная таблица отчёта. Две сгруппи-
@@ -982,9 +1040,9 @@ async def export_xlsx(
             summary_ws.add_chart(chart, anchor)
 
         chart_row = last_row + 3
-        _grouped_bar("Охват по районам: проверено / не проверено", 16, 17,
+        _grouped_bar("Охват по районам: проверено / не проверено", 18, 19,
                      f"A{chart_row}", (CHART_GOOD, CHART_MUTED))
-        _grouped_bar("Результат по районам: без / с нарушениями", 10, 11,
+        _grouped_bar("Результат по районам: чистые / с нарушениями", 20, 21,
                      f"A{chart_row + 19}", (CHART_GOOD, CHART_CRITICAL))
     _sheet(wb, "Обходы",
         ["Дата", "Район", "Двор", "Тип площадки", "Инспектор", "Телефон", "Статус", "Начат", "Завершён", "Пунктов ОК", "Дефектов", "Фото", "Комментарий"],

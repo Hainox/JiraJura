@@ -340,7 +340,7 @@ export const reportsApi = {
   // Скачивание Excel-выгрузки: файл приходит blob'ом (нужен Authorization-
   // заголовок, поэтому обычная ссылка <a href> не подходит) и отдаётся
   // пользователю через временный object URL.
-  exportXlsx: async (params?: { district_id?: string; date_from?: string; date_to?: string }) => {
+  exportXlsx: async (params?: { district_id?: string; date_from?: string; date_to?: string; all_time?: boolean }) => {
     const res = await api.get('/reports/export.xlsx', { params, responseType: 'blob' })
     const url = URL.createObjectURL(res.data as Blob)
     const a = document.createElement('a')

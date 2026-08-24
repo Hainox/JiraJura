@@ -300,11 +300,15 @@ export interface StatsDistrictRow {
   inspections_green: number
   inspections_with_defects: number
   issues_found: number
+  issues_cohort_closed_as_of: number
+  issues_cohort_closed_pct: number | null
   issues_fixed_events: number
   issues_closed_events: number
   issues_revision_events: number
   issues_pending_final_current: number
   issues_requires_work_current: number
+  issues_snapshot_total: number
+  issues_requires_work_pct: number | null
   issues_overdue_current: number
   issues_closed: number
   issues_on_check: number

@@ -69,6 +69,15 @@ export function qualityColor(value: number | null, direction: QualityDirection):
   return '#E06666'
 }
 
+export function remediationMetricLabel(
+  numerator: number,
+  denominator: number,
+  percentage: number | null,
+): string {
+  if (percentage === null || denominator === 0) return '—'
+  return `${numerator} из ${denominator} · ${percentage}%`
+}
+
 export function withTotalsRow<T>(rows: readonly T[], totals: T): T[] {
   return [...rows, totals]
 }

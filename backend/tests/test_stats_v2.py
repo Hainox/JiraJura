@@ -97,16 +97,19 @@ async def test_stats_contract_and_pptx(client, admin_headers):
     assert len(district_table.rows) == len(payload["districts"]) + 2
     assert "Чистые площадки" in [cell.text for cell in district_table.rows[0].cells]
     assert "МСК (UTC+3)" in first_slide_text
+    assert "Устранено из выявленных" in second_slide_text
+    assert "Доля требующих устранения" in second_slide_text
 
     excel = await client.get("/api/v1/reports/export.xlsx", params=params, headers=admin_headers)
     assert excel.status_code == 200, excel.text
     workbook = load_workbook(BytesIO(excel.content), data_only=True)
     summary = workbook["Сводка по районам"]
-    assert [cell.value for cell in summary[1]][:15] == [
+    assert [cell.value for cell in summary[1]][:17] == [
         "Район", "Площадок", "Проверено", "Охват %", "Обходов",
         "Чистые площадки", "% чистых площадок", "Площадки с нарушениями",
         "% площадок с нарушениями", "Без нарушений", "С наруш.", "Выявлено",
-        "На финальной проверке", "Требует устранения", "Просрочено",
+        "На проверке", "Требует устранения", "Просрочено",
+        "Устранено из выявленных", "Доля требующих устранения",
     ]
     excel_by_name = {summary.cell(row, 1).value: summary.cell(row, 2).value
                      for row in range(2, summary.max_row + 1)}

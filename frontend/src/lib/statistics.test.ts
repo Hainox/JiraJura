@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { coverageColor, currentMskWeek, mskDateString, percentageColor, periodRange, previousMskWeek, qualityColor, withTotalsRow } from './statistics'
+import {
+  coverageColor, currentMskWeek, mskDateString, percentageColor, periodRange,
+  previousMskWeek, qualityColor, remediationMetricLabel, withTotalsRow,
+} from './statistics'
 import type { StatsDistrictRow } from '@/types'
 
 describe('statistics calendar helpers', () => {
@@ -46,6 +49,14 @@ describe('statistics calendar helpers', () => {
   it('does not colour an absent quality denominator as a failure', () => {
     expect(qualityColor(null, 'direct')).toBeUndefined()
     expect(qualityColor(null, 'inverse')).toBeUndefined()
+  })
+
+  it('formats remediation percentages as X из Y · N%', () => {
+    expect(remediationMetricLabel(5, 10, 50)).toBe('5 из 10 · 50%')
+  })
+
+  it('renders a missing remediation denominator as a neutral dash', () => {
+    expect(remediationMetricLabel(0, 0, null)).toBe('—')
   })
 
   it.each([

@@ -221,14 +221,14 @@ function RemediationTable({ rows, totals }: { rows: StatsDistrictRow[]; totals: 
     { key: 'issues_fixed_events', label: 'На финальной проверке', group: 'За период' },
     { key: 'issues_closed_events', label: 'Исправлено', group: 'За период' },
     { key: 'issues_revision_events', label: 'Доработка', group: 'За период' },
-    { key: 'issues_pending_final_current', label: 'На проверке', group: 'Сейчас' },
-    { key: 'issues_requires_work_current', label: 'Требуют работы', group: 'Сейчас' },
-    { key: 'issues_overdue_current', label: 'Просрочено', group: 'Сейчас' },
+    { key: 'issues_pending_final_current', label: 'На проверке', group: 'Состояние на конец периода' },
+    { key: 'issues_requires_work_current', label: 'Требуют работы', group: 'Состояние на конец периода' },
+    { key: 'issues_overdue_current', label: 'Просрочено', group: 'Состояние на конец периода' },
   ]
   const ordered = useMemo(() => [...rows].sort((a, b) => typeof a[sort] === 'number' ? Number(b[sort]) - Number(a[sort]) : String(a[sort]).localeCompare(String(b[sort]), 'ru')), [rows, sort])
-  const groups = ['За период', 'Сейчас']
+  const groups = ['За период', 'Состояние на конец периода']
   return <div className="card overflow-x-auto">
-    <p className="mb-3 text-sm text-slate-600">«Исправлено» — замечания, принятые окончательно. «На финальной проверке» — материалы переданы и ожидают решения. При отсутствии замечаний показатели не окрашиваются как проблемные.</p>
+    <p className="mb-3 text-sm text-slate-600">«Исправлено» — замечания, принятые окончательно за период. «На финальной проверке» — материалы, переданные за период и ожидающие решения. Правая часть — снимок статусов на конец выбранного периода в МСК (UTC+3), не сегодняшнее состояние карточек.</p>
     <table className="w-full min-w-[980px] text-xs border border-slate-300"><thead><tr>
       <th rowSpan={2} aria-sort={sort === 'district_name' ? 'ascending' : 'none'} className="border border-slate-300 bg-slate-100 p-0 text-left"><button type="button" onClick={() => setSort('district_name')} className="h-full w-full px-2 py-2 text-left font-semibold hover:bg-slate-200 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary-700">Район</button></th>
       {groups.map(group => <th key={group} colSpan={columns.filter(c => c.group === group).length} className={`border border-slate-300 p-2 ${group === 'За период' ? 'bg-orange-100 text-orange-950' : 'bg-slate-100 text-slate-800'}`}>{group}</th>)}
@@ -240,5 +240,5 @@ function RemediationTable({ rows, totals }: { rows: StatsDistrictRow[]; totals: 
 function Shtab({ params }: { params: { date_from: string; date_to: string; district_id?: string; all_time?: boolean } }) {
   const preview = useQuery({ queryKey:['shtab-preview', params], queryFn:() => statsApi.dashboard(params) })
   const download = () => toast.promise(statsApi.downloadShtab(params), { loading:'Формирую PPTX…', success:'PPTX скачан', error:'Ошибка выгрузки' })
-  return <div className="space-y-4"><div className="card flex flex-wrap items-end gap-3"><p className="text-sm text-gray-600">Используется выбранный выше период: {params.all_time ? 'всё время' : `${params.date_from} — ${params.date_to}`}</p><button onClick={download} className="btn-primary flex items-center gap-2"><Download className="w-4"/>Скачать PPTX</button></div>{preview.data ? <DistrictTable rows={preview.data.districts} totals={preview.data.totals}/> : <State text="Загрузка превью…"/>}</div>
+  return <div className="space-y-4"><div className="card flex flex-wrap items-end gap-3"><p className="text-sm text-gray-600">Используется выбранный выше период: {params.all_time ? 'всё время' : `${params.date_from} — ${params.date_to}`} · МСК (UTC+3)</p><button onClick={download} className="btn-primary flex items-center gap-2"><Download className="w-4"/>Скачать PPTX</button></div>{preview.data ? <DistrictTable rows={preview.data.districts} totals={preview.data.totals}/> : <State text="Загрузка превью…"/>}</div>
 }

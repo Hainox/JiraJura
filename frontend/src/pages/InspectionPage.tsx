@@ -39,6 +39,59 @@ function DraftPhotoThumb({ file, index, onRemove }: { file: File; index: number;
   )
 }
 
+// Фото, которое не удалось сохранить даже после автоматических повторов —
+// не исчезает тостом (пользователи в поле его не замечали, см. обращение
+// про пропавшие "фото ДО"), а остаётся на экране с крупной кнопкой, пока
+// человек сам не отправит его ещё раз или не уберёт панель.
+function FailedPhotoRetry({ file, onRetry, isRetrying }: { file: File; onRetry: () => void; isRetrying: boolean }) {
+  const [url, setUrl] = useState('')
+
+  useEffect(() => {
+    const nextUrl = URL.createObjectURL(file)
+    setUrl(nextUrl)
+    return () => URL.revokeObjectURL(nextUrl)
+  }, [file])
+
+  return (
+    <div className="flex flex-col items-center gap-1.5">
+      <div className="relative">
+        {url && <img src={url} alt="Фото не сохранилось" className="h-16 w-16 rounded-md object-cover border-2 border-red-400 opacity-70" />}
+        <span className="absolute inset-0 flex items-center justify-center">
+          <X className="w-7 h-7 text-red-600 drop-shadow" strokeWidth={3.5} />
+        </span>
+      </div>
+      <button
+        type="button"
+        onClick={onRetry}
+        disabled={isRetrying}
+        className="rounded-lg bg-red-600 px-2.5 py-1.5 text-xs font-bold text-white hover:bg-red-700 disabled:opacity-60 min-h-9"
+      >
+        {isRetrying ? 'Отправляем…' : 'Отправить ещё раз'}
+      </button>
+    </div>
+  )
+}
+
+// Автоматически повторяет отправку фото до 3 раз с паузой между попытками —
+// плохая связь в поле обычно "плавает" (пропадает на несколько секунд и
+// возвращается), и большинство сбоев так чинятся сами, без единого действия
+// от пользователя. Никогда не бросает исключение — либо ok:true, либо после
+// исчерпания попыток ok:false с тем же файлом, чтобы вызывающий код мог
+// показать file для повторной ручной отправки, а не просто потерять его.
+async function uploadPhotoWithRetry(issueId: string, file: File, attempts = 3): Promise<{ ok: boolean; file: File }> {
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      await issuesApi.uploadPhoto(issueId, file)
+      return { ok: true, file }
+    } catch {
+      if (attempt < attempts) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * 1500))
+      }
+    }
+  }
+  return { ok: false, file }
+}
+
 const STATUS_LABELS: Record<string, string> = {
   planned: 'Запланирован', in_progress: 'В процессе',
   completed: 'Завершён', issues_found: 'Есть нарушения', critical: 'Критический',
@@ -79,6 +132,10 @@ export default function InspectionPage() {
   const [issueCriticality, setIssueCriticality] = useState('medium')
   const [issueCategoryId, setIssueCategoryId] = useState('')
   const [issueDraftPhotos, setIssueDraftPhotos] = useState<File[]>([])
+  // Фото замечания, не сохранившиеся даже после автоповторов — держим
+  // сами File, чтобы отправить ещё раз можно было одним тапом, не заставляя
+  // человека заново искать снимок в галерее.
+  const [failedIssuePhotos, setFailedIssuePhotos] = useState<File[]>([])
   const [photos, setPhotos] = useState<PhotoOut[]>([])
   const [showPhotoPanel, setShowPhotoPanel] = useState(false)
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
@@ -283,22 +340,25 @@ export default function InspectionPage() {
         criticality: issueCriticality,
         category_id: issueCategoryId,
       })
-      const results = await Promise.allSettled(
-        issueDraftPhotos.map((file) => issuesApi.uploadPhoto(issue.id, file))
+      // uploadPhotoWithRetry сама пробует до 3 раз и никогда не бросает
+      // исключение — сюда долетают только уже окончательные результаты.
+      const results = await Promise.all(
+        issueDraftPhotos.map((file) => uploadPhotoWithRetry(issue.id, file))
       )
       return {
         issue,
-        uploaded: results.filter((result) => result.status === 'fulfilled').length,
-        failed: results.filter((result) => result.status === 'rejected').length,
+        uploaded: results.filter((r) => r.ok).length,
+        failed: results.filter((r) => !r.ok).map((r) => r.file),
       }
     },
     onSuccess: ({ issue, uploaded, failed }) => {
       setIssuePhotoCount(uploaded)
-      toast.success(
-        failed > 0
-          ? `Замечание создано, но ${failed} фото не загрузилось — добавьте его ещё раз`
-          : uploaded > 0 ? `Замечание и фото сохранены (${uploaded})` : 'Замечание создано'
-      )
+      setFailedIssuePhotos(failed)
+      // Про неудачные фото ничего не говорим тостом — он исчезает сам, и
+      // именно так эти фото раньше "терялись" незаметно для инспектора в
+      // поле. Вместо этого ниже остаётся постоянная плашка с кнопкой,
+      // пока фото не отправится или человек сам не закроет панель.
+      toast.success(uploaded > 0 ? `Замечание и фото сохранены (${uploaded})` : 'Замечание создано')
       setIssueTitle('')
       setIssueDesc('')
       setIssueCategoryId('')
@@ -314,19 +374,55 @@ export default function InspectionPage() {
   const uploadIssuePhotoMutation = useMutation({
     mutationFn: (file: File) => {
       if (!issuePhotoTargetId) return Promise.reject(new Error('no target issue'))
-      return issuesApi.uploadPhoto(issuePhotoTargetId, file)
+      return uploadPhotoWithRetry(issuePhotoTargetId, file)
     },
-    onSuccess: () => {
-      setIssuePhotoCount((c) => c + 1)
-      toast.success('Фото замечания загружено')
+    onSuccess: ({ ok, file }) => {
+      if (ok) {
+        setIssuePhotoCount((c) => c + 1)
+        toast.success('Фото замечания загружено')
+      } else {
+        // Автоповторы исчерпаны — фото остаётся видимым с кнопкой "Отправить
+        // ещё раз" ниже, а не пропадает вместе с тостом.
+        setFailedIssuePhotos((current) => [...current, file])
+      }
     },
     onError: (err) => toast.error(describeUploadError(err)),
+  })
+
+  const retryFailedPhotoMutation = useMutation({
+    mutationFn: (file: File) => {
+      if (!issuePhotoTargetId) return Promise.reject(new Error('no target issue'))
+      return uploadPhotoWithRetry(issuePhotoTargetId, file)
+    },
+    onSuccess: ({ ok, file }) => {
+      if (ok) {
+        setFailedIssuePhotos((current) => current.filter((f) => f !== file))
+        setIssuePhotoCount((c) => c + 1)
+        toast.success('Фото сохранено')
+      }
+      // Если снова не получилось — фото и так уже в failedIssuePhotos,
+      // кнопка просто остаётся на месте для следующей попытки.
+    },
+    onError: () => toast.error('Опять не получилось — проверьте интернет'),
   })
 
   const finishIssuePhotos = () => {
     setIssuePhotoTargetId(null)
     setIssuePhotoCount(0)
+    setFailedIssuePhotos([])
     setShowIssueForm(false)
+  }
+
+  // Не даём молча уйти с панели, пока есть не отправленные фото —
+  // спрашиваем максимально простыми словами, без технических терминов.
+  const handleFinishIssuePhotos = () => {
+    if (failedIssuePhotos.length > 0) {
+      const leaveAnyway = window.confirm(
+        `${failedIssuePhotos.length} ${failedIssuePhotos.length === 1 ? 'фото' : 'фото'} ещё не сохранилось. Закрыть, не дожидаясь отправки?`
+      )
+      if (!leaveAnyway) return
+    }
+    finishIssuePhotos()
   }
 
   const uploadGeneralPhotoMutation = useMutation({
@@ -855,6 +951,24 @@ export default function InspectionPage() {
               <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-xs text-green-800">
                 Замечание создано. Прикрепите фото нарушения — {issuePhotoCount > 0 ? `загружено: ${issuePhotoCount}` : 'пока без фото'}.
               </div>
+              {failedIssuePhotos.length > 0 && (
+                <div className="bg-red-50 border-2 border-red-300 rounded-xl p-3 space-y-2">
+                  <div className="text-sm font-bold text-red-800">
+                    {failedIssuePhotos.length === 1 ? 'Одно фото не сохранилось' : `${failedIssuePhotos.length} фото не сохранились`}
+                  </div>
+                  <div className="text-xs text-red-700">Бывает из-за плохой связи. Нажмите на кнопку под фото, чтобы отправить его ещё раз.</div>
+                  <div className="flex flex-wrap gap-3">
+                    {failedIssuePhotos.map((file, idx) => (
+                      <FailedPhotoRetry
+                        key={`${file.name}-${file.lastModified}-${idx}`}
+                        file={file}
+                        onRetry={() => retryFailedPhotoMutation.mutate(file)}
+                        isRetrying={retryFailedPhotoMutation.isPending && retryFailedPhotoMutation.variables === file}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
               <input
                 ref={issuePhotoInputRef} type="file" accept="image/*" className="hidden"
                 onChange={(e) => {
@@ -870,9 +984,9 @@ export default function InspectionPage() {
                   className="btn-outline flex-1 py-2 text-sm"
                 >
                   <Camera className="w-4 h-4 inline mr-1" />
-                  {issuePhotoCount > 0 ? 'Добавить ещё фото' : 'Сфотографировать'}
+                  {uploadIssuePhotoMutation.isPending ? 'Загружаем фото…' : issuePhotoCount > 0 ? 'Добавить ещё фото' : 'Сфотографировать'}
                 </button>
-                <button onClick={finishIssuePhotos} className="btn-primary py-2 px-4 text-sm">
+                <button onClick={handleFinishIssuePhotos} className="btn-primary py-2 px-4 text-sm">
                   Готово
                 </button>
               </div>

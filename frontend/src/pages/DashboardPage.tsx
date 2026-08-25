@@ -187,8 +187,8 @@ function DistrictTable({ rows, totals, onSelect }: { rows: StatsDistrictRow[]; t
     <table className="w-full min-w-[760px] text-xs border border-slate-300">
       <thead>
         <tr>
-          <th rowSpan={2} aria-sort={sort === 'district_name' ? 'ascending' : 'none'} className="border border-slate-300 bg-slate-100 p-0 text-left text-slate-800">
-            <button type="button" onClick={() => setSort('district_name')} className="h-full w-full px-3 py-2 text-left font-semibold hover:bg-slate-200 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary-700">
+          <th rowSpan={2} aria-sort={sort === 'district_name' ? 'ascending' : 'none'} className="border border-slate-300 bg-slate-100 p-0 text-center text-slate-800">
+            <button type="button" onClick={() => setSort('district_name')} className="h-full w-full px-3 py-2 text-center font-semibold hover:bg-slate-200 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary-700">
               Район
             </button>
           </th>
@@ -256,13 +256,13 @@ function RemediationTable({ rows, totals }: { rows: StatsDistrictRow[]; totals: 
   return <div className="card overflow-x-auto">
     <p className="mb-3 text-sm text-slate-600">Левая группа показывает поток событий за период. «Устранено из выявленных» считает, сколько замечаний, созданных в этом периоде, уже закрыты на его конец. «Доля требующих устранения» считает все замечания, созданные не позднее конца периода, и показывает, какая доля из них ещё требует работы. Всё считается в МСК (UTC+3).</p>
     <table className="w-full min-w-[980px] text-xs border border-slate-300"><thead><tr>
-      <th rowSpan={2} aria-sort={sort === 'district_name' ? 'ascending' : 'none'} className="border border-slate-300 bg-slate-100 p-0 text-left"><button type="button" onClick={() => setSort('district_name')} className="h-full w-full px-2 py-2 text-left font-semibold hover:bg-slate-200 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary-700">Район</button></th>
+      <th rowSpan={2} aria-sort={sort === 'district_name' ? 'ascending' : 'none'} className="border border-slate-300 bg-slate-100 p-0 text-center"><button type="button" onClick={() => setSort('district_name')} className="h-full w-full px-2 py-2 text-center font-semibold hover:bg-slate-200 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary-700">Район</button></th>
       {groups.map(group => <th key={group} colSpan={columns.filter(c => c.group === group).length} className={`border border-slate-300 p-2 ${group === 'Поток за период' ? 'bg-orange-100 text-orange-950' : group === 'Результат по замечаниям периода' ? 'bg-emerald-100 text-emerald-950' : 'bg-slate-100 text-slate-800'}`}>{group}</th>)}
     </tr><tr>{columns.map(({ key, label, group }) => <th key={key} className={`border border-slate-300 p-0 ${group === 'Поток за период' ? 'bg-orange-50' : group === 'Результат по замечаниям периода' ? 'bg-emerald-50' : 'bg-slate-50'}`}><button type="button" onClick={() => setSort(key)} className="w-full px-2 py-2 font-semibold hover:bg-slate-100">{label}</button></th>)}</tr></thead>
     <tbody>{withTotalsRow(ordered, totals).map(r => {
       const total = r.district_id === totals.district_id
       return <tr key={r.district_id} className={total ? 'bg-slate-700 text-center font-bold text-white' : 'text-center'}>
-        <td className="border border-slate-300 p-2 text-left">{total ? 'ИТОГО' : r.district_name}</td>
+        <td className="border border-slate-300 p-2 text-center">{total ? 'ИТОГО' : r.district_name}</td>
         {columns.map(({ key }) => {
           const metricKey = key === 'issues_cohort_closed_pct' || key === 'issues_requires_work_pct'
             ? key as RemediationMetricKey

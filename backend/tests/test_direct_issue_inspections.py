@@ -2,10 +2,13 @@
 
 import os
 import uuid
+from datetime import datetime, timedelta
 
 import psycopg2
 import pytest
 from httpx import AsyncClient
+
+from app.services.timezone import MSK
 
 
 SYNC_DB_URL = os.environ["DATABASE_URL"].replace("postgresql+asyncpg://", "postgresql://")
@@ -15,6 +18,19 @@ def _exec(sql: str, params=None) -> None:
     with psycopg2.connect(SYNC_DB_URL) as connection:
         with connection.cursor() as cursor:
             cursor.execute(sql, params or {})
+
+
+def _query_one(sql: str, params=None):
+    with psycopg2.connect(SYNC_DB_URL) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(sql, params or {})
+            return cursor.fetchone()
+
+
+# Тот же сид-шаблон, что используют тесты обходов (test_review_workflow_
+# integrity.py) — привязан к типу площадки "Детская площадка", как и сайты
+# из _create_site ниже.
+TEMPLATE_ID = "c0000000-0000-0000-0000-000000000001"
 
 
 async def _create_site(client: AsyncClient, admin_headers: dict[str, str]) -> str:
@@ -76,3 +92,56 @@ async def test_completion_status_is_derived_from_direct_issues(client: AsyncClie
     )
     assert completed.status_code == 200, completed.text
     assert completed.json()["status"] == "issues_found"
+
+
+@pytest.mark.asyncio
+async def test_new_issue_gets_a_due_date_by_criticality(client: AsyncClient, admin_headers):
+    """due_date раньше не проставлялся ни на одном пути создания — оставался
+    NULL, и вся "просрочка" (явно исключающая NULL) молча никогда не
+    срабатывала. Регрессия на срок по умолчанию: created_at (МСК) + SLA."""
+    site_id = await _create_site(client, admin_headers)
+    inspection = await client.post("/api/v1/inspections/", json={"site_id": site_id}, headers=admin_headers)
+    assert inspection.status_code == 200, inspection.text
+    inspection_id = inspection.json()["id"]
+    category = (await client.get("/api/v1/issues/categories", headers=admin_headers)).json()[0]
+
+    today_msk = datetime.now(MSK).date()
+    for criticality, sla_days in (("critical", 1), ("high", 3), ("medium", 7), ("low", 14)):
+        created = await client.post("/api/v1/issues/", json={
+            "inspection_id": inspection_id, "category_id": category["id"],
+            "title": f"Замечание {criticality}", "criticality": criticality,
+        }, headers=admin_headers)
+        assert created.status_code == 200, created.text
+        assert created.json()["due_date"] == str(today_msk + timedelta(days=sla_days)), criticality
+
+
+@pytest.mark.asyncio
+async def test_checklist_defect_issue_also_gets_a_due_date(client: AsyncClient, admin_headers):
+    """Второй путь создания замечания (автоматически из дефекта чек-листа,
+    inspections.py) должен получать срок так же, как и ручное создание —
+    та же криничность-к-дням функция (default_due_date), не своя копия."""
+    site_id = await _create_site(client, admin_headers)
+    item_id, is_critical = _query_one(
+        "SELECT id, is_critical FROM checklist_items WHERE template_id = %(t)s "
+        "AND requires_photo = FALSE ORDER BY sort_order LIMIT 1",
+        {"t": TEMPLATE_ID},
+    )
+
+    inspection = await client.post("/api/v1/inspections/", json={"site_id": site_id}, headers=admin_headers)
+    assert inspection.status_code == 200, inspection.text
+    inspection_id = inspection.json()["id"]
+
+    today_msk = datetime.now(MSK).date()
+    completed = await client.patch(
+        f"/api/v1/inspections/{inspection_id}",
+        json={"status": "completed", "answers": [{"checklist_item_id": str(item_id), "result": "defect"}]},
+        headers=admin_headers,
+    )
+    assert completed.status_code == 200, completed.text
+
+    issues = await client.get("/api/v1/issues/", params={"inspection_id": inspection_id}, headers=admin_headers)
+    assert issues.status_code == 200, issues.text
+    items = issues.json()["items"]
+    assert len(items) == 1
+    expected_days = 3 if is_critical else 7
+    assert items[0]["due_date"] == str(today_msk + timedelta(days=expected_days))

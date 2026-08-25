@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { MapContainer, TileLayer, Marker, Popup, useMap, AttributionControl } from 'react-leaflet'
 import MarkerClusterGroup from 'react-leaflet-cluster'
 import L from 'leaflet'
@@ -135,21 +135,57 @@ export default function MapPage() {
   })
   const allSitesTotal = allSitesCountData?.total ?? 0
 
-  // Загрузка обходов для режима проверки — page_size на максимуме, который
-  // разрешает бэкенд (le=1000 в list_inspections). При 200 старые обходы
-  // молча выпадали из очереди на проверку у активных/окружных проверяющих
-  // (реальная жалоба из поля — "не вижу обходы"), раз обходов по округу
-  // уже больше 2000. 1000 не решает проблему навсегда при дальнейшем росте,
-  // поэтому ниже отдельно показываем предупреждение, если even это не влезло.
-  const { data: inspectionsData } = useQuery<{ total: number; items: InspectionOut[] }>({
-    queryKey: ['inspections-review', effectiveDistrictFilter],
-    queryFn: () => inspectionsApi.list({ district_id: effectiveDistrictFilter, page_size: 1000 }),
+  // Обходы для режима проверки — раньше грузились одним запросом на
+  // page_size=1000 (максимум бэкенда, le=1000 в list_inspections) и
+  // фильтровались по вкладке уже на клиенте. При 200 старые обходы молча
+  // выпадали из очереди на проверку (реальная жалоба из поля — "не вижу
+  // обходы"); подняли до 1000 — тот же тупик наступил снова, когда обходов
+  // по округу стало больше 1000. Теперь вкладка сама определяет статус
+  // (см. reviewStatusParams) — сервер фильтрует и считает total по
+  // выбранной вкладке, а не по всей истории района, и "Показать ещё"
+  // догружает следующую страницу, а не молча теряет хвост.
+  const REVIEW_PAGE_SIZE = 1000
+  const reviewStatusParams: { status?: string; exclude_status?: string } =
+    reviewStatusFilter === 'all' ? {}
+    : reviewStatusFilter === 'pending' ? { exclude_status: 'completed' }
+    : { status: reviewStatusFilter }
+
+  const {
+    data: inspectionsPages,
+    fetchNextPage: fetchNextInspectionsPage,
+    hasNextPage: hasMoreInspections,
+    isFetchingNextPage: isLoadingMoreInspections,
+  } = useInfiniteQuery({
+    queryKey: ['inspections-review', effectiveDistrictFilter, reviewStatusFilter],
+    queryFn: ({ pageParam }) => inspectionsApi.list({
+      district_id: effectiveDistrictFilter, page_size: REVIEW_PAGE_SIZE, page: pageParam, ...reviewStatusParams,
+    }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage, allPages) => {
+      const loaded = allPages.reduce((sum, p) => sum + p.items.length, 0)
+      return loaded < lastPage.total ? allPages.length + 1 : undefined
+    },
     enabled: viewMode === 'review' && showReviewTab,
   })
 
+  // Отдельный лёгкий запрос (page_size=1, без фильтра по вкладке — тот же
+  // приём, что и allSitesCountData выше) только за общим числом обходов на
+  // проверку в районе, для бейджа на кнопке "Проверка" — он не должен
+  // прыгать в зависимости от того, какая вкладка сейчас выбрана.
+  const { data: reviewQueueCountData } = useQuery({
+    queryKey: ['inspections-review-count', effectiveDistrictFilter],
+    queryFn: () => inspectionsApi.list({ district_id: effectiveDistrictFilter, page_size: 1 }),
+    enabled: showReviewTab,
+  })
+  const reviewQueueTotal = reviewQueueCountData?.total ?? 0
+
   const sites = sitesData?.items ?? []
   const totalCount = sitesData?.total ?? sites.length
-  const allInspections = inspectionsData?.items ?? []
+  const allInspections = useMemo(
+    () => inspectionsPages?.pages.flatMap((p) => p.items) ?? [],
+    [inspectionsPages],
+  )
+  const inspectionsTotal = inspectionsPages?.pages[0]?.total ?? 0
 
   // Восстанавливаем позицию скролла списка площадок при возврате на вкладку
   // "Список" (напр. открыл площадку из середины списка, нажал "назад" —
@@ -219,13 +255,9 @@ export default function MapPage() {
     return map
   }, [districtInspectionsData?.items])
 
-  // Фильтруем обходы по статусу
-  const filteredInspections = allInspections.filter((insp) => {
-    if (reviewStatusFilter === 'all') return true
-    if (reviewStatusFilter === 'pending') return insp.status !== 'completed'
-    return insp.status === reviewStatusFilter
-  })
-  const bulkAcceptableIds = filteredInspections
+  // Фильтр по вкладке теперь применяется на сервере (reviewStatusParams
+  // выше) — allInspections уже содержит только нужный вкладке статус.
+  const bulkAcceptableIds = allInspections
     .filter((i) => !i.reviewed_by && i.status === 'completed' && (i.issues_count ?? 0) === 0)
     .map((i) => i.id)
 
@@ -381,8 +413,8 @@ export default function MapPage() {
             }`}
           >
             <ClipboardCheck className="w-4 h-4" /> Проверка
-            {allInspections.length > 0 && (
-              <span className="text-xs ml-0.5">({allInspections.length})</span>
+            {reviewQueueTotal > 0 && (
+              <span className="text-xs ml-0.5">({reviewQueueTotal})</span>
             )}
           </button>
         )}
@@ -391,14 +423,9 @@ export default function MapPage() {
       {/* Фильтр статусов для режима проверки */}
       {viewMode === 'review' && showReviewTab && (
         <div className="bg-white border-b px-4 py-2 shrink-0 space-y-2">
-          {inspectionsData && inspectionsData.total > allInspections.length && (
-            <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
-              Показаны не все обходы: {allInspections.length} из {inspectionsData.total} — обходов стало больше, чем помещается за раз. Сообщите администратору.
-            </div>
-          )}
           <div className="flex gap-2 overflow-x-auto">
             {[
-              { key: 'all', label: `Все (${allInspections.length})` },
+              { key: 'all', label: `Все (${inspectionsTotal})` },
               { key: 'pending', label: 'На проверку' },
               { key: 'completed', label: 'Принятые' },
               { key: 'issues_found', label: 'С нарушениями' },
@@ -533,10 +560,13 @@ export default function MapPage() {
           </div>
         ) : viewMode === 'review' && showReviewTab ? (
           <InspectionReviewList
-            inspections={filteredInspections}
+            inspections={allInspections}
             emptyLabel={reviewStatusFilter !== 'all' ? 'Нет обходов с этим статусом' : 'Нет обходов для проверки'}
             onAccept={(id) => guardDemoAction(() => acceptInspectionMutation.mutate(id))}
             acceptPending={acceptInspectionMutation.isPending}
+            hasMore={hasMoreInspections}
+            loadingMore={isLoadingMoreInspections}
+            onLoadMore={() => fetchNextInspectionsPage()}
           />
         ) : viewMode === 'map' ? (
           <MapContainer center={center} zoom={12} className="h-full w-full" attributionControl={false}>

@@ -124,6 +124,7 @@ async def list_inspections(
     site_id: Optional[str] = Query(None),
     inspector_id: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
+    exclude_status: Optional[str] = Query(None),
     district_id: Optional[str] = Query(None),
     all_in_district: bool = Query(False),
     page: int = Query(1, ge=1),
@@ -142,6 +143,12 @@ async def list_inspections(
         base = base.where(Inspection.site_id == site_id)
     if status:
         base = base.where(Inspection.status == status)
+    # Для вкладки "На проверку" у проверяющего (MapPage) — "всё, что ещё не
+    # завершено" не сводится к одному значению status, а status уже занят
+    # проверкой на равенство выше — отдельный параметр вместо, например,
+    # status=!completed.
+    if exclude_status:
+        base = base.where(Inspection.status != exclude_status)
 
     # all_in_district=True — инспектор просит обходы всего своего района,
     # не только свои: чтобы видеть, что площадку уже обошёл коллега, и не

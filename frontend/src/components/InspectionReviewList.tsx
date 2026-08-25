@@ -17,12 +17,15 @@ const STATUS_COLORS: Record<string, string> = {
 // Список обходов на приёмку — общий для вкладки "Проверка" у проверяющего
 // (MapPage) и отдельного экрана "Приёмка обходов" у админа (AdminReviewsPage).
 export default function InspectionReviewList({
-  inspections, emptyLabel, onAccept, acceptPending,
+  inspections, emptyLabel, onAccept, acceptPending, hasMore, loadingMore, onLoadMore,
 }: {
   inspections: InspectionOut[]
   emptyLabel: string
   onAccept: (inspectionId: string) => void
   acceptPending: boolean
+  hasMore?: boolean
+  loadingMore?: boolean
+  onLoadMore?: () => void
 }) {
   const navigate = useNavigate()
 
@@ -121,6 +124,15 @@ export default function InspectionReviewList({
       })}
       {inspections.length === 0 && (
         <div className="text-center text-gray-400 py-12">{emptyLabel}</div>
+      )}
+      {hasMore && (
+        <button
+          onClick={onLoadMore}
+          disabled={loadingMore}
+          className="btn-outline w-full text-sm py-2 disabled:opacity-50"
+        >
+          {loadingMore ? 'Загружаем…' : 'Показать ещё'}
+        </button>
       )}
     </div>
   )

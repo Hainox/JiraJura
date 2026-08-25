@@ -31,11 +31,11 @@ const districtColumns: { key: keyof StatsDistrictRow; label: string; group?: Dis
   { key: 'total_sites', label: 'Площадок', group: 'sites', groupStart: true },
   { key: 'sites_inspected', label: 'Проверено', group: 'sites' },
   { key: 'coverage_pct', label: 'Охват %', group: 'sites' },
-  { key: 'clean_sites_pct', label: 'Чистые', group: 'quality', groupStart: true },
-  { key: 'defect_sites_pct', label: 'С нарушениями', group: 'quality' },
+  { key: 'clean_sites_pct', label: 'Чистые площадки', group: 'quality', groupStart: true },
+  { key: 'defect_sites_pct', label: 'Площадки с нарушениями', group: 'quality' },
   { key: 'inspections_total', label: 'Обходов', group: 'inspections', groupStart: true },
   { key: 'inspections_green', label: 'Без нарушений', group: 'inspections' },
-  { key: 'inspections_with_defects', label: 'С наруш.', group: 'inspections' },
+  { key: 'inspections_with_defects', label: 'С нарушениями', group: 'inspections' },
 ]
 
 const tabs: [Tab, string][] = [
@@ -131,14 +131,14 @@ function Kpi({ label, value, detail }: { label: string; value: number | string; 
 function Overview({ total: t }: { total: StatsDistrictRow }) {
   const funnel = [
     { name: 'Выявлено', value: t.issues_found }, { name: 'Не устранено', value: t.issues_not_fixed },
-    { name: 'В работе', value: t.issues_in_work }, { name: 'На проверке', value: t.issues_on_check },
+    { name: 'В работе', value: t.issues_in_work }, { name: 'На проверке сейчас', value: t.issues_on_check },
     { name: 'Устранено', value: t.issues_closed },
   ]
   const coverage = [{ name: 'Проверено', value: t.sites_inspected }, { name: 'Не проверено', value: Math.max(0, t.total_sites - t.sites_inspected) }]
   return <div className="space-y-4">
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       <Kpi label="Площадок" value={t.total_sites} /><Kpi label="Охват" value={`${t.coverage_pct}%`} detail={`${t.sites_inspected} из ${t.total_sites} площадок проверено`} />
-      <Kpi label="Обходов" value={t.inspections_total} /><Kpi label="Зелёных" value={t.inspections_green} />
+      <Kpi label="Обходов" value={t.inspections_total} /><Kpi label="Без нарушений" value={t.inspections_green} />
       <Kpi label="С нарушениями" value={t.inspections_with_defects} /><Kpi label="Выявлено за период" value={t.issues_found} />
       <Kpi label="На финальной проверке" value={t.issues_fixed_events} /><Kpi label="Исправлено за период" value={t.issues_closed_events} />
       <Kpi label="Возвращено на доработку" value={t.issues_revision_events} /><Kpi label="Просрочено на конец периода" value={t.issues_overdue_current} />
@@ -151,13 +151,13 @@ function Overview({ total: t }: { total: StatsDistrictRow }) {
 }
 function ChartCard({ title, children }: { title: string; children: React.ReactNode }) { return <div className="card"><h2 className="font-semibold mb-3">{title}</h2>{children}</div> }
 function Dynamics({ data }: { data: { date: string; inspections: number; issues_found: number; closure_events: number }[] }) {
-  return <div className="space-y-4"><ChartCard title="Динамика по дням"><ResponsiveContainer width="100%" height={330}><LineChart data={data}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="date"/><YAxis allowDecimals={false}/><Tooltip/><Legend/><Line dataKey="inspections" name="Обходы" stroke="#2563EB"/><Line dataKey="issues_found" name="Выявлено" stroke="#E06666"/><Line dataKey="closure_events" name="Устранено" stroke="#63BE7B"/></LineChart></ResponsiveContainer></ChartCard>
-    <div className="card overflow-x-auto"><table className="w-full text-sm"><thead><tr><th>Дата</th><th>Обходы</th><th>Выявлено</th><th>Устранено</th></tr></thead><tbody>{data.map(d => <tr className="border-t text-center" key={d.date}><td className="p-2">{d.date}</td><td>{d.inspections}</td><td>{d.issues_found}</td><td>{d.closure_events}</td></tr>)}</tbody></table></div></div>
+  return <div className="space-y-4"><ChartCard title="Динамика по дням"><ResponsiveContainer width="100%" height={330}><LineChart data={data}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="date"/><YAxis allowDecimals={false}/><Tooltip/><Legend/><Line dataKey="inspections" name="Обходы" stroke="#2563EB"/><Line dataKey="issues_found" name="Выявлено" stroke="#E06666"/><Line dataKey="closure_events" name="Исправлено" stroke="#63BE7B"/></LineChart></ResponsiveContainer></ChartCard>
+    <div className="card overflow-x-auto"><table className="w-full text-sm"><thead><tr><th>Дата</th><th>Обходы</th><th>Выявлено</th><th>Исправлено</th></tr></thead><tbody>{data.map(d => <tr className="border-t text-center" key={d.date}><td className="p-2">{d.date}</td><td>{d.inspections}</td><td>{d.issues_found}</td><td>{d.closure_events}</td></tr>)}</tbody></table></div></div>
 }
 function Categories({ data }: { data: { category_id: string; name: string; found: number; closed: number; not_fixed: number; overdue: number; closed_pct: number }[] }) {
   const sorted = [...data].sort((a, b) => b.found - a.found)
   return <div className="space-y-4"><ChartCard title="Нарушения по категориям"><ResponsiveContainer width="100%" height={360}><BarChart data={sorted} layout="vertical"><CartesianGrid strokeDasharray="3 3"/><XAxis type="number"/><YAxis dataKey="name" type="category" width={150}/><Tooltip/><Bar dataKey="found" name="Выявлено" fill="#9E2B25"/></BarChart></ResponsiveContainer></ChartCard>
-    <div className="card overflow-x-auto"><table className="w-full text-sm"><thead><tr><th>Категория</th><th>Выявлено</th><th>Устранено</th><th>Не устранено</th><th>Просрочено</th><th>%</th></tr></thead><tbody>{data.map(r => <tr className="border-t text-center" key={r.category_id}><td className="p-2 text-left">{r.name}</td><td>{r.found}</td><td>{r.closed}</td><td>{r.not_fixed}</td><td>{r.overdue}</td><td style={{background:percentageColor(r.closed_pct)}}>{r.closed_pct}%</td></tr>)}</tbody></table></div></div>
+    <div className="card overflow-x-auto"><table className="w-full text-sm"><thead><tr><th>Категория</th><th>Выявлено</th><th>Устранено</th><th>Не устранено</th><th>Просрочено сейчас</th><th>%</th></tr></thead><tbody>{data.map(r => <tr className="border-t text-center" key={r.category_id}><td className="p-2 text-left">{r.name}</td><td>{r.found}</td><td>{r.closed}</td><td>{r.not_fixed}</td><td>{r.overdue}</td><td style={{background:percentageColor(r.closed_pct)}}>{r.closed_pct}%</td></tr>)}</tbody></table></div></div>
 }
 
 function remediationMetricMeta(row: StatsDistrictRow, key: RemediationMetricKey) {
@@ -244,7 +244,7 @@ function RemediationTable({ rows, totals }: { rows: StatsDistrictRow[]; totals: 
     { key: 'issues_found', label: 'Выявлено', group: 'Поток за период' },
     { key: 'issues_fixed_events', label: 'На финальной проверке', group: 'Поток за период' },
     { key: 'issues_closed_events', label: 'Исправлено', group: 'Поток за период' },
-    { key: 'issues_revision_events', label: 'Доработка', group: 'Поток за период' },
+    { key: 'issues_revision_events', label: 'Возвращено на доработку', group: 'Поток за период' },
     { key: 'issues_cohort_closed_pct', label: 'Устранено из выявленных', group: 'Результат по замечаниям периода' },
     { key: 'issues_pending_final_current', label: 'На проверке', group: 'Состояние на конец периода' },
     { key: 'issues_requires_work_current', label: 'Требуют работы', group: 'Состояние на конец периода' },

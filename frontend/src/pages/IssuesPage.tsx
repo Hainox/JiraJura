@@ -334,8 +334,12 @@ export default function IssuesPage() {
                           </select>
                         )}
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex items-center gap-2">
+                        <label htmlFor={`due-date-${issue.id}`} className="text-xs text-gray-500 shrink-0">
+                          Срок устранения
+                        </label>
                         <input
+                          id={`due-date-${issue.id}`}
                           type="date"
                           className="input-field text-sm flex-1"
                           value={editDueDate}

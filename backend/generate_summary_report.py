@@ -272,6 +272,13 @@ async def fetch_all(db: AsyncSession) -> dict:
     ]
 
     # ── Просроченные замечания ──
+    # 'overdue' как значение status — с V2 мёртвый литерал: миграция
+    # d1e2f3a4b5c6 перевела все такие записи в open/assigned и статус
+    # больше никогда не проставляется в 'overdue' (просрочка теперь
+    # выводится из due_date, не хранится). Этот WHERE раньше всегда отдавал
+    # пустой лист "Просроченные замечания" — синхронизировано с тем же
+    # определением, что и everywhere else (OVERDUE_STATUSES в
+    # app/services/statistics/definitions.py, list_issues в issues.py).
     overdue = (await db.execute(text(
         "SELECT iss.title, dist.name AS dist_name, c.name AS court_name, author.full_name AS author_name, "
         "iss.created_at, iss.due_date, iss.description "
@@ -280,7 +287,10 @@ async def fetch_all(db: AsyncSession) -> dict:
         "JOIN courtyards c ON c.id = s.courtyard_id "
         "JOIN districts dist ON dist.id = c.district_id "
         "JOIN users author ON author.id = iss.created_by "
-        "WHERE iss.status = 'overdue' ORDER BY iss.due_date"
+        "WHERE iss.status IN ('open', 'assigned', 'in_work', 'revision_needed') "
+        "AND iss.due_date IS NOT NULL "
+        "AND iss.due_date < (now() AT TIME ZONE 'Europe/Moscow')::date "
+        "ORDER BY iss.due_date"
     ))).fetchall()
     data["overdue_rows"] = [
         (r.title, r.dist_name, r.court_name, r.author_name,

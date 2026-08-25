@@ -22,6 +22,7 @@ from app.services.auth import get_current_user
 from app.services.permissions import require_role, check_own_or_role, in_district_scope
 from app.services.audit import log_action
 from app.services.timezone import MSK
+from app.services.issues import default_due_date
 
 router = APIRouter()
 
@@ -126,6 +127,7 @@ async def create_issue(
         category_id=category.id,
         status="open",
         created_by=current_user.id,
+        due_date=default_due_date(data.criticality),
     )
 
     db.add(issue)

@@ -25,6 +25,7 @@ from app.schemas import (
 )
 from app.services.auth import get_current_user
 from app.services.audit import log_action
+from app.services.issues import default_due_date
 
 router = APIRouter()
 
@@ -480,6 +481,7 @@ async def update_inspection(
                 item = items_by_id.get(item_id)
                 if not item:
                     continue
+                criticality = "high" if item.is_critical else "medium"
                 db.add(Issue(
                     inspection_id=inspection_id,
                     site_id=obj.site_id,
@@ -487,9 +489,10 @@ async def update_inspection(
                     category_id=item.category_id,
                     title=item.question,
                     description=answer.comment,
-                    criticality="high" if item.is_critical else "medium",
+                    criticality=criticality,
                     status="open",
                     created_by=current_user.id,
+                    due_date=default_due_date(criticality),
                 ))
 
     # Пункты чек-листа с requires_photo=TRUE (например «Фото общего вида

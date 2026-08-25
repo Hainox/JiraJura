@@ -14,14 +14,15 @@ COPY schema.sql .
 COPY *.py ./
 COPY *.csv ./
 COPY alembic/ ./alembic/
-RUN mkdir -p /app/uploads
+COPY docker-entrypoint.sh .
+RUN chmod +x docker-entrypoint.sh && mkdir -p /app/uploads
 
 EXPOSE 8000
-# --forwarded-allow-ips '*' — без этого uvicorn доверяет X-Forwarded-Proto/Host
-# только от 127.0.0.1 (свой дефолт), а nginx подключается по внутренней
-# docker-сети со своим IP контейнера; без доверия эти заголовки игнорируются,
-# и request.url в pdf_report.py собирается как http://<внутренний хост>:8000
-# вместо реального https://.../ :8443 — там на это завязаны ссылки на фото.
-# Безопасно: порт api не публикуется наружу (см. docker-compose.prod.yml) —
-# достучаться до него может только proxy-контейнер той же сети.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--forwarded-allow-ips", "*"]
+# Миграции применяются автоматически на старте контейнера
+# (docker-entrypoint.sh), а не отдельной ручной командой после деплоя —
+# "alembic upgrade head" уже трижды забывали прогнать после git pull/build/up
+# на проде, и код, рассчитывающий на ещё не применённую миграцию (например,
+# enum-значение 'issue_fix' в photo_target), падал 500-й на реальных
+# пользователях в поле. Все миграции в проекте идемпотентны (IF NOT EXISTS),
+# так что повторный прогон на каждом рестарте контейнера безопасен.
+ENTRYPOINT ["./docker-entrypoint.sh"]

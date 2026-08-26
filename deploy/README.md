@@ -214,7 +214,9 @@ rm -rf /opt/jirajura/rosters
 Ссылка-приглашение действует 72 часа; если не успели раздать (или человек
 не смог зайти), не создавайте новое приглашение вручную под другим
 логином — переиздайте существующее (сохраняет логин/ФИО/роль/район,
-только новый токен, срок продлевается до 30 дней):
+только новый токен, срок продлевается до 30 дней). Точечно, на одну
+запись — прямо из интерфейса («Пользователи» → «Приглашения» → значок
+переиздания); массово, по всем/по району — CLI:
 ```bash
 docker compose -f docker-compose.prod.yml exec api python reissue_invites.py                      # dry-run, отчёт
 docker compose -f docker-compose.prod.yml exec api python reissue_invites.py --apply --out /app/exports/reissued.csv
@@ -232,7 +234,8 @@ docker compose -f docker-compose.prod.yml exec api python reissue_invites.py --d
 рассылки — каждый читает БД напрямую (`DATABASE_URL`), запускать так же
 через `docker compose ... exec api python <script>.py`:
 - `roster_district_status.py` — сверка списка по району с фактической регистрацией
-- `diagnose_logins.py` — почему конкретный логин не может зайти
+- `diagnose_logins.py` — почему конкретный логин не может зайти (то же самое —
+  в интерфейсе, «Разработчик» → «Диагностика», без захода по SSH)
 - `verify_invite_links.py` — проверка, что все выданные ссылки рабочие
 - `fix_passwords.py` / `reset_shared_passwords.py` — точечный/массовый сброс пароля
 - `production_status_report.py` / `generate_summary_report.py` — сводка по округу в консоль/xlsx
@@ -309,6 +312,45 @@ docker compose -f docker-compose.prod.yml run --rm api alembic upgrade head
 в течение ~10 секунд после пересборки, отдельный `restart proxy` для этого не нужен.
 Перезапускать `proxy` вручную нужно, только если менялся сам
 `proxy.conf.template`/`http-only.conf.template`.
+
+## 10. Деплой по клику из веб-интерфейса («Разработчик» → «Деплой»)
+
+Раздел «Разработчик» (доступен только вашему аккаунту — `is_developer=true`,
+см. «Пользователи») умеет отправлять запрос на редеплой прямо из браузера,
+без захода по SSH. Сам API-контейнер ничего не исполняет на хосте (не имеет
+доступа ни к docker-сокету, ни к файлам вне себя) — кнопка только пишет
+маркер в БД (`audit_log`, `action='deploy_requested'`). Реальные команды
+(`git pull && build && up -d && alembic upgrade head` — тот же набор, что и
+в п.9 выше) выполняет отдельный скрипт на хосте, который нужно один раз
+поставить в cron:
+
+```bash
+(crontab -l 2>/dev/null; echo "* * * * * bash /opt/jirajura/deploy/scripts/deploy-watcher.sh >> /var/log/jirajura-deploy-watcher.log 2>&1") | crontab -
+```
+(запуск через `bash ...`, а не `./...` — файл, добавленный через API, не приносит с собой исполняемый бит; при желании можно один раз `chmod +x deploy/scripts/deploy-watcher.sh` и убрать `bash` из команды, но это не обязательно)
+
+Раз в минуту скрипт проверяет, не появился ли новый маркер, и если да —
+выполняет обновление и пишет результат (успех/провал + хвост лога) обратно
+в `audit_log` (`action='deploy_completed'`) — результат виден в самом
+разделе «Разработчик» в приложении. Состояние («что уже обработано») —
+локальный файл `/opt/jirajura/.deploy-watcher-state`, не путать с бэкапами,
+удалять не нужно.
+
+Первый запуск стоит проверить вручную, не дожидаясь cron:
+```bash
+cd /opt/jirajura
+bash deploy/scripts/deploy-watcher.sh   # без маркеров — молча завершится, это нормально
+```
+
+Так же вручную можно посмотреть, что скрипт видит и как считает маркеры:
+```bash
+docker compose -f docker-compose.prod.yml exec -T api python list_deploy_requests.py --since 1970-01-01T00:00:00+00:00
+```
+
+⚠️ Файл `.deploy-watcher-state` создаётся автоматически при первом запуске;
+если его удалить, следующий запуск заново обработает все прошлые маркеры
+из истории — это безвредно (git pull/build/up/alembic сами по себе
+идемпотентны), но лишний прогон деплоя лучше не устраивать без повода.
 
 ---
 

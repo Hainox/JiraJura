@@ -208,6 +208,25 @@ export function describePasswordError(error: unknown): string {
   return 'Не удалось сменить пароль. Попробуйте ещё раз.'
 }
 
+// Пользователь сообщил, что «обход не завершается» — расследование показало,
+// что PATCH /inspections/{id} действительно может вернуть конкретную причину
+// (нужно фото для requires_photo-пункта, обход уже проверен и недоступен для
+// правки и т.п.), но save/complete/review/return в InspectionPage глотали её
+// в один и тот же безликий «Ошибка завершения»/«Ошибка сохранения» —
+// ни пользователю, ни при разборе жалобы постфактум не было видно, что
+// именно отклонил сервер. Тот же приём, что уже используется в
+// describeRegistrationError/describePasswordError.
+export function describeInspectionUpdateError(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.code === 'ECONNABORTED') return 'Превышено время ожидания — проверьте связь и попробуйте ещё раз'
+    if (!error.response) return 'Нет соединения с сервером — проверьте интернет'
+    const data = error.response.data as { detail?: unknown } | null
+    const detail = typeof data?.detail === 'string' ? data.detail : ''
+    if (detail) return detail
+  }
+  return 'Не удалось сохранить обход. Попробуйте ещё раз.'
+}
+
 // ── Auth ──
 export const authApi = {
   login: (data: LoginRequest) =>

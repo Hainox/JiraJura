@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { inspectionsApi, checklistsApi, issuesApi, reportsApi, describeUploadError } from '@/lib/api'
+import { inspectionsApi, checklistsApi, issuesApi, reportsApi, describeUploadError, describeInspectionUpdateError } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
 import type { InspectionOut, ChecklistTemplateOut, ChecklistItemOut, PhotoOut, IssueOut } from '@/types'
 import {
@@ -283,7 +283,7 @@ export default function InspectionPage() {
       // узнаёт о нём до перезагрузки страницы.
       queryClient.invalidateQueries({ queryKey: ['issues', inspectionId] })
     },
-    onError: () => toast.error('Ошибка сохранения'),
+    onError: (err) => toast.error(describeInspectionUpdateError(err)),
   })
 
   const reviewMutation = useMutation({
@@ -295,7 +295,7 @@ export default function InspectionPage() {
       queryClient.invalidateQueries({ queryKey: ['inspections', inspection?.site_id] })
       setShowReviewPanel(false)
     },
-    onError: () => toast.error('Ошибка'),
+    onError: (err) => toast.error(describeInspectionUpdateError(err)),
   })
 
   const completeMutation = useMutation({
@@ -316,7 +316,7 @@ export default function InspectionPage() {
       queryClient.invalidateQueries({ queryKey: ['my-inspections-history'] })
       navigate(`/sites/${inspection!.site_id}`)
     },
-    onError: () => toast.error('Ошибка завершения'),
+    onError: (err) => toast.error(describeInspectionUpdateError(err)),
   })
 
   const returnMutation = useMutation({
@@ -328,7 +328,7 @@ export default function InspectionPage() {
       queryClient.invalidateQueries({ queryKey: ['inspections', inspection?.site_id] })
       setShowReviewPanel(false)
     },
-    onError: () => toast.error('Ошибка'),
+    onError: (err) => toast.error(describeInspectionUpdateError(err)),
   })
 
   const createIssueMutation = useMutation({

@@ -74,9 +74,17 @@ ufw status
 cp deploy/nginx/http-only.conf.template deploy/nginx/active.conf.template
 docker compose -f docker-compose.prod.yml build
 docker compose -f docker-compose.prod.yml up -d
-docker compose -f docker-compose.prod.yml run --rm api alembic upgrade head
 docker compose -f docker-compose.prod.yml ps
 ```
+
+Миграции применяются автоматически при старте контейнера `api`
+(`backend/docker-entrypoint.sh` перед запуском uvicorn сам гоняет
+`alembic upgrade head`) — отдельно вызывать
+`docker compose run --rm api alembic upgrade head` не нужно, и это **не
+сработает как ожидается**: тот же entrypoint безусловно завершается
+`exec uvicorn`, так что такая команда провисит в foreground на запущенном
+сервере, пока её не прервут Ctrl+C, вместо того чтобы просто применить
+миграции и выйти.
 
 Проверка: `curl -I http://obhod-sao.ru/` должен отдать фронтенд.
 
@@ -91,7 +99,6 @@ cd /opt/jirajura
 docker compose -f docker-compose.prod.yml exec db pg_dump -U postgres -Fc sao_inspection > backup-before-unified-issues.dump
 git pull --ff-only
 docker compose -f docker-compose.prod.yml build
-docker compose -f docker-compose.prod.yml run --rm api alembic upgrade head
 docker compose -f docker-compose.prod.yml up -d
 docker compose -f docker-compose.prod.yml exec api alembic current
 ```
@@ -303,8 +310,16 @@ cd /opt/jirajura
 git pull origin main
 docker compose -f docker-compose.prod.yml build
 docker compose -f docker-compose.prod.yml up -d
-docker compose -f docker-compose.prod.yml run --rm api alembic upgrade head
 ```
+
+Миграции применяет сам контейнер `api` при старте — `docker-entrypoint.sh`
+гоняет `alembic upgrade head` перед запуском uvicorn на каждом старте
+контейнера, повторный прогон безопасен (все миграции идемпотентны). Отдельно
+вызывать `docker compose run --rm api alembic upgrade head` **не нужно и не
+сработает как ожидается**: entrypoint безусловно завершается `exec uvicorn`
+после миграций, так что такая команда не завершится сама — провиснет в
+foreground на запущенном сервере, пока её не прервут Ctrl+C. Проверить
+применённую ревизию: `docker compose -f docker-compose.prod.yml exec api alembic current`.
 
 `deploy/nginx/proxy.conf.template` использует Docker DNS-резолвер
 (`resolver 127.0.0.11 valid=10s;` + `set $api_upstream` + явный `$request_uri` в
@@ -320,9 +335,10 @@ docker compose -f docker-compose.prod.yml run --rm api alembic upgrade head
 без захода по SSH. Сам API-контейнер ничего не исполняет на хосте (не имеет
 доступа ни к docker-сокету, ни к файлам вне себя) — кнопка только пишет
 маркер в БД (`audit_log`, `action='deploy_requested'`). Реальные команды
-(`git pull && build && up -d && alembic upgrade head` — тот же набор, что и
-в п.9 выше) выполняет отдельный скрипт на хосте, который нужно один раз
-поставить в cron:
+(`git pull && build && up -d` — тот же набор, что и в п.9 выше; миграции
+применяются автоматически контейнером `api` при старте, отдельного
+`alembic upgrade head` в этой последовательности намеренно нет — см. п.9)
+выполняет отдельный скрипт на хосте, который нужно один раз поставить в cron:
 
 ```bash
 (crontab -l 2>/dev/null; echo "* * * * * bash /opt/jirajura/deploy/scripts/deploy-watcher.sh >> /var/log/jirajura-deploy-watcher.log 2>&1") | crontab -
@@ -349,8 +365,8 @@ docker compose -f docker-compose.prod.yml exec -T api python list_deploy_request
 
 ⚠️ Файл `.deploy-watcher-state` создаётся автоматически при первом запуске;
 если его удалить, следующий запуск заново обработает все прошлые маркеры
-из истории — это безвредно (git pull/build/up/alembic сами по себе
-идемпотентны), но лишний прогон деплоя лучше не устраивать без повода.
+из истории — это безвредно (git pull/build/up идемпотентны), но лишний
+прогон деплоя лучше не устраивать без повода.
 
 ---
 

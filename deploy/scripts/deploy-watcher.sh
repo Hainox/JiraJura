@@ -3,8 +3,10 @@
 # «Разработчик» в приложении → POST /api/v1/system/deploy/request пишет
 # action='deploy_requested' в audit_log) и выполняет тот же фиксированный
 # набор команд, что и ручное обновление по README.md, п.9 — git pull,
-# build, up -d, alembic upgrade head. Ничего произвольного не исполняет —
-# набор команд задан прямо в этом файле, не приходит из БД/сети.
+# build, up -d (миграции применяет сам контейнер api при старте, см.
+# docker-entrypoint.sh — отдельный `alembic upgrade head` не нужен и не
+# сработает как отдельная команда, см. п.9 README.md). Ничего произвольного
+# не исполняет — набор команд задан прямо в этом файле, не приходит из БД/сети.
 #
 # api НЕ имеет доступа ни к docker-сокету, ни к этому файлу — весь обмен
 # с ним идёт только через строки в audit_log (list_deploy_requests.py /
@@ -42,7 +44,6 @@ while IFS=$'\t' read -r ENTITY_ID CREATED_AT; do
     git pull --ff-only origin main
     $COMPOSE build
     $COMPOSE up -d
-    $COMPOSE run --rm api alembic upgrade head
   } >"$LOG_TMP" 2>&1; then
     STATUS_FLAG=--ok
   else

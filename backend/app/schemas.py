@@ -122,6 +122,24 @@ class InviteCompleteRequest(BaseModel):
     password: str = Field(min_length=8, max_length=72)
 
 
+class UserInviteAdminOut(BaseModel):
+    """Приглашение для списка в разделе «Пользователи» — включая уже
+    использованные/истёкшие (в отличие от UserInvitePending, которым
+    пользуются bulk_invite.py и форма приглашения — тем нужны только
+    активные)."""
+    id: UUID
+    login: str
+    full_name: str
+    role: str
+    district_id: Optional[UUID] = None
+    created_at: datetime
+    expires_at: datetime
+    used_at: Optional[datetime] = None
+    status: Literal["pending", "expired", "used"]
+
+    model_config = {"from_attributes": True}
+
+
 # ── Районы ─────────────────────────────────────────────────────
 
 class DistrictOut(BaseModel):

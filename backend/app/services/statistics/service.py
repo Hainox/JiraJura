@@ -2,7 +2,7 @@
 
 from datetime import timedelta, timezone, datetime
 
-from sqlalchemy import Date, cast, func, select
+from sqlalchemy import Date, cast, func, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -17,6 +17,13 @@ from app.services.timezone import MSK
 from .definitions import DONE_STATUSES, NIL_UUID, ON_CHECK_STATUSES, OVERDUE_STATUSES, percent
 from .filters import StatisticsFilter
 from .queries import issue_bucket_columns
+
+
+def _site_type_clause(f: StatisticsFilter):
+    """true() — SQL-нейтральный no-op, когда фильтр по типу площадки не
+    задан, чтобы можно было включать в .where(...) как обычный аргумент
+    без ветвления в каждом запросе (все они уже джойнят Site)."""
+    return Site.type == f.site_type if f.site_type else true()
 
 
 class StatisticsService:
@@ -40,7 +47,7 @@ class StatisticsService:
         site_counts = dict((await self.db.execute(
             select(Courtyard.district_id, func.count(Site.id))
             .join(Site, Site.courtyard_id == Courtyard.id)
-            .where(Site.is_active.is_(True), Courtyard.district_id.in_(ids))
+            .where(Site.is_active.is_(True), Courtyard.district_id.in_(ids), _site_type_clause(f))
             .group_by(Courtyard.district_id)
         )).all()) if ids else {}
 
@@ -87,6 +94,7 @@ class StatisticsService:
             .where(
                 latest_inspections.c.rank == 1,
                 Courtyard.district_id.in_(ids),
+                _site_type_clause(f),
             )
             .group_by(Courtyard.district_id)
         )).all() if ids else []
@@ -108,6 +116,7 @@ class StatisticsService:
                 Inspection.completed_at >= f.start_utc,
                 Inspection.completed_at < f.end_utc,
                 Courtyard.district_id.in_(ids),
+                _site_type_clause(f),
             )
             .group_by(Courtyard.district_id)
         )).all() if ids else []
@@ -122,6 +131,7 @@ class StatisticsService:
                 Issue.created_at >= f.start_utc,
                 Issue.created_at < f.end_utc,
                 Courtyard.district_id.in_(ids),
+                _site_type_clause(f),
             )
             .group_by(Courtyard.district_id)
         )).all() if ids else []
@@ -151,6 +161,7 @@ class StatisticsService:
                 IssueStatusHistory.created_at >= f.start_utc,
                 IssueStatusHistory.created_at < f.end_utc,
                 Courtyard.district_id.in_(ids),
+                _site_type_clause(f),
             )
             .group_by(Courtyard.district_id)
         )).all() if ids else []
@@ -201,7 +212,11 @@ class StatisticsService:
                 latest_issue_status,
                 (latest_issue_status.c.issue_id == Issue.id) & (latest_issue_status.c.rank == 1),
             )
-            .where(Issue.created_at < f.end_utc, Courtyard.district_id.in_(ids))
+            .where(
+                Issue.created_at < f.end_utc,
+                Courtyard.district_id.in_(ids),
+                _site_type_clause(f),
+            )
             .group_by(Courtyard.district_id)
         )).all() if ids else []
         snapshot_issues = {row.district_id: row for row in snapshot_issue_rows}
@@ -325,6 +340,10 @@ class StatisticsService:
             inspection_stmt = inspection_stmt.where(Courtyard.district_id == f.district_id)
             issue_stmt = issue_stmt.where(Courtyard.district_id == f.district_id)
             closure_stmt = closure_stmt.where(Courtyard.district_id == f.district_id)
+        if f.site_type:
+            inspection_stmt = inspection_stmt.where(Site.type == f.site_type)
+            issue_stmt = issue_stmt.where(Site.type == f.site_type)
+            closure_stmt = closure_stmt.where(Site.type == f.site_type)
 
         inspections = dict((await self.db.execute(inspection_stmt)).all())
         issues = dict((await self.db.execute(issue_stmt)).all())
@@ -356,6 +375,8 @@ class StatisticsService:
         )
         if f.district_id:
             stmt = stmt.where(Courtyard.district_id == f.district_id)
+        if f.site_type:
+            stmt = stmt.where(Site.type == f.site_type)
         counts = {row.category_id: row for row in (await self.db.execute(stmt)).all()}
         rows = []
         for category in categories:

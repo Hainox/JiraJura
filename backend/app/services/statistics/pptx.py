@@ -17,6 +17,13 @@ FRAME = "D9D9D9"
 HEADER = "B4C7E7"
 TOTAL = "595959"
 
+# Заголовок слайда 1 при фильтре по типу площадки — запрос со штаба
+# 26.08.2026: главы хотят детские/спортивные раздельно, не одной суммой.
+_TITLE_BY_SITE_TYPE = {
+    "Детская площадка": "Обходы детских площадок САО — итоги периода",
+    "Спортивная площадка": "Обходы спортивных площадок САО — итоги периода",
+}
+
 
 def percentage_color(value: int | None) -> str:
     if value is None:
@@ -108,7 +115,9 @@ def _add_metadata(slide, dashboard: StatsDashboardOut):
         run.font.color.rgb = RGBColor.from_string("777777")
 
 
-def render_shtab(dashboard: StatsDashboardOut, categories: StatsCategoriesOut) -> BytesIO:
+def render_shtab(
+    dashboard: StatsDashboardOut, categories: StatsCategoriesOut, *, site_type: str | None = None,
+) -> BytesIO:
     prs = Presentation()
     prs.slide_width = Inches(13.333)
     prs.slide_height = Inches(7.5)
@@ -116,18 +125,23 @@ def render_shtab(dashboard: StatsDashboardOut, categories: StatsCategoriesOut) -
 
     slide = prs.slides.add_slide(blank)
     _add_chrome(slide, "1.1")
-    _add_title(slide, "Обходы детских и спортивных площадок САО — итоги периода")
+    _add_title(slide, _TITLE_BY_SITE_TYPE.get(site_type, "Обходы детских и спортивных площадок САО — итоги периода"))
 
     rows = sorted(
         dashboard.districts,
         key=lambda r: (-(r.clean_sites_pct if r.clean_sites_pct is not None else -1), -r.coverage_pct, r.district_name),
     )
+    # Колонки и порядок — как в официальном слайде «Электронный журнал обхода
+    # Детских и Спортивных площадок» - «Обходы за период» (штаб 26.08.2026):
+    # Площадок/Проверено сведены в «Охват» одной ячейкой (стиль этой презентации),
+    # но «Обходов» — отдельный итог, который на официальном слайде есть, а здесь
+    # раньше не выводился (был виден только через сумму Без+С нарушениями).
     headers = ["№", "Район", "Охват", "Чистые площадки", "Площадки с нарушениями",
-               "Без нарушений", "С нарушениями"]
+               "Обходов", "Без нарушений", "С нарушениями"]
     table = slide.shapes.add_table(
         len(rows) + 2, len(headers), Inches(0.35), Inches(1.12), Inches(12.63), Inches(5.0)
     ).table
-    widths = [0.35, 2.15, 1.4, 2.0, 2.05, 1.3, 1.2]
+    widths = [0.35, 1.95, 1.5, 1.9, 2.05, 1.05, 1.15, 1.15]
     for column, width in zip(table.columns, widths):
         column.width = Inches(width)
     for index, header in enumerate(headers):
@@ -146,7 +160,7 @@ def render_shtab(dashboard: StatsDashboardOut, categories: StatsCategoriesOut) -
         values = [
             row_index, row.district_name,
             f"{row.sites_inspected} из {row.total_sites} · {row.coverage_pct}%",
-            clean, defects, row.inspections_green, row.inspections_with_defects,
+            clean, defects, row.inspections_total, row.inspections_green, row.inspections_with_defects,
         ]
         for col, value in enumerate(values):
             table.cell(row_index, col).text = str(value)
@@ -169,7 +183,7 @@ def render_shtab(dashboard: StatsDashboardOut, categories: StatsCategoriesOut) -
             f"{total.sites_latest_with_defects} из {total.sites_inspected} · {total.defect_sites_pct}%"
             if total.defect_sites_pct is not None else "Нет обходов"
         ),
-        total.inspections_green, total.inspections_with_defects,
+        total.inspections_total, total.inspections_green, total.inspections_with_defects,
     ]
     for col, value in enumerate(total_values):
         table.cell(total_index, col).text = str(value)
@@ -211,12 +225,22 @@ def render_shtab(dashboard: StatsDashboardOut, categories: StatsCategoriesOut) -
     remediation_table = slide2.shapes.add_table(
         len(rows) + 2, 11, Inches(0.35), Inches(1.25), Inches(12.63), Inches(4.95)
     ).table
+    # Заголовки приведены к терминологии официального слайда «Электронный
+    # журнал обхода... - Устранения за период» (штаб 26.08.2026): раньше здесь
+    # были подписи «На финальной проверке»/«Исправлено» над теми же самыми
+    # значениями issues_fixed_events/issues_closed_events — это была ошибка
+    # рассинхронизации подписи и значения, из-за которой слайд не совпадал по
+    # смыслу с тем, что реально спрашивают на штабе («Устранено»/«Принято»).
+    # «Устранено» — сколько раз замечание за период переводили в статус fixed
+    # (сдано на проверку), «Принято»/«Возвращено на доработку» — решение
+    # админа по этим сдачам (может не совпадать 1:1 в пределах периода, если
+    # решение принято уже после его границы или наоборот).
     remediation_headers = [
-        "№", "Район", "Выявлено", "На финальной проверке", "Исправлено", "Доработка",
-        "Устранено из выявленных", "На проверке", "Требуют устранения", "Просрочено",
+        "№", "Район", "Выявлено", "Устранено", "Принято", "Возвращено на доработку",
+        "Устранено из выявленных", "На проверке", "Требуют работы", "Просрочено",
         "Доля требующих устранения",
     ]
-    widths = [0.35, 1.85, 0.75, 1.05, 0.8, 0.8, 1.75, 0.85, 1.05, 0.8, 1.6]
+    widths = [0.35, 1.85, 0.75, 0.75, 0.75, 1.15, 1.75, 0.85, 1.05, 0.8, 1.6]
     for column, width in zip(remediation_table.columns, widths):
         column.width = Inches(width)
     for index, header in enumerate(remediation_headers):

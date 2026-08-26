@@ -19,6 +19,7 @@ class StatisticsFilter:
     start_utc: datetime
     end_utc: datetime
     district_id: UUID | None
+    site_type: str | None = None
 
 
 def current_week() -> tuple[date, date]:
@@ -39,6 +40,7 @@ def build_filter(
     *,
     default_previous_week: bool = False,
     all_time: bool = False,
+    site_type: str | None = None,
 ) -> StatisticsFilter:
     default_from, default_to = previous_full_week() if default_previous_week else current_week()
     start_date = ALL_TIME_START if all_time else date_from or default_from
@@ -53,4 +55,4 @@ def build_filter(
         effective_district = current_user.district_id
     start_utc, end_utc = msk_day_bounds_utc(start_date, end_date)
     assert start_utc is not None and end_utc is not None
-    return StatisticsFilter(start_date, end_date, start_utc, end_utc, effective_district)
+    return StatisticsFilter(start_date, end_date, start_utc, end_utc, effective_district, site_type)

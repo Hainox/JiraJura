@@ -17,6 +17,13 @@ FRAME = "D9D9D9"
 HEADER = "B4C7E7"
 TOTAL = "595959"
 
+# Заголовок слайда 1 при фильтре по типу площадки — запрос со штаба
+# 26.08.2026: главы хотят детские/спортивные раздельно, не одной суммой.
+_TITLE_BY_SITE_TYPE = {
+    "Детская площадка": "Обходы детских площадок САО — итоги периода",
+    "Спортивная площадка": "Обходы спортивных площадок САО — итоги периода",
+}
+
 
 def percentage_color(value: int | None) -> str:
     if value is None:
@@ -108,7 +115,9 @@ def _add_metadata(slide, dashboard: StatsDashboardOut):
         run.font.color.rgb = RGBColor.from_string("777777")
 
 
-def render_shtab(dashboard: StatsDashboardOut, categories: StatsCategoriesOut) -> BytesIO:
+def render_shtab(
+    dashboard: StatsDashboardOut, categories: StatsCategoriesOut, *, site_type: str | None = None,
+) -> BytesIO:
     prs = Presentation()
     prs.slide_width = Inches(13.333)
     prs.slide_height = Inches(7.5)
@@ -116,7 +125,7 @@ def render_shtab(dashboard: StatsDashboardOut, categories: StatsCategoriesOut) -
 
     slide = prs.slides.add_slide(blank)
     _add_chrome(slide, "1.1")
-    _add_title(slide, "Обходы детских и спортивных площадок САО — итоги периода")
+    _add_title(slide, _TITLE_BY_SITE_TYPE.get(site_type, "Обходы детских и спортивных площадок САО — итоги периода"))
 
     rows = sorted(
         dashboard.districts,

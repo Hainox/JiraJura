@@ -18,57 +18,79 @@ from app.services.statistics.pptx import render_shtab
 router = APIRouter()
 
 
-def _service(db, user, date_from, date_to, district_id, *, previous_week=False, all_time=False):
+def _service(db, user, date_from, date_to, district_id, *, previous_week=False, all_time=False, site_type=None):
     return StatisticsService(
         db,
-        build_filter(user, date_from, date_to, district_id, default_previous_week=previous_week, all_time=all_time),
+        build_filter(
+            user, date_from, date_to, district_id,
+            default_previous_week=previous_week, all_time=all_time, site_type=site_type,
+        ),
     )
 
 
 @router.get("/dashboard", response_model=StatsDashboardOut)
 async def dashboard(
     date_from: date | None = Query(None), date_to: date | None = Query(None),
-    district_id: UUID | None = Query(None), all_time: bool = Query(False), db: AsyncSession = Depends(get_db),
+    district_id: UUID | None = Query(None), all_time: bool = Query(False),
+    # Разбивка «Детская площадка» / «Спортивная площадка» — запрос со штаба
+    # 26.08.2026 (Кануков Д.М.): главы хотят видеть эти цифры раздельно, не
+    # одной суммой. Значение — как в enum site_type (schema.sql), не
+    # проверяется отдельным Literal, чтобы не расходиться с sites.list,
+    # который тоже принимает type свободной строкой.
+    site_type: str | None = Query(None),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role("reviewer", "admin")),
 ):
-    return await _service(db, current_user, date_from, date_to, district_id, all_time=all_time).dashboard()
+    return await _service(db, current_user, date_from, date_to, district_id, all_time=all_time, site_type=site_type).dashboard()
 
 
 @router.get("/dynamics", response_model=StatsDynamicsOut)
 async def dynamics(
     date_from: date | None = Query(None), date_to: date | None = Query(None),
-    district_id: UUID | None = Query(None), all_time: bool = Query(False), db: AsyncSession = Depends(get_db),
+    district_id: UUID | None = Query(None), all_time: bool = Query(False),
+    site_type: str | None = Query(None),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role("reviewer", "admin")),
 ):
-    return await _service(db, current_user, date_from, date_to, district_id, all_time=all_time).dynamics()
+    return await _service(db, current_user, date_from, date_to, district_id, all_time=all_time, site_type=site_type).dynamics()
 
 
 @router.get("/categories", response_model=StatsCategoriesOut)
 async def categories(
     date_from: date | None = Query(None), date_to: date | None = Query(None),
-    district_id: UUID | None = Query(None), all_time: bool = Query(False), db: AsyncSession = Depends(get_db),
+    district_id: UUID | None = Query(None), all_time: bool = Query(False),
+    site_type: str | None = Query(None),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role("reviewer", "admin")),
 ):
-    return await _service(db, current_user, date_from, date_to, district_id, all_time=all_time).categories()
+    return await _service(db, current_user, date_from, date_to, district_id, all_time=all_time, site_type=site_type).categories()
 
 
 @router.get("/shtab.pptx")
 async def shtab_pptx(
     date_from: date | None = Query(None), date_to: date | None = Query(None),
-    district_id: UUID | None = Query(None), all_time: bool = Query(False), db: AsyncSession = Depends(get_db),
+    district_id: UUID | None = Query(None), all_time: bool = Query(False),
+    site_type: str | None = Query(None),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role("reviewer", "admin")),
 ):
     service = _service(
-        db, current_user, date_from, date_to, district_id, previous_week=True, all_time=all_time
+        db, current_user, date_from, date_to, district_id,
+        previous_week=True, all_time=all_time, site_type=site_type,
     )
     dashboard_data = await service.dashboard()
     category_data = await service.categories()
+    suffix = ""
+    if site_type == "Детская площадка":
+        suffix = "_detskie"
+    elif site_type == "Спортивная площадка":
+        suffix = "_sportivnye"
     filename = (
-        f"shtab_{dashboard_data.period.date_from.isoformat()}_"
+        f"shtab{suffix}_{dashboard_data.period.date_from.isoformat()}_"
         f"{dashboard_data.period.date_to.isoformat()}.pptx"
     )
     return StreamingResponse(
-        render_shtab(dashboard_data, category_data),
+        render_shtab(dashboard_data, category_data, site_type=site_type),
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

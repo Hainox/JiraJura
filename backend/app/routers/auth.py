@@ -14,7 +14,8 @@ from app.models import User, UserInvite, Site, Courtyard
 from app.schemas import (
     LoginRequest, TokenResponse, UserOut, UserAdminOut, UserRoleUpdate, SelfUpdateRequest,
     PasswordResetOut, ChangePasswordRequest,
-    UserInviteCreate, UserInviteCreated, UserInvitePending, UserInvitePreview, InviteCompleteRequest,
+    UserInviteCreate, UserInviteCreated, UserInvitePending, UserInvitePreview, UserInviteAdminOut,
+    InviteCompleteRequest,
 )
 from app.services.auth import (
     verify_password, hash_password, create_access_token, get_current_user,
@@ -27,6 +28,10 @@ from app.services.rate_limit import RateLimiter
 router = APIRouter()
 
 INVITE_EXPIRY = timedelta(hours=72)
+# Переиздание — 30 дней вместо стандартных 72 часов (та же логика, что и в
+# reissue_invites.py): вторая попытка донести ссылку до человека не должна
+# упереться в те же грабли истечения срока за пару дней.
+REISSUE_EXPIRY = timedelta(hours=24 * 30)
 ROLES = ("inspector", "reviewer", "admin")
 
 # Фиктивный, но валидный по формату bcrypt-хэш ($2b$, тот же cost=12, что и
@@ -107,7 +112,7 @@ async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends
         # Всё равно гоняем bcrypt против фиктивного хэша: bcrypt.checkpw —
         # это ~десятки мс, а "нет такого логина" без него отвечает почти
         # мгновенно. Разница в задержке между "логина не существует" и
-        # "логин есть, пароль неверный" — таймингова утечка, по которой
+        # "логин есть, пароль неверен" — таймингова утечка, по которой
         # можно перебором узнавать существующие логины ещё до всякого
         # lockout (тот считает попытки, а не защищает от самого замера).
         verify_password(data.password, _DUMMY_PASSWORD_HASH)
@@ -181,7 +186,7 @@ async def update_me(
     return UserOut.model_validate(current_user)
 
 
-# ── Приглашения на регистрацию (только admin создаёт) ──────────
+# ── Приглашения на регистрацию (только admin создаёт) ────────────
 
 @router.post("/invites", response_model=UserInviteCreated)
 async def create_invite(
@@ -283,8 +288,96 @@ async def list_pending_invites(
     return [UserInvitePending.model_validate(i) for i in rows]
 
 
-# NB: должен идти ПОСЛЕ /invites/pending — иначе "pending" попал бы сюда
-# как значение {token} (FastAPI матчит по порядку регистрации роутов).
+@router.get("/invites", response_model=list[UserInviteAdminOut])
+async def list_all_invites(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    """Полный список приглашений (включая использованные/истёкшие) — для
+    управления из раздела «Пользователи» (список + отзыв/переиздание).
+    В отличие от /invites/pending, которым пользуются bulk_invite.py и
+    форма приглашения (нужны только активные), сюда — вся история."""
+    rows = (await db.execute(
+        select(UserInvite).order_by(UserInvite.created_at.desc())
+    )).scalars().all()
+    now = datetime.now(timezone.utc)
+    out = []
+    for i in rows:
+        expires_at = i.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if i.used_at is not None:
+            status_ = "used"
+        elif expires_at < now:
+            status_ = "expired"
+        else:
+            status_ = "pending"
+        out.append(UserInviteAdminOut(
+            id=i.id, login=i.login, full_name=i.full_name, role=i.role,
+            district_id=i.district_id, created_at=i.created_at,
+            expires_at=i.expires_at, used_at=i.used_at, status=status_,
+        ))
+    return out
+
+
+@router.post("/invites/{invite_id}/reissue", response_model=UserInviteCreated)
+async def reissue_invite(
+    invite_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    """Перевыпустить токен для уже существующего приглашения (логин/ФИО/
+    роль/район сохраняются) — тот же приём, что и в CLI reissue_invites.py
+    (см. backend/reissue_invites.py), только на одну запись и из UI."""
+    invite = (await db.execute(
+        select(UserInvite).where(UserInvite.id == invite_id)
+    )).scalar_one_or_none()
+    if not invite:
+        raise HTTPException(404, "Приглашение не найдено")
+    if invite.used_at is not None:
+        raise HTTPException(400, "Приглашение уже использовано — переиздавать нечего")
+
+    token = secrets.token_urlsafe(32)
+    invite.token_hash = _hash_token(token)
+    invite.expires_at = datetime.now(timezone.utc) + REISSUE_EXPIRY
+    await log_action(db, str(current_user.id), "invite_reissue", "user_invite", str(invite.id), {"login": invite.login})
+    await db.commit()
+
+    return UserInviteCreated(
+        id=invite.id,
+        login=invite.login,
+        full_name=invite.full_name,
+        role=invite.role,
+        token=token,
+        expires_at=invite.expires_at,
+    )
+
+
+@router.delete("/invites/{invite_id}")
+async def revoke_invite(
+    invite_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    """Отозвать неиспользованное приглашение — освобождает логин для
+    нового приглашения. Использованные не трогаем: там уже есть реальный
+    пользователь, тот деактивируется через DELETE /users/{id}, не здесь."""
+    invite = (await db.execute(
+        select(UserInvite).where(UserInvite.id == invite_id)
+    )).scalar_one_or_none()
+    if not invite:
+        raise HTTPException(404, "Приглашение не найдено")
+    if invite.used_at is not None:
+        raise HTTPException(400, "Приглашение уже использовано — отзывать нечего. Деактивируйте пользователя в разделе «Пользователи».")
+
+    await log_action(db, str(current_user.id), "invite_revoke", "user_invite", str(invite.id), {"login": invite.login})
+    await db.delete(invite)
+    await db.commit()
+    return {"ok": True}
+
+
+# NB: должен идти ПОСЛЕ /invites/pending и /invites — иначе они попали бы
+# сюда как значение {token} (FastAPI матчит по порядку регистрации роутов).
 @router.get("/invites/{token}", response_model=UserInvitePreview)
 async def preview_invite(token: str, db: AsyncSession = Depends(get_db)):
     invite = await _get_valid_invite(token, db)
@@ -330,7 +423,7 @@ async def complete_invite(
     return TokenResponse(access_token=access_token, user=UserOut.model_validate(user))
 
 
-# ── Управление пользователями (только admin) ───────────────────
+# ── Управление пользователями (только admin) ─────────────
 
 @router.get("/users", response_model=list[UserAdminOut])
 async def list_users(

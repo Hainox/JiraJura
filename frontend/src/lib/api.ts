@@ -20,11 +20,16 @@ import type {
   UserInviteCreate,
   UserInviteCreated,
   UserInvitePreview,
+  UserInviteAdminOut,
   UserRoleUpdate,
   SelfUpdateRequest,
   PasswordResetOut,
   DashboardOut,
   SystemStatsOut,
+  DiagnosticsLoginsOut,
+  DiagnosticsMissingPhotosOut,
+  DeployRequestOut,
+  DeployStatusOut,
   FeedbackReportOut,
   FeedbackReportListOut,
   FeedbackAttachmentOut,
@@ -235,6 +240,17 @@ export const authApi = {
 
   changePassword: (newPassword: string, currentPassword?: string) =>
     api.post<LoginResponse>('/auth/change-password', { new_password: newPassword, current_password: currentPassword }).then((r) => r.data),
+
+  // Полный список приглашений (включая использованные/истёкшие) — для
+  // раздела «Приглашения» в «Пользователях». listUsers/createInvite не
+  // трогают, тем по-прежнему нужны только активные.
+  listInvites: () => api.get<UserInviteAdminOut[]>('/auth/invites').then((r) => r.data),
+
+  reissueInvite: (id: string) =>
+    api.post<UserInviteCreated>(`/auth/invites/${id}/reissue`).then((r) => r.data),
+
+  revokeInvite: (id: string) =>
+    api.delete(`/auth/invites/${id}`).then((r) => r.data),
 }
 
 // ── Districts ──
@@ -434,9 +450,22 @@ export const issuesApi = {
   },
 }
 
-// ── Разработчик (эксплуатационная сводка) ──
+// ── Разработчик (эксплуатационная сводка, диагностика, деплой) ──
 export const systemApi = {
   stats: () => api.get<SystemStatsOut>('/system/stats').then((r) => r.data),
+
+  diagnosticsLogins: () =>
+    api.get<DiagnosticsLoginsOut>('/system/diagnostics/logins').then((r) => r.data),
+
+  diagnosticsMissingPhotos: (address: string, district?: string) =>
+    api
+      .get<DiagnosticsMissingPhotosOut>('/system/diagnostics/missing-photos', { params: { address, district } })
+      .then((r) => r.data),
+
+  requestDeploy: (note?: string) =>
+    api.post<DeployRequestOut>('/system/deploy/request', { note }).then((r) => r.data),
+
+  deployStatus: () => api.get<DeployStatusOut>('/system/deploy/status').then((r) => r.data),
 }
 
 // ── Обращения ──

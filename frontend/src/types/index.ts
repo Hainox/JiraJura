@@ -50,6 +50,20 @@ export interface UserInvitePreview {
   role: Role
 }
 
+export type UserInviteStatus = 'pending' | 'expired' | 'used'
+
+export interface UserInviteAdminOut {
+  id: string
+  login: string
+  full_name: string
+  role: Role
+  district_id?: string
+  created_at: string
+  expires_at: string
+  used_at?: string | null
+  status: UserInviteStatus
+}
+
 export interface UserRoleUpdate {
   role?: Role
   district_id?: string | null
@@ -374,6 +388,65 @@ export interface SystemStatsOut {
   uptime_seconds: number
   counts: Record<string, number>
   uploads_size_mb: number
+}
+
+// ── Диагностика по клику ("Разработчик" → «Диагностика») ──
+export interface DiagnosticsLoginsOut {
+  total_users: number
+  broken_password_hash: { id: string; login: string; full_name: string; role: string }[]
+  inactive_not_soft_deleted: { login: string; full_name: string }[]
+  pending_registrations: { login: string; full_name: string; expires_at: string }[]
+}
+
+export interface MissingPhotosInspectionPhoto {
+  target_type: string
+  label: string
+  created_at: string
+  taken_at: string | null
+}
+
+export interface MissingPhotosInspection {
+  id: string
+  status: string
+  created_at: string
+  completed_at: string | null
+  inspector_name: string
+  reviewed: boolean
+  missing_checklist_items: string[]
+  photos: MissingPhotosInspectionPhoto[]
+}
+
+export interface MissingPhotosSite {
+  site_id: string
+  type: string
+  courtyard_name: string
+  district_name: string
+  inspections: MissingPhotosInspection[]
+}
+
+export interface DiagnosticsMissingPhotosOut {
+  query_address: string
+  query_district: string | null
+  sites: MissingPhotosSite[]
+}
+
+// ── Деплой по клику ("Разработчик" → «Деплой») ──
+export interface DeployRequestOut {
+  entity_id: string
+  requested_at: string
+}
+
+export interface DeployEventOut {
+  id: string
+  action: string
+  entity_id: string | null
+  user_name: string | null
+  details: string | null
+  created_at: string
+}
+
+export interface DeployStatusOut {
+  events: DeployEventOut[]
 }
 
 // ── Обращения (публичная веб-форма) ──

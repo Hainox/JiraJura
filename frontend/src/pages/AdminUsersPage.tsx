@@ -3,12 +3,19 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { authApi, districtsApi } from '@/lib/api'
 import { ROLES, ROLE_LABELS } from '@/lib/roles'
-import type { Role, UserAdminOut, UserInviteCreated } from '@/types'
+import type { Role, UserAdminOut, UserInviteAdminOut, UserInviteCreated, UserInviteStatus } from '@/types'
 import { notify as toast } from '@/lib/toast'
 import { guardDemoAction } from '@/stores/demoMode'
 import {
-  ArrowLeft, UserPlus, Copy, Check, Trash2, Key, Edit3, X, Search
+  ArrowLeft, UserPlus, Copy, Check, Trash2, Key, Edit3, X, Search, Mail, RotateCw, ChevronDown, ChevronUp
 } from 'lucide-react'
+
+const INVITE_STATUS_LABELS: Record<UserInviteStatus, string> = {
+  pending: 'ожидает регистрации', expired: 'истекло', used: 'зарегистрирован',
+}
+const INVITE_STATUS_CLASSES: Record<UserInviteStatus, string> = {
+  pending: 'badge-pending', expired: 'badge-nok', used: 'badge-ok',
+}
 
 export default function AdminUsersPage() {
   const navigate = useNavigate()
@@ -22,6 +29,14 @@ export default function AdminUsersPage() {
   const [lastInvite, setLastInvite] = useState<UserInviteCreated | null>(null)
   const [copied, setCopied] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+
+  // Список выданных приглашений — свёрнут по умолчанию, чтобы не
+  // загромождать страницу тем, кто сюда заходит только за таблицей
+  // пользователей.
+  const [showInvitesList, setShowInvitesList] = useState(false)
+  const [reissuedInvite, setReissuedInvite] = useState<UserInviteCreated | null>(null)
+  const [reissuedCopied, setReissuedCopied] = useState(false)
+  const [revokeConfirm, setRevokeConfirm] = useState<UserInviteAdminOut | null>(null)
 
   // Модалка редактирования
   const [editUser, setEditUser] = useState<UserAdminOut | null>(null)
@@ -38,6 +53,9 @@ export default function AdminUsersPage() {
 
   const { data: users } = useQuery({ queryKey: ['admin-users'], queryFn: authApi.listUsers })
   const { data: districts } = useQuery({ queryKey: ['districts'], queryFn: districtsApi.list })
+  const { data: invites } = useQuery({
+    queryKey: ['admin-invites'], queryFn: authApi.listInvites, enabled: showInvitesList,
+  })
 
   const districtName = (id?: string) => districts?.find((d) => d.id === id)?.name ?? '—'
 
@@ -67,8 +85,29 @@ export default function AdminUsersPage() {
       setRole('inspector')
       setDistrictId('')
       toast.success('Приглашение создано')
+      queryClient.invalidateQueries({ queryKey: ['admin-invites'] })
     },
     onError: () => toast.error('Не удалось создать приглашение — проверьте, не занят ли логин'),
+  })
+
+  const reissueMutation = useMutation({
+    mutationFn: (id: string) => authApi.reissueInvite(id),
+    onSuccess: (invite) => {
+      setReissuedInvite(invite)
+      queryClient.invalidateQueries({ queryKey: ['admin-invites'] })
+      toast.success('Приглашение переиздано')
+    },
+    onError: () => toast.error('Не удалось переиздать приглашение'),
+  })
+
+  const revokeMutation = useMutation({
+    mutationFn: (id: string) => authApi.revokeInvite(id),
+    onSuccess: () => {
+      setRevokeConfirm(null)
+      queryClient.invalidateQueries({ queryKey: ['admin-invites'] })
+      toast.success('Приглашение отозвано')
+    },
+    onError: () => toast.error('Не удалось отозвать приглашение'),
   })
 
   const toggleActiveMutation = useMutation({
@@ -133,6 +172,7 @@ export default function AdminUsersPage() {
   }
 
   const inviteLink = lastInvite ? `${window.location.origin}/register/${lastInvite.token}` : null
+  const reissuedLink = reissuedInvite ? `${window.location.origin}/register/${reissuedInvite.token}` : null
 
   const copyLink = async () => {
     if (!inviteLink) return
@@ -140,6 +180,15 @@ export default function AdminUsersPage() {
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
+
+  const copyReissuedLink = async () => {
+    if (!reissuedLink) return
+    await navigator.clipboard.writeText(reissuedLink)
+    setReissuedCopied(true)
+    setTimeout(() => setReissuedCopied(false), 2000)
+  }
+
+  const pendingOrExpiredCount = invites?.filter((i) => i.status !== 'used').length ?? 0
 
   return (
     <div className="h-full flex flex-col">
@@ -165,12 +214,24 @@ export default function AdminUsersPage() {
           />
         </div>
 
-        <button
-          onClick={() => { setShowInviteForm((v) => !v); setLastInvite(null) }}
-          className="btn-primary flex items-center gap-2"
-        >
-          <UserPlus className="w-4 h-4" /> Пригласить пользователя
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => { setShowInviteForm((v) => !v); setLastInvite(null) }}
+            className="btn-primary flex items-center gap-2"
+          >
+            <UserPlus className="w-4 h-4" /> Пригласить пользователя
+          </button>
+          <button
+            onClick={() => setShowInvitesList((v) => !v)}
+            className="btn-outline flex items-center gap-2"
+          >
+            <Mail className="w-4 h-4" /> Приглашения
+            {invites && pendingOrExpiredCount > 0 && (
+              <span className="badge badge-pending text-xs">{pendingOrExpiredCount}</span>
+            )}
+            {showInvitesList ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
+        </div>
 
         {showInviteForm && (
           <form
@@ -237,6 +298,92 @@ export default function AdminUsersPage() {
                 {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
               </button>
             </div>
+          </div>
+        )}
+
+        {reissuedLink && (
+          <div className="card bg-green-50 border-green-200">
+            <p className="text-sm text-gray-700 mb-2">
+              Новая ссылка для регистрации ({reissuedInvite!.full_name}) — действует 30 дней:
+            </p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 text-xs bg-white rounded-lg px-2 py-2 border border-gray-200 break-all">
+                {reissuedLink}
+              </code>
+              <button onClick={copyReissuedLink} className="btn-outline shrink-0 p-2" title="Скопировать">
+                {reissuedCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+              </button>
+              <button onClick={() => setReissuedInvite(null)} className="btn-outline shrink-0 p-2">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Список выданных приглашений */}
+        {showInvitesList && (
+          <div className="card p-0 overflow-hidden">
+            <div className="px-4 py-2 bg-gray-50 border-b border-gray-100">
+              <h3 className="font-semibold text-gray-800 text-sm">Приглашения</h3>
+            </div>
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-gray-500 text-left">
+                <tr>
+                  <th className="px-4 py-2 font-medium">ФИО</th>
+                  <th className="px-4 py-2 font-medium hidden md:table-cell">Логин</th>
+                  <th className="px-4 py-2 font-medium hidden md:table-cell">Роль</th>
+                  <th className="px-4 py-2 font-medium">Статус</th>
+                  <th className="px-4 py-2 font-medium w-16"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {invites?.map((i) => (
+                  <tr key={i.id} className="border-t border-gray-100 hover:bg-gray-50">
+                    <td className="px-4 py-2 font-medium">{i.full_name}</td>
+                    <td className="px-4 py-2 text-gray-500 hidden md:table-cell">{i.login}</td>
+                    <td className="px-4 py-2 hidden md:table-cell">
+                      <span className="badge badge-pending text-xs">{ROLE_LABELS[i.role as Role] ?? i.role}</span>
+                    </td>
+                    <td className="px-4 py-2">
+                      <span className={`badge text-xs ${INVITE_STATUS_CLASSES[i.status]}`}>
+                        {INVITE_STATUS_LABELS[i.status]}
+                      </span>
+                    </td>
+                    <td className="px-2 py-2">
+                      {i.status !== 'used' && (
+                        <div className="flex gap-0.5">
+                          <button
+                            onClick={() => guardDemoAction(() => reissueMutation.mutate(i.id))}
+                            disabled={reissueMutation.isPending}
+                            className="p-1.5 rounded hover:bg-gray-200 text-gray-500"
+                            title="Переиздать ссылку"
+                          >
+                            <RotateCw className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => setRevokeConfirm(i)}
+                            className="p-1.5 rounded hover:bg-red-100 text-gray-500 hover:text-red-600"
+                            title="Отозвать"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {invites?.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-8 text-center text-gray-400">Приглашений ещё не было</td>
+                  </tr>
+                )}
+                {!invites && (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-8 text-center text-gray-400">Загрузка...</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         )}
 
@@ -335,6 +482,33 @@ export default function AdminUsersPage() {
           </table>
         </div>
       </div>
+
+      {/* Модалка подтверждения отзыва приглашения */}
+      {revokeConfirm && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-6 max-w-sm w-full shadow-xl">
+            <h3 className="font-bold text-lg mb-2">Отозвать приглашение?</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Ссылка для «{revokeConfirm.full_name}» перестанет работать, логин «{revokeConfirm.login}» освободится для нового приглашения.
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setRevokeConfirm(null)}
+                className="btn-outline flex-1 py-2"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={() => guardDemoAction(() => revokeMutation.mutate(revokeConfirm.id))}
+                disabled={revokeMutation.isPending}
+                className="flex-1 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700"
+              >
+                {revokeMutation.isPending ? 'Отзываю...' : 'Отозвать'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Модалка подтверждения удаления */}
       {deleteConfirm && (

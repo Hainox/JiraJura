@@ -140,7 +140,7 @@ function Overview({ total: t }: { total: StatsDistrictRow }) {
       <Kpi label="Площадок" value={t.total_sites} /><Kpi label="Охват" value={`${t.coverage_pct}%`} detail={`${t.sites_inspected} из ${t.total_sites} площадок проверено`} />
       <Kpi label="Обходов" value={t.inspections_total} /><Kpi label="Без нарушений" value={t.inspections_green} />
       <Kpi label="С нарушениями" value={t.inspections_with_defects} /><Kpi label="Выявлено за период" value={t.issues_found} />
-      <Kpi label="На финальной проверке" value={t.issues_fixed_events} /><Kpi label="Исправлено за период" value={t.issues_closed_events} />
+      <Kpi label="Устранено за период" value={t.issues_fixed_events} /><Kpi label="Принято за период" value={t.issues_closed_events} />
       <Kpi label="Возвращено на доработку" value={t.issues_revision_events} /><Kpi label="Просрочено на конец периода" value={t.issues_overdue_current} />
     </div>
     <div className="grid lg:grid-cols-2 gap-4">
@@ -179,11 +179,61 @@ function remediationMetricMeta(row: StatsDistrictRow, key: RemediationMetricKey)
   }
 }
 
+function districtCellValue(r: StatsDistrictRow, key: keyof StatsDistrictRow, isTotal: boolean) {
+  const qualityKey = key === 'clean_sites_pct' || key === 'defect_sites_pct'
+  const qualityValue: number | null = qualityKey ? r[key] as number | null : null
+  const qualityNumerator = key === 'clean_sites_pct' ? r.sites_latest_clean : r.sites_latest_with_defects
+  const qualityDirection = key === 'clean_sites_pct' ? 'direct' as const : 'inverse' as const
+  const noData = Boolean(qualityKey && qualityValue === null)
+  const style = !isTotal && key === 'coverage_pct'
+    ? { background: coverageColor(Number(r[key])) }
+    : !isTotal && qualityKey && qualityValue !== null
+      ? { background: qualityColor(qualityValue, qualityDirection) }
+      : undefined
+  const value = key === 'district_name' && isTotal ? 'ИТОГО'
+    : key === 'coverage_pct' ? `${r[key]}%`
+    : qualityKey ? (noData ? '—' : `${qualityNumerator} из ${r.sites_inspected} · ${qualityValue}%`)
+    : r[key]
+  return { value, style, noData }
+}
+
+// Мобильная карточка вместо широкой таблицы — по запросу "чтобы данные
+// для штаба можно было заскринить и отправить нормально": таблица с
+// min-w-[760px]/[980px] на телефоне не помещается в один скриншот без
+// горизонтальной прокрутки, часть колонок обрезается за кадром. Карточка
+// на всю ширину экрана показывает то же самое, просто не в виде строки.
+function DistrictCard({ r, isTotal, onSelect }: { r: StatsDistrictRow; isTotal: boolean; onSelect?: () => void }) {
+  return <div onClick={onSelect} className={`card ${isTotal ? 'bg-slate-700' : onSelect ? 'cursor-pointer active:bg-blue-50' : ''}`}>
+    <div className={`font-bold text-sm mb-2 ${isTotal ? 'text-white' : 'text-slate-800'}`}>{isTotal ? 'ИТОГО' : r.district_name}</div>
+    {districtMetricGroups.map((group) => (
+      <div key={group.id} className="mb-2 last:mb-0">
+        <div className={`text-[10px] uppercase font-semibold mb-1 ${isTotal ? 'text-white/70' : 'text-slate-500'}`}>{group.label}</div>
+        <div className="grid grid-cols-2 gap-2">
+          {districtColumns.filter((c) => c.group === group.id).map(({ key, label }) => {
+            const cell = districtCellValue(r, key, isTotal)
+            return <div key={key} className={`rounded-lg p-1.5 text-center ${isTotal ? 'bg-white/10' : ''}`} style={!isTotal ? cell.style : undefined} title={cell.noData ? 'Нет завершённых обходов за период' : undefined}>
+              <div className={`text-[9px] ${isTotal ? 'text-white/70' : 'text-slate-500'}`}>{label}</div>
+              <div className={`text-xs font-semibold ${isTotal ? 'text-white' : cell.noData ? 'text-slate-500' : 'text-slate-800'}`}>{cell.value}</div>
+            </div>
+          })}
+        </div>
+      </div>
+    ))}
+  </div>
+}
 function DistrictTable({ rows, totals, onSelect }: { rows: StatsDistrictRow[]; totals: StatsDistrictRow; onSelect?: (id: string) => void }) {
   const [sort, setSort] = useState<keyof StatsDistrictRow>('district_name')
   const ordered = useMemo(() => [...rows].sort((a,b) => typeof a[sort] === 'number' ? Number(b[sort])-Number(a[sort]) : String(a[sort]).localeCompare(String(b[sort]), 'ru')), [rows, sort])
-  return <div className="card overflow-x-auto">
+  const withTotals = withTotalsRow(ordered, totals)
+  return <div className="card">
     <p className="mb-3 text-sm text-slate-600">Сводка только по обходам за выбранный период. Район без выявленных нарушений — хороший результат, а не нулевой показатель устранения.</p>
+    <div className="sm:hidden space-y-3">
+      {withTotals.map((r) => {
+        const isTotal = r.district_id === totals.district_id
+        return <DistrictCard key={r.district_id} r={r} isTotal={isTotal} onSelect={!isTotal && onSelect ? () => onSelect(r.district_id) : undefined} />
+      })}
+    </div>
+    <div className="hidden sm:block overflow-x-auto">
     <table className="w-full min-w-[760px] text-xs border border-slate-300">
       <thead>
         <tr>
@@ -210,73 +260,102 @@ function DistrictTable({ rows, totals, onSelect }: { rows: StatsDistrictRow[]; t
         </tr>
       </thead>
       <tbody>
-        {withTotalsRow(ordered, totals).map((r) => {
+        {withTotals.map((r) => {
           const isTotal = r.district_id === totals.district_id
           return <tr key={r.district_id} onClick={() => !isTotal && onSelect?.(r.district_id)} className={isTotal ? 'border-t text-center bg-slate-700 text-white font-bold' : onSelect ? 'border-t text-center cursor-pointer hover:bg-blue-50' : 'border-t text-center'}>
           {districtColumns.map(({ key, groupStart }) => {
-            const qualityKey = key === 'clean_sites_pct' || key === 'defect_sites_pct'
-            const qualityValue: number | null = qualityKey ? r[key] as number | null : null
-            const qualityNumerator = key === 'clean_sites_pct' ? r.sites_latest_clean : r.sites_latest_with_defects
-            const qualityDirection = key === 'clean_sites_pct' ? 'direct' as const : 'inverse' as const
-            const noQualityData = qualityKey && qualityValue === null
-            const style = !isTotal && key === 'coverage_pct'
-              ? { background: coverageColor(Number(r[key])) }
-              : !isTotal && qualityKey && qualityValue !== null
-                ? { background: qualityColor(qualityValue, qualityDirection) }
-                : undefined
-            const value = key === 'district_name' && isTotal ? 'ИТОГО'
-              : key === 'coverage_pct' ? `${r[key]}%`
-              : qualityKey ? (noQualityData ? '—' : `${qualityNumerator} из ${r.sites_inspected} · ${qualityValue}%`)
-              : r[key]
-            return <td key={key} title={noQualityData ? 'Нет завершённых обходов за период' : undefined} className={`border border-slate-300 p-2 whitespace-nowrap ${groupStart ? isTotal ? 'border-l-2 border-l-white/50' : 'border-l-2 border-l-slate-400' : ''} ${noQualityData ? 'bg-slate-100 text-slate-500' : ''} ${!isTotal && key === 'inspections_with_defects' && Number(r[key]) === 0 && Number(r.inspections_total) > 0 ? 'bg-emerald-50 text-emerald-800 font-semibold' : ''}`} style={style}>
-              {value}
+            const cell = districtCellValue(r, key, isTotal)
+            return <td key={key} title={cell.noData ? 'Нет завершённых обходов за период' : undefined} className={`border border-slate-300 p-2 whitespace-nowrap ${groupStart ? isTotal ? 'border-l-2 border-l-white/50' : 'border-l-2 border-l-slate-400' : ''} ${cell.noData ? 'bg-slate-100 text-slate-500' : ''} ${!isTotal && key === 'inspections_with_defects' && Number(r[key]) === 0 && Number(r.inspections_total) > 0 ? 'bg-emerald-50 text-emerald-800 font-semibold' : ''}`} style={cell.style}>
+              {cell.value}
             </td>
           })}
           </tr>
         })}
       </tbody>
     </table>
+    </div>
+  </div>
+}
+// Подписи "Устранено"/"Принято" (не "На финальной проверке"/"Исправлено") —
+// та же путаница метки/значения, что нашлась и была исправлена в
+// backend/app/services/statistics/pptx.py: issues_fixed_events считает
+// переходы в fixed (сдано на проверку), issues_closed_events — решение
+// админа принять исправление. Держим терминологию согласованной с pptx.
+const remediationColumns: { key: keyof StatsDistrictRow; label: string; group: string }[] = [
+  { key: 'issues_found', label: 'Выявлено', group: 'Поток за период' },
+  { key: 'issues_fixed_events', label: 'Устранено', group: 'Поток за период' },
+  { key: 'issues_closed_events', label: 'Принято', group: 'Поток за период' },
+  { key: 'issues_revision_events', label: 'Возвращено на доработку', group: 'Поток за период' },
+  { key: 'issues_cohort_closed_pct', label: 'Устранено из выявленных', group: 'Результат по замечаниям периода' },
+  { key: 'issues_pending_final_current', label: 'На проверке', group: 'Состояние на конец периода' },
+  { key: 'issues_requires_work_current', label: 'Требуют работы', group: 'Состояние на конец периода' },
+  { key: 'issues_overdue_current', label: 'Просрочено', group: 'Состояние на конец периода' },
+  { key: 'issues_requires_work_pct', label: 'Доля требующих устранения', group: 'Состояние на конец периода' },
+]
+const remediationGroups = ['Поток за период', 'Результат по замечаниям периода', 'Состояние на конец периода']
+
+function remediationCellValue(r: StatsDistrictRow, key: keyof StatsDistrictRow, isTotal: boolean) {
+  const metricKey = key === 'issues_cohort_closed_pct' || key === 'issues_requires_work_pct'
+    ? key as RemediationMetricKey
+    : null
+  if (metricKey) {
+    const metric = remediationMetricMeta(r, metricKey)
+    const value = remediationMetricLabel(metric.numerator, metric.denominator, metric.percentage)
+    const style = !isTotal && metric.percentage !== null ? { background: qualityColor(metric.percentage, metric.direction) } : undefined
+    return { value, style, noData: metric.percentage === null, emptyTitle: metric.emptyTitle, highlight: false }
+  }
+  const highlight = !isTotal && (
+    (key === 'issues_closed_events' && Number(r[key]) > 0) ||
+    (key === 'issues_overdue_current' && Number(r[key]) > 0)
+  )
+  return { value: r[key], style: undefined, noData: false, emptyTitle: undefined, highlight }
+}
+
+function RemediationCard({ r, isTotal }: { r: StatsDistrictRow; isTotal: boolean }) {
+  return <div className={`card ${isTotal ? 'bg-slate-700' : ''}`}>
+    <div className={`font-bold text-sm mb-2 ${isTotal ? 'text-white' : 'text-slate-800'}`}>{isTotal ? 'ИТОГО' : r.district_name}</div>
+    {remediationGroups.map((group) => (
+      <div key={group} className="mb-2 last:mb-0">
+        <div className={`text-[10px] uppercase font-semibold mb-1 ${isTotal ? 'text-white/70' : 'text-slate-500'}`}>{group}</div>
+        <div className="grid grid-cols-2 gap-2">
+          {remediationColumns.filter((c) => c.group === group).map(({ key, label }) => {
+            const cell = remediationCellValue(r, key, isTotal)
+            return <div key={key} className={`rounded-lg p-1.5 text-center ${isTotal ? 'bg-white/10' : ''}`} style={!isTotal ? cell.style : undefined} title={cell.noData ? cell.emptyTitle : undefined}>
+              <div className={`text-[9px] ${isTotal ? 'text-white/70' : 'text-slate-500'}`}>{label}</div>
+              <div className={`text-xs font-semibold ${isTotal ? 'text-white' : cell.noData ? 'text-slate-500' : cell.highlight ? 'text-emerald-800' : 'text-slate-800'}`}>{cell.value}</div>
+            </div>
+          })}
+        </div>
+      </div>
+    ))}
   </div>
 }
 function RemediationTable({ rows, totals }: { rows: StatsDistrictRow[]; totals: StatsDistrictRow }) {
   const [sort, setSort] = useState<keyof StatsDistrictRow>('district_name')
-  const columns: { key: keyof StatsDistrictRow; label: string; group: string }[] = [
-    { key: 'issues_found', label: 'Выявлено', group: 'Поток за период' },
-    { key: 'issues_fixed_events', label: 'На финальной проверке', group: 'Поток за период' },
-    { key: 'issues_closed_events', label: 'Исправлено', group: 'Поток за период' },
-    { key: 'issues_revision_events', label: 'Возвращено на доработку', group: 'Поток за период' },
-    { key: 'issues_cohort_closed_pct', label: 'Устранено из выявленных', group: 'Результат по замечаниям периода' },
-    { key: 'issues_pending_final_current', label: 'На проверке', group: 'Состояние на конец периода' },
-    { key: 'issues_requires_work_current', label: 'Требуют работы', group: 'Состояние на конец периода' },
-    { key: 'issues_overdue_current', label: 'Просрочено', group: 'Состояние на конец периода' },
-    { key: 'issues_requires_work_pct', label: 'Доля требующих устранения', group: 'Состояние на конец периода' },
-  ]
   const ordered = useMemo(() => [...rows].sort((a, b) => typeof a[sort] === 'number' ? Number(b[sort]) - Number(a[sort]) : String(a[sort]).localeCompare(String(b[sort]), 'ru')), [rows, sort])
-  const groups = ['Поток за период', 'Результат по замечаниям периода', 'Состояние на конец периода']
-  return <div className="card overflow-x-auto">
+  const withTotals = withTotalsRow(ordered, totals)
+  return <div className="card">
     <p className="mb-3 text-sm text-slate-600">Левая группа показывает поток событий за период. «Устранено из выявленных» считает, сколько замечаний, созданных в этом периоде, уже закрыты на его конец. «Доля требующих устранения» считает все замечания, созданные не позднее конца периода, и показывает, какая доля из них ещё требует работы. Всё считается в МСК (UTC+3).</p>
+    <div className="sm:hidden space-y-3">
+      {withTotals.map((r) => <RemediationCard key={r.district_id} r={r} isTotal={r.district_id === totals.district_id} />)}
+    </div>
+    <div className="hidden sm:block overflow-x-auto">
     <table className="w-full min-w-[980px] text-xs border border-slate-300"><thead><tr>
       <th rowSpan={2} aria-sort={sort === 'district_name' ? 'ascending' : 'none'} className="border border-slate-300 bg-slate-100 p-0 text-center"><button type="button" onClick={() => setSort('district_name')} className="h-full w-full px-2 py-2 text-center font-semibold hover:bg-slate-200 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary-700">Район</button></th>
-      {groups.map(group => <th key={group} colSpan={columns.filter(c => c.group === group).length} className={`border border-slate-300 p-2 ${group === 'Поток за период' ? 'bg-orange-100 text-orange-950' : group === 'Результат по замечаниям периода' ? 'bg-emerald-100 text-emerald-950' : 'bg-slate-100 text-slate-800'}`}>{group}</th>)}
-    </tr><tr>{columns.map(({ key, label, group }) => <th key={key} className={`border border-slate-300 p-0 ${group === 'Поток за период' ? 'bg-orange-50' : group === 'Результат по замечаниям периода' ? 'bg-emerald-50' : 'bg-slate-50'}`}><button type="button" onClick={() => setSort(key)} className="w-full px-2 py-2 font-semibold hover:bg-slate-100">{label}</button></th>)}</tr></thead>
-    <tbody>{withTotalsRow(ordered, totals).map(r => {
+      {remediationGroups.map(group => <th key={group} colSpan={remediationColumns.filter(c => c.group === group).length} className={`border border-slate-300 p-2 ${group === 'Поток за период' ? 'bg-orange-100 text-orange-950' : group === 'Результат по замечаниям периода' ? 'bg-emerald-100 text-emerald-950' : 'bg-slate-100 text-slate-800'}`}>{group}</th>)}
+    </tr><tr>{remediationColumns.map(({ key, label, group }) => <th key={key} className={`border border-slate-300 p-0 ${group === 'Поток за период' ? 'bg-orange-50' : group === 'Результат по замечаниям периода' ? 'bg-emerald-50' : 'bg-slate-50'}`}><button type="button" onClick={() => setSort(key)} className="w-full px-2 py-2 font-semibold hover:bg-slate-100">{label}</button></th>)}</tr></thead>
+    <tbody>{withTotals.map(r => {
       const total = r.district_id === totals.district_id
       return <tr key={r.district_id} className={total ? 'bg-slate-700 text-center font-bold text-white' : 'text-center'}>
         <td className="border border-slate-300 p-2 text-center">{total ? 'ИТОГО' : r.district_name}</td>
-        {columns.map(({ key }) => {
-          const metricKey = key === 'issues_cohort_closed_pct' || key === 'issues_requires_work_pct'
-            ? key as RemediationMetricKey
-            : null
-          if (metricKey) {
-            const metric = remediationMetricMeta(r, metricKey)
-            const value = remediationMetricLabel(metric.numerator, metric.denominator, metric.percentage)
-            return <td key={key} title={metric.percentage === null ? metric.emptyTitle : undefined} className={`border border-slate-300 p-2 ${metric.percentage === null ? 'bg-slate-100 text-slate-500' : ''}`} style={!total && metric.percentage !== null ? { background: qualityColor(metric.percentage, metric.direction) } : undefined}>{value}</td>
-          }
-          return <td key={key} className={`border border-slate-300 p-2 ${!total && key === 'issues_closed_events' && Number(r[key]) > 0 ? 'bg-emerald-50 text-emerald-800 font-semibold' : ''} ${!total && key === 'issues_overdue_current' && Number(r[key]) > 0 ? 'bg-red-100 text-red-900 font-semibold' : ''}`}>{r[key]}</td>
+        {remediationColumns.map(({ key }) => {
+          const cell = remediationCellValue(r, key, total)
+          return <td key={key} title={cell.noData ? cell.emptyTitle : undefined} className={`border border-slate-300 p-2 ${cell.noData ? 'bg-slate-100 text-slate-500' : ''} ${cell.highlight ? 'bg-emerald-50 text-emerald-800 font-semibold' : ''} ${!total && key === 'issues_overdue_current' && Number(r[key]) > 0 ? 'bg-red-100 text-red-900 font-semibold' : ''}`} style={cell.style}>{cell.value}</td>
         })}
       </tr>
     })}</tbody>
     </table>
+    </div>
   </div>
 }
 function Shtab({ params }: { params: { date_from: string; date_to: string; district_id?: string; all_time?: boolean } }) {

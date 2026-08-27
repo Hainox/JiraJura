@@ -20,6 +20,19 @@ default_due_date() при создании. Но замечания, завед�
 МСК) — иначе часть просроченных задним числом внезапно оказалась бы ещё
 "не просроченной" только потому, что бэкфилл запустили сегодня.
 
+Важно: due_date можно снять и намеренно — update_issue (routers/issues.py)
+по model_fields_set отличает "поле не прислали" от "прислали null", то
+есть проверяющий/админ может явно очистить срок через PATCH. Бэкфилл не
+должен путать такой осознанный null с "срок никогда не проставлялся" —
+поэтому берём только строки с updated_at IS NULL: эта колонка не имеет
+default и обновляется исключительно внутри update_issue (который сам же
+безусловно проставляет issue.updated_at = now() при любом PATCH), так что
+NULL здесь гарантирует "замечание с момента создания никто не трогал", а
+не просто "давно не трогали". Замечания с уже непустым updated_at в отчёте
+показаны отдельно и бэкфиллом не трогаются — если среди них тоже есть
+случаи с due_date IS NULL, это тот самый неотличимый случай, разбирать
+вручную.
+
 Самодостаточный по духу остальных скриптов в backend/, но, в отличие от
 них, импортирует app.services.issues.default_due_date — это совсем
 лёгкий модуль (только datetime + app.services.timezone, тоже без внешних
@@ -54,22 +67,31 @@ async def main(apply: bool):
     async with Session() as db:
         rows = (await db.execute(text(
             "SELECT id, criticality, status, created_at "
-            "FROM issues WHERE due_date IS NULL"
+            "FROM issues WHERE due_date IS NULL AND updated_at IS NULL"
         ))).fetchall()
+        touched_count = (await db.execute(text(
+            "SELECT count(*) FROM issues WHERE due_date IS NULL AND updated_at IS NOT NULL"
+        ))).scalar_one()
 
         if not rows:
-            print("Замечаний без срока устранения не найдено — бэкфилл не нужен.")
+            print("Замечаний без срока устранения (нетронутых с момента создания) не найдено — бэкфилл не нужен.")
+            if touched_count:
+                print(f"Но есть {touched_count} замечаний с due_date IS NULL, которые уже редактировались — "
+                      f"скрипт их не трогает (возможен осознанный null), разбирать вручную.")
             return
 
         by_criticality = Counter(r.criticality for r in rows)
         by_status = Counter(r.status for r in rows)
-        print(f"Замечаний без срока устранения: {len(rows)}")
+        print(f"Замечаний без срока устранения (нетронутых с момента создания): {len(rows)}")
         print("По критичности:")
         for crit, count in by_criticality.most_common():
             print(f"  {crit}: {count}")
         print("По статусу:")
         for status, count in by_status.most_common():
             print(f"  {status}: {count}")
+        if touched_count:
+            print(f"\nЕщё {touched_count} замечаний с due_date IS NULL уже редактировались после создания — "
+                  f"пропущены (возможен осознанный null), разбирать вручную.")
 
         if not apply:
             print("\nЭто отчёт. Чтобы проставить сроки — повторите с --apply.")
@@ -79,11 +101,16 @@ async def main(apply: bool):
         for r in rows:
             created_on = r.created_at.astimezone(MSK).date()
             due_date = default_due_date(r.criticality, created_on=created_on)
-            await db.execute(
-                text("UPDATE issues SET due_date = :due_date WHERE id = :id"),
+            # due_date IS NULL в UPDATE — на случай, если между SELECT и этим
+            # запросом кто-то уже проставил срок вручную через PATCH: тогда
+            # обновление просто не сработает (rowcount == 0), а не затрёт
+            # только что введённое значение.
+            result = await db.execute(
+                text("UPDATE issues SET due_date = :due_date WHERE id = :id AND due_date IS NULL"),
                 {"due_date": due_date, "id": r.id},
             )
-            updated += 1
+            if result.rowcount:
+                updated += 1
         await db.commit()
         print(f"\nПроставлен срок устранения {updated} замечаниям.")
 

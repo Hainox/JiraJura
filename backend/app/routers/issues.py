@@ -300,12 +300,19 @@ async def update_issue(
     if "executor_name" in data.model_fields_set:
         issue.executor_name = data.executor_name.strip() if data.executor_name else None
 
-    # Решение админа (closed/revision_needed) — финальное: уводить замечание
-    # ИЗ этих статусов куда-либо (в т.ч. обратно в open/in_work) тоже может
-    # только админ, иначе проверяющий одним PUT тихо отменяет уже принятое
-    # админом решение без его участия.
-    if issue.status in ('closed', 'revision_needed') and data.status and data.status != issue.status and current_user.role != 'admin':
+    # Принятое администратором замечание (closed) финально: изменить его
+    # статус может только админ. revision_needed — не финал, а рабочий цикл:
+    # проверяющий должен иметь возможность повторно отправить исправление
+    # в fixed после выполнения комментария администратора.
+    if issue.status == 'closed' and data.status and data.status != issue.status and current_user.role != 'admin':
         raise HTTPException(403, "Изменить статус после решения администратора может только админ")
+    if (
+        issue.status == 'revision_needed'
+        and data.status
+        and data.status not in ('revision_needed', 'fixed')
+        and current_user.role != 'admin'
+    ):
+        raise HTTPException(403, "После доработки замечание можно только повторно отправить на проверку")
 
     if data.status and data.status != issue.status:
         # Цепочка инспектор→проверяющий→админ: проверяющий доводит

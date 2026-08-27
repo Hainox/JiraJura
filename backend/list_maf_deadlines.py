@@ -37,6 +37,10 @@ low=14). Если штаб утвердит другую шкалу (назыв�
 
   # тот же полный список, но сгруппированный по категориям — для доклада:
   docker compose -f docker-compose.prod.yml exec api python list_maf_deadlines.py --category "" --sort category --out /app/exports/all_open_by_category.csv
+
+  # отдельно детские / отдельно спортивные площадки — для доклада с разбивкой:
+  docker compose -f docker-compose.prod.yml exec api python list_maf_deadlines.py --category "" --sort category --site-type "Детская площадка" --out /app/exports/detskie_by_category.csv
+  docker compose -f docker-compose.prod.yml exec api python list_maf_deadlines.py --category "" --sort category --site-type "Спортивная площадка" --out /app/exports/sportivnye_by_category.csv
 """
 import argparse
 import asyncio
@@ -57,7 +61,8 @@ STATUS_LABELS = {
 }
 
 
-async def main(district: str | None, category: str | None, out: str | None, sort: str):
+async def main(district: str | None, category: str | None, out: str | None, sort: str,
+                site_type: str | None):
     if out:
         from app.services.safe_export import reject_uploads_path, ensure_parent_dir
         reject_uploads_path(out)
@@ -80,6 +85,10 @@ async def main(district: str | None, category: str | None, out: str | None, sort
     if category:
         clauses.append("ic.name = :category")
         params["category"] = category
+
+    if site_type:
+        clauses.append("s.type = :site_type")
+        params["site_type"] = site_type
 
     where = " AND ".join(clauses)
     order_by = (
@@ -104,7 +113,8 @@ async def main(district: str | None, category: str | None, out: str | None, sort
         ), params)).fetchall()
 
     if not rows:
-        print(f"Открытых замечаний{' по категории «' + category + '»' if category else ''} "
+        print(f"Открытых замечаний{' по категории «' + category + '»' if category else ''}"
+              f"{' (' + site_type + ')' if site_type else ''} "
               f"{'в районе «' + district + '»' if district else 'по всем районам'} не найдено.")
         return
 
@@ -168,5 +178,7 @@ if __name__ == "__main__":
     parser.add_argument("--out", help="путь к CSV (вне uploads/); без этого флага — только вывод в консоль")
     parser.add_argument("--sort", choices=["district", "category"], default="district",
                          help="группировка списка: по районам (по умолчанию) или по категориям замечания")
+    parser.add_argument("--site-type", choices=["Детская площадка", "Спортивная площадка"], default=None,
+                         help="фильтр по типу площадки (по умолчанию — детские и спортивные вместе)")
     args = parser.parse_args()
-    asyncio.run(main(args.district, args.category, args.out, args.sort))
+    asyncio.run(main(args.district, args.category, args.out, args.sort, args.site_type))

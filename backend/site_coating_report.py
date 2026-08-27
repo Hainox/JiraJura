@@ -36,6 +36,10 @@ Hainox/karta-sao, файлы dp.geojson/sp.geojson) — там у каждой �
   # только один район:
   docker compose -f docker-compose.prod.yml exec api python site_coating_report.py --district "Ховрино" --out /app/exports/coating_hovrino.csv
 
+  # отдельно детские / отдельно спортивные площадки — для доклада с разбивкой:
+  docker compose -f docker-compose.prod.yml exec api python site_coating_report.py --site-type "Детская площадка" --out /app/exports/coating_detskie.csv
+  docker compose -f docker-compose.prod.yml exec api python site_coating_report.py --site-type "Спортивная площадка" --out /app/exports/coating_sportivnye.csv
+
   # если у контейнера нет доступа в интернет — скачать dp.geojson/sp.geojson
   # заранее (например, git clone karta-sao на хосте и docker cp) и указать
   # локальные пути:
@@ -109,17 +113,18 @@ def nearest_coating(lon, lat, candidates, max_distance_m):
 
 
 async def main(district: str | None, out: str | None, max_distance: float,
-                dp_geojson: str | None, sp_geojson: str | None):
+                dp_geojson: str | None, sp_geojson: str | None, site_type: str | None):
     if out:
         from app.services.safe_export import reject_uploads_path, ensure_parent_dir
         reject_uploads_path(out)
         ensure_parent_dir(out)
 
     print("Загружаем карту покрытий...")
-    candidates_by_type = {
-        "Детская площадка": load_candidates("Детская площадка", dp_geojson),
-        "Спортивная площадка": load_candidates("Спортивная площадка", sp_geojson),
-    }
+    # При --site-type грузим только нужный geojson — не гоняем лишний запрос
+    # к карте, если, например, нужны только спортивные площадки.
+    types_needed = [site_type] if site_type else list(GEOJSON_BY_TYPE)
+    candidates_by_type = {t: load_candidates(t, dp_geojson if t == "Детская площадка" else sp_geojson)
+                           for t in types_needed}
 
     engine = create_async_engine(DATABASE_URL, echo=False)
     Session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -129,6 +134,9 @@ async def main(district: str | None, out: str | None, max_distance: float,
     if district:
         clauses.append("d.name ILIKE :district")
         params["district"] = f"%{district}%"
+    if site_type:
+        clauses.append("s.type = :site_type")
+        params["site_type"] = site_type
     where = " AND ".join(clauses)
 
     async with Session() as db:
@@ -143,7 +151,8 @@ async def main(district: str | None, out: str | None, max_distance: float,
         ), params)).fetchall()
 
     if not rows:
-        print(f"Площадок {'в районе «' + district + '»' if district else 'по всем районам'} не найдено.")
+        print(f"Площадок{' (' + site_type + ')' if site_type else ''} "
+              f"{'в районе «' + district + '»' if district else 'по всем районам'} не найдено.")
         return
 
     fieldnames = ["Район", "Двор", "Тип площадки", "Вид покрытия", "Адрес на карте",
@@ -205,5 +214,7 @@ if __name__ == "__main__":
                          help=f"порог сопоставления в метрах (по умолчанию {DEFAULT_MAX_DISTANCE_M:.0f})")
     parser.add_argument("--dp-geojson", help="локальный путь к dp.geojson вместо загрузки с карты")
     parser.add_argument("--sp-geojson", help="локальный путь к sp.geojson вместо загрузки с карты")
+    parser.add_argument("--site-type", choices=["Детская площадка", "Спортивная площадка"], default=None,
+                         help="фильтр по типу площадки (по умолчанию — детские и спортивные вместе)")
     args = parser.parse_args()
-    asyncio.run(main(args.district, args.out, args.max_distance, args.dp_geojson, args.sp_geojson))
+    asyncio.run(main(args.district, args.out, args.max_distance, args.dp_geojson, args.sp_geojson, args.site_type))

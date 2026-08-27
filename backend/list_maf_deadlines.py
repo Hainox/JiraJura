@@ -1,9 +1,15 @@
 # -*- coding: utf-8 -*-
-"""Список открытых замечаний по МАФ со сроками устранения — по запросу со
-штаба 26.08.2026 (Кануков Д.М., зам. префекта САО): главам районов нужно
-видеть срок по каждому конкретному МАФ, чтобы подтвердить/скорректировать
+"""Список открытых замечаний со сроками устранения — по запросу со штаба
+26.08.2026 (Кануков Д.М., зам. префекта САО): главам районов нужно видеть
+срок по каждому конкретному замечанию, чтобы подтвердить/скорректировать
 дату устранения. Не общая статистика, а адресный список, который можно
 выгрузить и разослать по районам.
+
+Изначально писался под МАФ (--category по умолчанию "МАФ"), но название
+файла шире не переименовывал — --category "" снимает фильтр и даёт полный
+список по всем категориям, а --sort category группирует его по категориям
+вместо районов (для доклада: "полный список открытых замечаний,
+сгруппированный по категориям" — тот же запрос, другая сортировка).
 
 Самодостаточный, как diagnose_logins.py/reissue_invites.py — не
 импортирует app.models, только читает БД напрямую.
@@ -16,7 +22,7 @@ low=14). Если штаб утвердит другую шкалу (назыв�
 бы шкала их ни считала.
 
 Запуск на сервере:
-  # общий отчёт по всем районам, только консоль:
+  # общий отчёт по всем районам, только консоль (категория по умолчанию — МАФ):
   docker compose -f docker-compose.prod.yml exec api python list_maf_deadlines.py
 
   # выгрузка в CSV (обязательно вне uploads/ — см. safe_export.py):
@@ -26,8 +32,11 @@ low=14). Если штаб утвердит другую шкалу (назыв�
   # только один район:
   docker compose -f docker-compose.prod.yml exec api python list_maf_deadlines.py --district "Беговой" --out /app/exports/maf_deadlines_begovoy.csv
 
-  # другая категория вместо МАФ (например, всё сразу):
-  docker compose -f docker-compose.prod.yml exec api python list_maf_deadlines.py --category "" --out /app/exports/all_open.csv
+  # полный список по всем категориям, сгруппированный по районам (по умолчанию):
+  docker compose -f docker-compose.prod.yml exec api python list_maf_deadlines.py --category "" --out /app/exports/all_open_by_district.csv
+
+  # тот же полный список, но сгруппированный по категориям — для доклада:
+  docker compose -f docker-compose.prod.yml exec api python list_maf_deadlines.py --category "" --sort category --out /app/exports/all_open_by_category.csv
 """
 import argparse
 import asyncio
@@ -48,7 +57,7 @@ STATUS_LABELS = {
 }
 
 
-async def main(district: str | None, category: str | None, out: str | None):
+async def main(district: str | None, category: str | None, out: str | None, sort: str):
     if out:
         from app.services.safe_export import reject_uploads_path, ensure_parent_dir
         reject_uploads_path(out)
@@ -73,6 +82,10 @@ async def main(district: str | None, category: str | None, out: str | None):
         params["category"] = category
 
     where = " AND ".join(clauses)
+    order_by = (
+        "ic.name, d.name, i.due_date NULLS LAST, c.name" if sort == "category"
+        else "d.name, i.due_date NULLS LAST, c.name"
+    )
 
     async with Session() as db:
         rows = (await db.execute(text(
@@ -87,7 +100,7 @@ async def main(district: str | None, category: str | None, out: str | None):
             "JOIN issue_categories ic ON ic.id = i.category_id "
             "JOIN users u ON u.id = i.created_by "
             f"WHERE {where} "
-            "ORDER BY d.name, i.due_date NULLS LAST, c.name"
+            f"ORDER BY {order_by}"
         ), params)).fetchall()
 
     if not rows:
@@ -128,15 +141,18 @@ async def main(district: str | None, category: str | None, out: str | None):
         overdue = sum(1 for r in rows if r.due_date and r.due_date < today)
         print(f"Записей: {len(rows)}, из них просрочено: {overdue}. Сохранено в {out}")
     else:
-        current_district = None
+        current_group = None
+        group_field = "category_name" if sort == "category" else "district_name"
         for r in rows:
-            if r.district_name != current_district:
-                current_district = r.district_name
-                print(f"\n=== {current_district} ===")
+            group_value = getattr(r, group_field)
+            if group_value != current_group:
+                current_group = group_value
+                print(f"\n=== {current_group} ===")
             d = row_dict(r)
             overdue_mark = " ⚠ ПРОСРОЧЕНО" if isinstance(d["Дней до/после срока"], int) and d["Дней до/после срока"] < 0 else ""
+            location = f"{d['Район']} — {d['Двор']}" if sort == "category" else d["Двор"]
             print(
-                f"  [{d['Критичность']}] {d['Двор']} ({d['Тип площадки']}) — {d['Замечание']}\n"
+                f"  [{d['Критичность']}] {location} ({d['Тип площадки']}) — {d['Замечание']}\n"
                 f"    Статус: {d['Статус']} | Срок: {d['Срок устранения']} | "
                 f"Осталось дней: {d['Дней до/после срока']}{overdue_mark} | "
                 f"Исполнитель: {d['Исполнитель'] or '—'}"
@@ -150,5 +166,7 @@ if __name__ == "__main__":
     parser.add_argument("--district", help="фильтр по району (частичное совпадение)")
     parser.add_argument("--category", default=None, help='категория нарушения (по умолчанию "МАФ"; пустая строка снимает фильтр)')
     parser.add_argument("--out", help="путь к CSV (вне uploads/); без этого флага — только вывод в консоль")
+    parser.add_argument("--sort", choices=["district", "category"], default="district",
+                         help="группировка списка: по районам (по умолчанию) или по категориям замечания")
     args = parser.parse_args()
-    asyncio.run(main(args.district, args.category, args.out))
+    asyncio.run(main(args.district, args.category, args.out, args.sort))

@@ -158,6 +158,16 @@ async def test_reviewer_can_resubmit_issue_returned_for_revision(client: AsyncCl
     )
     assert returned.status_code == 200, returned.text
 
+    # Фото из предыдущей попытки не доказывает, что замечание исправили
+    # после возврата. До новой загрузки повторная отправка запрещена.
+    without_new_photo = await client.put(
+        f"/api/v1/issues/{issue_id}",
+        json={"status": "fixed", "executor_name": "Исполнитель после доработки"},
+        headers=reviewer_headers,
+    )
+    assert without_new_photo.status_code == 400, without_new_photo.text
+    assert "новое фото" in without_new_photo.json()["detail"].lower()
+
     new_photo = await client.post(
         f"/api/v1/issues/{issue_id}/fix-photos",
         files={"file": ("revision-fix.jpg", _TINY_JPEG, "image/jpeg")},

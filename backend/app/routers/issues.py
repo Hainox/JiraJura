@@ -346,6 +346,29 @@ async def update_issue(
             )).scalar_one()
             if photo_count == 0:
                 raise HTTPException(400, "Нужно приложить хотя бы одно фото исправления")
+
+            # После решения «На доработку» нельзя заново использовать фото
+            # от предыдущей попытки. Ищем последнее такое решение в истории
+            # и принимаем только фото, загруженное после него.
+            if issue.status == "revision_needed":
+                revision_at = (await db.execute(
+                    select(IssueStatusHistory.created_at)
+                    .where(
+                        IssueStatusHistory.issue_id == issue_id,
+                        IssueStatusHistory.new_status == "revision_needed",
+                    )
+                    .order_by(IssueStatusHistory.created_at.desc())
+                    .limit(1)
+                )).scalar_one_or_none()
+                fresh_photo_count = (await db.execute(
+                    select(func.count()).select_from(Photo).where(
+                        Photo.issue_id == issue_id,
+                        Photo.target_type == "issue_fix",
+                        Photo.created_at >= revision_at if revision_at else False,
+                    )
+                )).scalar_one()
+                if fresh_photo_count == 0:
+                    raise HTTPException(400, "После возврата на доработку загрузите новое фото исправления")
             issue.fixed_at = datetime.now(timezone.utc)
 
         issue.status = data.status

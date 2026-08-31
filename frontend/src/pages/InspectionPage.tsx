@@ -104,6 +104,29 @@ const ISSUE_CRIT_COLORS: Record<string, string> = {
   low: 'bg-gray-100 text-gray-600', medium: 'bg-blue-100 text-blue-700',
   high: 'bg-orange-100 text-orange-800', critical: 'bg-red-100 text-red-900 font-bold',
 }
+// Держать в синхроне с ISSUE_SLA_DAYS в backend/app/services/issues.py —
+// это дублирование значений специально, только чтобы посчитать
+// подсказку "сколько дней" ДО сохранения замечания (реальный due_date
+// всегда считает сервер по той же таблице).
+const ISSUE_SLA_DAYS: Record<string, number> = {
+  low: 14, medium: 7, high: 3, critical: 1,
+}
+
+function ruDaysWord(n: number): string {
+  const abs = Math.abs(n) % 100
+  const last = abs % 10
+  if (abs > 10 && abs < 20) return 'дней'
+  if (last === 1) return 'день'
+  if (last >= 2 && last <= 4) return 'дня'
+  return 'дней'
+}
+
+function dueDateHint(criticality: string): string {
+  const days = ISSUE_SLA_DAYS[criticality] ?? ISSUE_SLA_DAYS.medium
+  const due = new Date()
+  due.setDate(due.getDate() + days)
+  return `${days} ${ruDaysWord(days)} (до ${due.toLocaleDateString('ru')})`
+}
 const ISSUE_STATUS_LABELS: Record<string, string> = {
   open: 'Открыто', assigned: 'Назначено', in_work: 'В работе',
   fixed: 'Исправлено', control: 'На контроле', closed: 'Закрыто',
@@ -847,6 +870,13 @@ export default function InspectionPage() {
               <div className="flex-1 min-w-0">
                 <div className="text-xs text-gray-400 uppercase font-semibold">{item.category ?? 'Общее'}</div>
                 <div className="text-sm text-gray-800 mt-0.5">{item.question}</div>
+                {/* Автосоздание замечания из чек-листа берёт критичность
+                    high/medium по is_critical (см. inspections.py) — эта
+                    подсказка заранее показывает, какой срок получится,
+                    если отметить пункт как "Не ОК". */}
+                <div className="text-[11px] text-gray-400 mt-0.5">
+                  При нарушении — {dueDateHint(item.is_critical ? 'high' : 'medium')}
+                </div>
 
                 {(answers[item.id]?.result && answers[item.id]?.result !== 'pending') && (
                   <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -1057,6 +1087,23 @@ export default function InspectionPage() {
                   <Send className="w-4 h-4" />
                 </button>
               </div>
+              {/* Кнопка отправки гаснет (opacity-50), если не заполнен
+                  заголовок или не выбрана категория — раньше это никак не
+                  объяснялось, и обращение в поддержку выглядело как "кнопка
+                  не нажимается", хотя на деле форма просто не заполнена до
+                  конца. Показываем причину явно, как и остальные ошибки
+                  сохранения (см. describeInspectionUpdateError). */}
+              {!issueTitle.trim() || !issueCategoryId ? (
+                <p className="text-xs text-red-600">
+                  {!issueTitle.trim() && !issueCategoryId
+                    ? 'Заполните заголовок и выберите категорию, чтобы отправить замечание.'
+                    : !issueTitle.trim()
+                    ? 'Заполните заголовок замечания, чтобы отправить.'
+                    : 'Выберите категорию замечания, чтобы отправить.'}
+                </p>
+              ) : (
+                <p className="text-xs text-gray-500">Срок устранения: {dueDateHint(issueCriticality)}</p>
+              )}
             </div>
           )}
         </div>

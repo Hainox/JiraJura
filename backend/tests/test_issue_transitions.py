@@ -139,3 +139,46 @@ async def test_issue_status_rejects_unknown_value(client: AsyncClient, admin_hea
         f"/api/v1/issues/{issue_id}", json={"status": "not_a_real_status"}, headers=admin_headers,
     )
     assert bad.status_code == 422, bad.text
+
+
+@pytest.mark.asyncio
+async def test_reviewer_can_resubmit_issue_returned_for_revision(client: AsyncClient, admin_headers):
+    suffix = str(uuid.uuid4())[:8]
+    did, issue_id = await _new_district_site_issue(client, admin_headers, suffix, 38.40)
+    reviewer_headers = await _invite_and_login(
+        client, admin_headers, f"RevisionReviewer{suffix}", "Проверяющий Доработки",
+        "reviewer", did, "Revision12345",
+    )
+
+    await _mark_fixed(client, admin_headers, issue_id)
+    returned = await client.put(
+        f"/api/v1/issues/{issue_id}",
+        json={"status": "revision_needed", "reviewer_comment": "Требуется дополнительная уборка"},
+        headers=admin_headers,
+    )
+    assert returned.status_code == 200, returned.text
+
+    # Фото из предыдущей попытки не доказывает, что замечание исправили
+    # после возврата. До новой загрузки повторная отправка запрещена.
+    without_new_photo = await client.put(
+        f"/api/v1/issues/{issue_id}",
+        json={"status": "fixed", "executor_name": "Исполнитель после доработки"},
+        headers=reviewer_headers,
+    )
+    assert without_new_photo.status_code == 400, without_new_photo.text
+    assert "новое фото" in without_new_photo.json()["detail"].lower()
+
+    new_photo = await client.post(
+        f"/api/v1/issues/{issue_id}/fix-photos",
+        files={"file": ("revision-fix.jpg", _TINY_JPEG, "image/jpeg")},
+        headers=reviewer_headers,
+    )
+    assert new_photo.status_code == 200, new_photo.text
+
+    resubmitted = await client.put(
+        f"/api/v1/issues/{issue_id}",
+        json={"status": "fixed", "executor_name": "Исполнитель после доработки"},
+        headers=reviewer_headers,
+    )
+    assert resubmitted.status_code == 200, resubmitted.text
+    assert resubmitted.json()["status"] == "fixed"

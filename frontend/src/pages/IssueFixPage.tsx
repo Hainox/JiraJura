@@ -115,7 +115,10 @@ export default function IssueFixPage() {
       queryClient.invalidateQueries({ queryKey: ['issues'] })
       navigate(returnPath)
     },
-    onError: () => toast.error('Ошибка сохранения'),
+    onError: (err: unknown) => {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(msg || 'Ошибка сохранения')
+    },
   })
 
   const acceptMutation = useMutation({

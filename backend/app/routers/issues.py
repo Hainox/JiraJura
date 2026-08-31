@@ -300,12 +300,19 @@ async def update_issue(
     if "executor_name" in data.model_fields_set:
         issue.executor_name = data.executor_name.strip() if data.executor_name else None
 
-    # Решение админа (closed/revision_needed) — финальное: уводить замечание
-    # ИЗ этих статусов куда-либо (в т.ч. обратно в open/in_work) тоже может
-    # только админ, иначе проверяющий одним PUT тихо отменяет уже принятое
-    # админом решение без его участия.
-    if issue.status in ('closed', 'revision_needed') and data.status and data.status != issue.status and current_user.role != 'admin':
+    # Принятое администратором замечание (closed) финально: изменить его
+    # статус может только админ. revision_needed — не финал, а рабочий цикл:
+    # проверяющий должен иметь возможность повторно отправить исправление
+    # в fixed после выполнения комментария администратора.
+    if issue.status == 'closed' and data.status and data.status != issue.status and current_user.role != 'admin':
         raise HTTPException(403, "Изменить статус после решения администратора может только админ")
+    if (
+        issue.status == 'revision_needed'
+        and data.status
+        and data.status not in ('revision_needed', 'fixed')
+        and current_user.role != 'admin'
+    ):
+        raise HTTPException(403, "После доработки замечание можно только повторно отправить на проверку")
 
     if data.status and data.status != issue.status:
         # Цепочка инспектор→проверяющий→админ: проверяющий доводит
@@ -339,6 +346,29 @@ async def update_issue(
             )).scalar_one()
             if photo_count == 0:
                 raise HTTPException(400, "Нужно приложить хотя бы одно фото исправления")
+
+            # После решения «На доработку» нельзя заново использовать фото
+            # от предыдущей попытки. Ищем последнее такое решение в истории
+            # и принимаем только фото, загруженное после него.
+            if issue.status == "revision_needed":
+                revision_at = (await db.execute(
+                    select(IssueStatusHistory.created_at)
+                    .where(
+                        IssueStatusHistory.issue_id == issue_id,
+                        IssueStatusHistory.new_status == "revision_needed",
+                    )
+                    .order_by(IssueStatusHistory.created_at.desc())
+                    .limit(1)
+                )).scalar_one_or_none()
+                fresh_photo_count = (await db.execute(
+                    select(func.count()).select_from(Photo).where(
+                        Photo.issue_id == issue_id,
+                        Photo.target_type == "issue_fix",
+                        Photo.created_at >= revision_at if revision_at else False,
+                    )
+                )).scalar_one()
+                if fresh_photo_count == 0:
+                    raise HTTPException(400, "После возврата на доработку загрузите новое фото исправления")
             issue.fixed_at = datetime.now(timezone.utc)
 
         issue.status = data.status

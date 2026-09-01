@@ -6,6 +6,7 @@ import os
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy import select, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -439,14 +440,38 @@ async def update_inspection(
                 existing.comment = ans.comment
                 answer_by_item[item_id] = existing
             else:
-                new_answer = ChecklistAnswer(
-                    inspection_id=inspection_id,
-                    checklist_item_id=item_id,
-                    result=ans.result,
-                    comment=ans.comment,
-                )
-                db.add(new_answer)
-                answer_by_item[item_id] = new_answer
+                # Конкурентный запрос по тому же обходу+пункту (двойной тап
+                # "Сохранить" или повтор после таймаута на плохой связи в
+                # поле) мог вставить эту же строку между SELECT выше и этим
+                # INSERT — без защиты второй INSERT падает необработанным
+                # 500 на UNIQUE(inspection_id, checklist_item_id) (см.
+                # ChecklistAnswer.__table_args__). SAVEPOINT ограничивает
+                # откат только этой попыткой: остальные ответы и остальная
+                # часть PATCH в этом же запросе отрабатывают как обычно, а
+                # при конфликте просто читаем и обновляем уже вставленную
+                # конкурентом строку вместо повторного падения.
+                try:
+                    async with db.begin_nested():
+                        new_answer = ChecklistAnswer(
+                            inspection_id=inspection_id,
+                            checklist_item_id=item_id,
+                            result=ans.result,
+                            comment=ans.comment,
+                        )
+                        db.add(new_answer)
+                        await db.flush()
+                except IntegrityError:
+                    existing = (await db.execute(
+                        select(ChecklistAnswer).where(
+                            ChecklistAnswer.inspection_id == inspection_id,
+                            ChecklistAnswer.checklist_item_id == item_id,
+                        )
+                    )).scalar_one()
+                    existing.result = ans.result
+                    existing.comment = ans.comment
+                    answer_by_item[item_id] = existing
+                else:
+                    answer_by_item[item_id] = new_answer
 
         # Автосоздание замечания по каждому пункту, отмеченному "Не ОК" —
         # раньше это был отдельный необязательный ручной шаг («Создать

@@ -21,9 +21,14 @@
 (дубли логинов, неизвестные роли/районы) и вход под админом для сверки
 списка районов; сами приглашения не создаются. Рассылка — с флагом --apply.
 
-Запуск на сервере (тот же docker-network, что и у работающего api):
+Запуск на сервере (тот же docker-network, что и у работающего api). Контейнер
+исполняет команду от appuser (10001:10001, см. backend/Dockerfile) — монтируем
+каталог с ростерами НЕ read-only (:ro сломает запись --out) и один раз отдаём
+его этому UID, иначе open() на --out упадёт с PermissionError:
+  mkdir -p /opt/jirajura/rosters && chown 10001:10001 /opt/jirajura/rosters
+
   dry-run: docker compose -f docker-compose.prod.yml run --rm \
-             -v /opt/jirajura/rosters:/rosters:ro api python bulk_invite.py \
+             -v /opt/jirajura/rosters:/rosters api python bulk_invite.py \
              --admin-login admin --admin-password '...' \
              --xlsx-dir /rosters --out /rosters/result.csv
   апплай:  тот же вызов + --apply

@@ -62,6 +62,7 @@ async def test_concurrent_same_item_patch_does_not_500(client: AsyncClient, admi
     complete = await client.post(
         f"/api/v1/auth/invites/{invite.json()['token']}/complete", json={"password": "RaceCond12345"},
     )
+    assert complete.status_code == 200, complete.text
     inspector_headers = {"Authorization": f"Bearer {complete.json()['access_token']}"}
 
     start = await client.post("/api/v1/inspections/", json={"site_id": site_id, "type": "regular"}, headers=inspector_headers)
@@ -75,13 +76,27 @@ async def test_concurrent_same_item_patch_does_not_500(client: AsyncClient, admi
     assert items, "нет пунктов чек-листа без requires_photo для теста"
     item_id = str(items[0][0])
 
+    # asyncio.gather не гарантирует, что оба запроса реально столкнутся в
+    # окне SELECT-затем-INSERT (если первый успевает закоммититься раньше,
+    # чем второй доходит до своего SELECT, оба просто идут по обычному
+    # UPDATE-пути, и тест ничего не говорит про SAVEPOINT-восстановление).
+    # Сам механизм восстановления после IntegrityError отдельно и
+    # детерминированно проверен на sqlite (см. коммит) до того, как писать
+    # эту async-версию — здесь же не хотим городить внутренние тестовые
+    # хуки поверх продакшн-кода ради принудительной синхронизации (в этом
+    # наборе тестов всё идёт через HTTP-клиент, ни один тест не дёргает
+    # роутеры напрямую). Поэтому вместо двух запросов — сразу пять
+    # одинаковых: C(5,2)=10 попарных окон гонки вместо одного заметно
+    # снижают шанс, что ни одна пара не столкнётся хотя бы на части
+    # прогонов CI. Проверяемый инвариант (ни один 500, ровно одна строка в
+    # БД) верен независимо от того, сколько пар реально столкнулось.
     payload = {"answers": [{"checklist_item_id": item_id, "result": "ok"}]}
-    r1, r2 = await asyncio.gather(
-        client.patch(f"/api/v1/inspections/{inspection_id}", json=payload, headers=inspector_headers),
-        client.patch(f"/api/v1/inspections/{inspection_id}", json=payload, headers=inspector_headers),
-    )
-    assert r1.status_code == 200, r1.text
-    assert r2.status_code == 200, r2.text
+    responses = await asyncio.gather(*(
+        client.patch(f"/api/v1/inspections/{inspection_id}", json=payload, headers=inspector_headers)
+        for _ in range(5)
+    ))
+    for r in responses:
+        assert r.status_code == 200, r.text
 
     rows = _query_all(
         "SELECT result FROM checklist_answers WHERE inspection_id = %(i)s AND checklist_item_id = %(c)s",

@@ -460,7 +460,14 @@ async def update_inspection(
                         )
                         db.add(new_answer)
                         await db.flush()
-                except IntegrityError:
+                except IntegrityError as e:
+                    # Ловим только конфликт по нашему UNIQUE — любая другая
+                    # IntegrityError (например, нарушение внешнего ключа на
+                    # несуществующий checklist_item_id) не должна тихо
+                    # трактоваться как "конкурент уже вставил", а должна
+                    # долететь до клиента как есть.
+                    if getattr(getattr(e, "orig", None), "sqlstate", None) != "23505":
+                        raise
                     existing = (await db.execute(
                         select(ChecklistAnswer).where(
                             ChecklistAnswer.inspection_id == inspection_id,

@@ -46,7 +46,7 @@ server {
     }
 
     location / {
-        set $frontend_upstream frontend:80;
+        set $frontend_upstream frontend:8080;
         proxy_pass http://$frontend_upstream;
         proxy_set_header Host $host;
     }

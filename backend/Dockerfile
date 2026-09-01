@@ -17,6 +17,21 @@ COPY alembic/ ./alembic/
 COPY docker-entrypoint.sh .
 RUN chmod +x docker-entrypoint.sh && mkdir -p /app/uploads
 
+# Непривилегированный пользователь — контейнер обрабатывает произвольные
+# загружаемые фото (issues.py/inspections.py/feedback.py), и запуск от root
+# без нужды расширяет последствия любого будущего RCE в обработке загрузок.
+# Фиксированный UID/GID (не 1000 — легко случайно совпадает с реальным
+# пользователем на хосте): backend/uploads монтируется с хоста поверх
+# /app/uploads, и на сервере его нужно один раз chown'уть под этот же UID
+# (см. deploy/README.md), иначе запись новых фото будет падать с
+# "Permission denied". chown всего /app — не только uploads: разовые
+# эксплуатационные скрипты (bulk_invite.py и т.п., см. комментарий выше)
+# тоже пишут файлы (CSV-выгрузки) в поддиректории /app.
+RUN groupadd -g 10001 appgroup \
+    && useradd -u 10001 -g appgroup -M -s /usr/sbin/nologin appuser \
+    && chown -R appuser:appgroup /app
+USER appuser
+
 EXPOSE 8000
 # Миграции применяются автоматически на старте контейнера
 # (docker-entrypoint.sh), а не отдельной ручной командой после деплоя —

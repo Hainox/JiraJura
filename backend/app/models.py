@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from geoalchemy2 import Geometry
 from sqlalchemy import (
-    Column, ForeignKey, String, Integer, Numeric, Text, Boolean,
+    Column, Computed, ForeignKey, String, Integer, Numeric, Text, Boolean,
     Date, DateTime, Enum, UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -115,10 +115,13 @@ class Site(Base):
     area_m2 = Column(Numeric(10, 2), nullable=False)
     cleaning_type = Column(String(50), default="Ручная уборка")
     geometry = Column(Geometry("POLYGON", srid=4326), nullable=False)
-    # GENERATED ALWAYS AS (ST_Centroid(geometry)) STORED в schema.sql —
-    # Postgres поддерживает её сам при любом изменении geometry, приложение
-    # никогда не должно писать в эту колонку.
-    centroid = Column(Geometry("POINT", srid=4326))
+    # GENERATED ALWAYS AS (ST_Centroid(geometry)) STORED в schema.sql.
+    # Computed() — не просто документация "не пиши сюда": без него
+    # SQLAlchemy всё равно шлёт эту колонку в INSERT как явный NULL
+    # (проверено эмпирически), а Postgres отклоняет любое явное значение
+    # для GENERATED ALWAYS колонки, включая NULL. С Computed() колонка
+    # вообще не попадает в INSERT/UPDATE — Postgres сам её проставляет.
+    centroid = Column(Geometry("POINT", srid=4326), Computed("ST_Centroid(geometry)", persisted=True))
     kml_original_id = Column(String(200))
     is_active = Column(Boolean, nullable=False, default=True)
     # Инспектор, за которым сейчас закреплена площадка — назначает

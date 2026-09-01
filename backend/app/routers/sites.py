@@ -28,8 +28,12 @@ async def list_sites(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    centroid_lat = func.ST_Y(func.ST_Centroid(Site.geometry)).label("centroid_lat")
-    centroid_lon = func.ST_X(func.ST_Centroid(Site.geometry)).label("centroid_lon")
+    # Читаем уже посчитанную Postgres'ом GENERATED-колонку (см. Site.centroid
+    # в models.py), а не пересчитываем ST_Centroid(geometry) на каждый
+    # запрос — для list_sites с page_size до 5000 это была тысяча лишних
+    # вычислений центроида на один список площадок.
+    centroid_lat = func.ST_Y(Site.centroid).label("centroid_lat")
+    centroid_lon = func.ST_X(Site.centroid).label("centroid_lon")
 
     base = (
         select(Site, centroid_lat, centroid_lon)
@@ -103,8 +107,10 @@ async def get_site(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    centroid_lat = func.ST_Y(func.ST_Centroid(Site.geometry)).label("centroid_lat")
-    centroid_lon = func.ST_X(func.ST_Centroid(Site.geometry)).label("centroid_lon")
+    # Читаем уже посчитанную Postgres'ом GENERATED-колонку (см. Site.centroid
+    # в models.py) вместо пересчёта ST_Centroid(geometry) — см. list_sites.
+    centroid_lat = func.ST_Y(Site.centroid).label("centroid_lat")
+    centroid_lon = func.ST_X(Site.centroid).label("centroid_lon")
 
     q = (
         select(Site, centroid_lat, centroid_lon)
@@ -164,7 +170,7 @@ async def update_site(
     await db.commit()
 
     q = (
-        select(Site, func.ST_Y(func.ST_Centroid(Site.geometry)), func.ST_X(func.ST_Centroid(Site.geometry)))
+        select(Site, func.ST_Y(Site.centroid), func.ST_X(Site.centroid))
         .where(Site.id == site_id)
         .options(selectinload(Site.courtyard).selectinload(Courtyard.district), selectinload(Site.assigned_inspector))
     )
@@ -220,7 +226,7 @@ async def assign_site_inspector(
     await db.commit()
 
     q2 = (
-        select(Site, func.ST_Y(func.ST_Centroid(Site.geometry)), func.ST_X(func.ST_Centroid(Site.geometry)))
+        select(Site, func.ST_Y(Site.centroid), func.ST_X(Site.centroid))
         .where(Site.id == site_id)
         .options(
             selectinload(Site.courtyard).selectinload(Courtyard.district),

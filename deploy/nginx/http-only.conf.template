@@ -12,6 +12,12 @@ server {
     # чтобы nginx не кэшировал IP api/frontend навсегда.
     resolver 127.0.0.11 valid=10s;
 
+    # Синхронно с proxy.conf.template/MAX_PHOTO_SIZE_MB — без этого действует
+    # дефолт nginx (1m), и любая попытка загрузить фото в этом бутстрап-окне
+    # (до выпуска сертификата) молча получает 413, хотя приложение заявляет
+    # лимит 20 МБ.
+    client_max_body_size 25m;
+
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
     }

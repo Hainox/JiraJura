@@ -19,11 +19,22 @@ const UPDATE_TOAST_ID = 'sw-update'
 // старом JS), поэтому вместо этого показываем тост с кнопкой «Обновить» и
 // откладываем обновление до клика или до момента, когда вкладка всё же
 // свернётся — тогда применяем и без клика.
+// let с безопасным no-op по умолчанию, не const = registerSW(...) — на
+// момент вызова registerSW() ниже applyUpdate уже объявлена (используется
+// только изнутри onNeedRefresh, синхронно раньше сработать не может, см.
+// node_modules/vite-plugin-pwa/dist/client/build/register.js: единственный
+// путь к onNeedRefresh лежит за `await import('workbox-window')`, то есть
+// строго после того, как сам registerSW() уже вернул управление и переменная
+// ниже успела бы получить настоящее значение), но держать здесь голый `let`
+// без инициализатора и полагаться на этот порядок — subtle: любой будущий
+// рефакторинг библиотеки ломает это без предупреждения на этапе сборки.
+let updateSW: (reloadPage?: boolean) => Promise<void> = async () => {}
+
 function applyUpdate() {
   updateSW(true)
 }
 
-const updateSW = registerSW({
+updateSW = registerSW({
   immediate: true,
   onNeedRefresh() {
     if (document.visibilityState === 'hidden') {
@@ -35,6 +46,7 @@ const updateSW = registerSW({
         <div className="flex items-center gap-3">
           <span>Доступна новая версия приложения</span>
           <button
+            type="button"
             onClick={() => {
               toast.dismiss(t.id)
               applyUpdate()

@@ -55,5 +55,10 @@ done
 # /app в Dockerfile; /app/uploads — единственное, что переопределяется
 # bind-mount'ом поверх этого).
 export HOME=/app
-exec setpriv --reuid=appuser --regid=appgroup --init-groups \
-  uvicorn app.main:app --host 0.0.0.0 --port 8000 --forwarded-allow-ips '*'
+# "$@" — команда контейнера (CMD в Dockerfile по умолчанию, либо то, что
+# передано после имени сервиса в `docker compose run api <команда>`, как
+# делает bulk_invite.py). Раньше здесь была жёстко зашита команда uvicorn,
+# и docker-entrypoint.sh полностью игнорировал переданную команду — любой
+# `docker compose run --rm api python какой-то_скрипт.py` на деле запускал
+# ещё один экземпляр самого API вместо скрипта.
+exec setpriv --reuid=appuser --regid=appgroup --init-groups "$@"

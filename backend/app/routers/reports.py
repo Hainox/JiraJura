@@ -281,6 +281,14 @@ def _fmt_dt(value) -> str:
     return value.strftime("%d.%m.%Y %H:%M") if value else ""
 
 
+# Issue.due_date — чистая дата (срок устранения), без времени: strftime на
+# ней с "%H:%M" через _fmt_dt технически работает (date молча трактуется как
+# полночь), но в экспорте выглядело как настоящее время "01.09.2026 00:00" —
+# вводит в заблуждение, будто у срока есть конкретный час.
+def _fmt_date(value) -> str:
+    return value.strftime("%d.%m.%Y") if value else ""
+
+
 def _sheet(wb, title: str, headers: list[str], rows: list[tuple], widths: list[int]):
     from openpyxl.utils import get_column_letter
     from app.services.xlsx_style import style_header_row, style_data_row, safe_append
@@ -512,7 +520,7 @@ async def export_xlsx(
             _fmt_dt(iss.created_at), dist_name, court_name, iss.title,
             iss.description or "", CRITICALITY_RU.get(iss.criticality, iss.criticality),
             ISSUE_STATUS_RU.get(iss.status, iss.status), author_name,
-            assignee_name or "", _fmt_dt(iss.due_date), _fmt_dt(iss.fixed_at),
+            assignee_name or "", _fmt_date(iss.due_date), _fmt_dt(iss.fixed_at),
         )
         for iss, dist_name, court_name, author_name, assignee_name in issues
     ]
@@ -694,7 +702,7 @@ async def export_xlsx(
     overdue_items = (await db.execute(overdue_q)).all()
     overdue_rows = [
         (iss.title, dist_name, court_name, author_name,
-         _fmt_dt(iss.created_at), _fmt_dt(iss.due_date), iss.description or "")
+         _fmt_dt(iss.created_at), _fmt_date(iss.due_date), iss.description or "")
         for iss, dist_name, court_name, author_name in overdue_items
     ]
 

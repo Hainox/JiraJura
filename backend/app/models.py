@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from geoalchemy2 import Geometry
 from sqlalchemy import (
-    Column, ForeignKey, String, Integer, Numeric, Text, Boolean,
+    Column, Computed, ForeignKey, String, Integer, Numeric, Text, Boolean,
     Date, DateTime, Enum, UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -86,7 +86,7 @@ class District(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String(100), unique=True, nullable=False)
     code = Column(String(50))
-    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
     courtyards = relationship("Courtyard", back_populates="district")
     users = relationship("User", back_populates="district_ref")
@@ -97,7 +97,7 @@ class Courtyard(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     district_id = Column(UUID(as_uuid=True), ForeignKey("districts.id"), nullable=False)
     name = Column(String(500), nullable=False)
-    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
     __table_args__ = (
         UniqueConstraint("district_id", "name"),
@@ -115,8 +115,15 @@ class Site(Base):
     area_m2 = Column(Numeric(10, 2), nullable=False)
     cleaning_type = Column(String(50), default="Ручная уборка")
     geometry = Column(Geometry("POLYGON", srid=4326), nullable=False)
+    # GENERATED ALWAYS AS (ST_Centroid(geometry)) STORED в schema.sql.
+    # Computed() — не просто документация "не пиши сюда": без него
+    # SQLAlchemy всё равно шлёт эту колонку в INSERT как явный NULL
+    # (проверено эмпирически), а Postgres отклоняет любое явное значение
+    # для GENERATED ALWAYS колонки, включая NULL. С Computed() колонка
+    # вообще не попадает в INSERT/UPDATE — Postgres сам её проставляет.
+    centroid = Column(Geometry("POINT", srid=4326), Computed("ST_Centroid(geometry)", persisted=True))
     kml_original_id = Column(String(200))
-    is_active = Column(Boolean, default=True)
+    is_active = Column(Boolean, nullable=False, default=True)
     # Инспектор, за которым сейчас закреплена площадка — назначает
     # проверяющий/админ (см. routers/sites.py assign_site_inspector).
     # Не блокирует обход площадки другими инспекторами (маршруты в реальной
@@ -124,7 +131,7 @@ class Site(Base):
     # ENABLE_DAILY_INSPECTION_LIMIT в inspections.py) — это только
     # ориентир "чья это площадка сегодня", не хард-ограничение.
     assigned_inspector_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at = Column(DateTime(timezone=True), onupdate=_utcnow)
 
     courtyard = relationship("Courtyard", back_populates="sites")
@@ -142,7 +149,7 @@ class Equipment(Base):
     name = Column(String(200))
     quantity = Column(Integer, default=1)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
     site = relationship("Site", back_populates="equipment")
 
@@ -162,7 +169,7 @@ class User(Base):
     # инструменты) — не отдельная роль, просто флаг на конкретном admin-
     # аккаунте, чтобы не захламлять меню остальным админам.
     is_developer = Column(Boolean, nullable=False, default=False)
-    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
     district_ref = relationship("District", back_populates="users")
     inspections = relationship(
@@ -186,7 +193,7 @@ class UserInvite(Base):
     district_id = Column(UUID(as_uuid=True), ForeignKey("districts.id"), nullable=True)
     token_hash = Column(String(128), nullable=False)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     expires_at = Column(DateTime(timezone=True), nullable=False)
     used_at = Column(DateTime(timezone=True), nullable=True)
 
@@ -197,7 +204,7 @@ class ChecklistTemplate(Base):
     name = Column(String(200), nullable=False)
     site_type = Column(SITE_TYPE_ENUM)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
     items = relationship("ChecklistItem", back_populates="template")
 
@@ -228,7 +235,7 @@ class ChecklistItem(Base):
     # старых обходов уже есть checklist_answers, ссылающиеся на этот пункт
     # (FK без ondelete=CASCADE) — удаление сломало бы их историю.
     is_active = Column(Boolean, default=True, nullable=False)
-    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
     template = relationship("ChecklistTemplate", back_populates="items")
     category_ref = relationship("IssueCategory", back_populates="checklist_items")
@@ -250,7 +257,7 @@ class Inspection(Base):
     reviewer_comment = Column(Text)
     reviewed_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     reviewed_at = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
     site = relationship("Site", back_populates="inspections")
     inspector = relationship("User", back_populates="inspections", foreign_keys=[inspector_id])
@@ -269,7 +276,7 @@ class ChecklistAnswer(Base):
     checklist_item_id = Column(UUID(as_uuid=True), ForeignKey("checklist_items.id"), nullable=False)
     result = Column(CHECKLIST_RESULT_ENUM, nullable=False)
     comment = Column(Text)
-    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
     __table_args__ = (
         UniqueConstraint("inspection_id", "checklist_item_id"),
@@ -291,7 +298,7 @@ class Photo(Base):
     gps_lat = Column(Numeric(9, 6))
     gps_lon = Column(Numeric(9, 6))
     taken_at = Column(DateTime(timezone=True))
-    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
     inspection = relationship("Inspection", back_populates="photos")
 
@@ -316,7 +323,7 @@ class Issue(Base):
     executor_name = Column(String(300))
     fixed_at = Column(DateTime(timezone=True))
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at = Column(DateTime(timezone=True), onupdate=_utcnow)
 
     inspection_ref = relationship("Inspection", back_populates="issues")
@@ -341,7 +348,7 @@ class IssueStatusHistory(Base):
     new_status = Column(ISSUE_STATUS_ENUM, nullable=False)
     changed_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     comment = Column(Text)
-    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
     issue = relationship("Issue", back_populates="status_history")
 
@@ -375,7 +382,7 @@ class FeedbackReport(Base):
     message = Column(Text, nullable=False)
     status = Column(FEEDBACK_STATUS_ENUM, nullable=False, default="new")
     admin_comment = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     resolved_at = Column(DateTime(timezone=True), nullable=True)
 
     attachments = relationship(
@@ -396,6 +403,6 @@ class FeedbackAttachment(Base):
     original_filename = Column(String(255), nullable=True)
     content_type = Column(String(100), nullable=True)
     size_bytes = Column(Integer, nullable=True)
-    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
     report = relationship("FeedbackReport", back_populates="attachments")

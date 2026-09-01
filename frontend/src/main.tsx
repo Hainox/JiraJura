@@ -12,13 +12,18 @@ const UPDATE_TOAST_ID = 'sw-update'
 
 // registerType: 'prompt' (см. vite.config.ts) — плагин находит новый SW, но
 // не активирует его сам, а вызывает этот колбэк и ждёт applyUpdate().
-// Если вкладка сейчас не на экране — обновляемся сразу, без вопросов
-// (перезагрузка ничего не потеряет, никто не смотрит). Если человек активно
-// работает в приложении — молча заменять код под ним рискованно (пример,
-// который уже стоил времени: вылет на логин при развороте PWA из фона на
-// старом JS), поэтому вместо этого показываем тост с кнопкой «Обновить» и
-// откладываем обновление до клика или до момента, когда вкладка всё же
-// свернётся — тогда применяем и без клика.
+//
+// Только тост с кнопкой, никакого тихого auto-apply по document.hidden —
+// он был в первой версии этого PR и Codex справедливо указал на реальную
+// дыру: SW-регистрация одна на весь origin, а не на вкладку. skipWaiting()
+// из ЛЮБОЙ вкладки (в т.ч. свёрнутой в фоне) активирует новый воркер сразу
+// для ВСЕХ вкладок сразу, и КАЖДАЯ из них (см. vite-plugin-pwa client:
+// wb.addEventListener('controlling', ...)) тут же сама себя перезагружает —
+// включая ту, что открыта и активна прямо сейчас, с незасохранённым фото
+// обхода. Проверка document.visibilityState в фоновой вкладке ничего не
+// знает про то, что другая вкладка того же origin в этот момент видима.
+// Поэтому обновление применяется только по явному клику пользователя.
+
 // let с безопасным no-op по умолчанию, не const = registerSW(...) — на
 // момент вызова registerSW() ниже applyUpdate уже объявлена (используется
 // только изнутри onNeedRefresh, синхронно раньше сработать не может, см.
@@ -37,10 +42,6 @@ function applyUpdate() {
 updateSW = registerSW({
   immediate: true,
   onNeedRefresh() {
-    if (document.visibilityState === 'hidden') {
-      applyUpdate()
-      return
-    }
     toast(
       (t) => (
         <div className="flex items-center gap-3">
@@ -60,13 +61,6 @@ updateSW = registerSW({
       ),
       { id: UPDATE_TOAST_ID, duration: Infinity }
     )
-    const applyWhenHidden = () => {
-      if (document.visibilityState !== 'hidden') return
-      document.removeEventListener('visibilitychange', applyWhenHidden)
-      toast.dismiss(UPDATE_TOAST_ID)
-      applyUpdate()
-    }
-    document.addEventListener('visibilitychange', applyWhenHidden)
   },
   onRegisteredSW(_url, registration) {
     if (registration) {

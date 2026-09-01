@@ -40,11 +40,24 @@ while IFS=$'\t' read -r ENTITY_ID CREATED_AT; do
   echo "$(date -Iseconds) обрабатываю деплой, запрошенный $CREATED_AT (entity_id=$ENTITY_ID)"
 
   LOG_TMP=$(mktemp)
-  if {
+  if (
+    # Рабочая копия должна быть чистой перед pull — иначе git pull может
+    # либо упасть (если грязный файл конфликтует с входящим коммитом), либо,
+    # что опаснее, молча пройти (если не конфликтует) и оставить в образе
+    # чей-то незакоммиченный локальный правленный файл вместо кода из main.
+    # Ровно так один раз сломался /issues/categories на проде: кто-то правил
+    # backend/app/routers/issues.py прямо на сервере, не через git, изменения
+    # остались незакоммиченными и попали в собранный образ.
+    DIRTY=$(git status --short)
+    if [ -n "$DIRTY" ]; then
+      echo "Рабочая копия не чистая — деплой отменён, нужно разобраться руками (git status/git diff):"
+      echo "$DIRTY"
+      exit 1
+    fi
     git pull --ff-only origin main
     $COMPOSE build
     $COMPOSE up -d
-  } >"$LOG_TMP" 2>&1; then
+  ) >"$LOG_TMP" 2>&1; then
     STATUS_FLAG=--ok
   else
     STATUS_FLAG=--fail

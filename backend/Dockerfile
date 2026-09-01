@@ -42,3 +42,8 @@ EXPOSE 8000
 # пользователях в поле. Все миграции в проекте идемпотентны (IF NOT EXISTS),
 # так что повторный прогон на каждом рестарте контейнера безопасен.
 ENTRYPOINT ["./docker-entrypoint.sh"]
+# CMD, не часть entrypoint — docker-entrypoint.sh запускает "$@", поэтому
+# `docker compose run --rm api python bulk_invite.py ...` (или любой другой
+# разовый скрипт из backend/) переопределяет именно эту команду и реально
+# выполняется, а не тонет в жёстко зашитом запуске uvicorn.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--forwarded-allow-ips", "*"]

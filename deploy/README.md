@@ -184,9 +184,12 @@ docker compose -f docker-compose.prod.yml run --rm \
 скачиваются в отдельную папку `rosters/` — она в `.gitignore`, в репозиторий не
 попадает, потому что это персональные данные сотрудников (ФИО, телефон).
 
-1. Скопировать xlsx-файлы на сервер:
+1. Скопировать xlsx-файлы на сервер. Контейнер пишет `--out` от appuser
+   (10001:10001, см. `backend/Dockerfile`) — каталог должен принадлежать
+   этому UID заранее, иначе `bulk_invite.py` упадёт с `PermissionError`
+   при попытке создать `result.csv`:
 ```powershell
-ssh root@77.91.94.142 "mkdir -p /opt/jirajura/rosters"
+ssh root@77.91.94.142 "mkdir -p /opt/jirajura/rosters && chown 10001:10001 /opt/jirajura/rosters"
 scp "C:\путь\к\Бескудниковский.xlsx" root@77.91.94.142:/opt/jirajura/rosters/
 # ...и так для каждого района
 ```

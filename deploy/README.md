@@ -97,6 +97,10 @@ docker compose -f docker-compose.prod.yml ps
 ```bash
 cd /opt/jirajura
 docker compose -f docker-compose.prod.yml exec db pg_dump -U postgres -Fc sao_inspection > backup-before-unified-issues.dump
+git status --short | grep -v '^??' || true   # должно быть пусто — непустой вывод (изменённый
+                                              # ОТСЛЕЖИВАЕМЫЙ файл, не считая мусора вроде этого
+                                              # же .dump) значит, что кто-то правил файлы руками —
+                                              # разберитесь, что именно, прежде чем пуллить поверх
 git pull --ff-only
 docker compose -f docker-compose.prod.yml build
 docker compose -f docker-compose.prod.yml up -d
@@ -307,7 +311,13 @@ tmux new -s transfer
 
 ```bash
 cd /opt/jirajura
-git pull origin main
+git status --short | grep -v '^??' || true   # должно быть пусто (незакоммиченные файлы вроде
+                      # .deploy-watcher-state — не в счёт). Непустой вывод значит, что кто-то
+                      # правил ОТСЛЕЖИВАЕМЫЕ файлы прямо на сервере мимо git; git pull может либо
+                      # упасть на конфликте, либо (если изменённый файл не задет входящими
+                      # коммитами) молча пройти и оставить в следующей сборке чужой
+                      # незакоммиченный код вместо актуального main
+git pull --ff-only origin main
 docker compose -f docker-compose.prod.yml build
 docker compose -f docker-compose.prod.yml up -d
 ```

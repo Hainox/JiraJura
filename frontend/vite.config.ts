@@ -9,7 +9,12 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // 'prompt', не 'autoUpdate' — с autoUpdate плагин сам молча активирует
+      // новый SW, минуя onNeedRefresh (см. src/main.tsx), и приложение не
+      // может показать пользователю уведомление/кнопку «Обновить». В prompt
+      // именно src/main.tsx решает, когда обновляться — сразу, если вкладка
+      // не на экране, или по клику, если человек ей активно пользуется.
+      registerType: 'prompt',
       // Регистрируем сам, явно (см. src/main.tsx) — с периодической проверкой
       // обновлений, а не только авто-инъекция плагина по умолчанию
       injectRegister: false,

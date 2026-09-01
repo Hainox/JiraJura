@@ -44,5 +44,16 @@ done
 # доходят напрямую, без риска, что их поглотит промежуточная обёртка.
 # Миграции выше намеренно остаются от root — они не пишут на диск, только
 # по сети в БД, и не обрабатывают пользовательский ввод.
+#
+# setpriv меняет только uid/gid/группы — переменные окружения не трогает,
+# поэтому HOME остаётся унаследованным от root ("/root"). asyncpg при
+# коннекте к БД по умолчанию (как libpq) проверяет наличие
+# "$HOME/.postgresql/postgresql.key", и appuser, пытаясь stat() путь под
+# /root (0700, чужой владелец), падает с PermissionError на каждом запросе
+# к БД — сломан буквально весь API, включая логин. Явно указываем HOME на
+# каталог, которым appuser реально владеет (см. chown -R appuser:appgroup
+# /app в Dockerfile; /app/uploads — единственное, что переопределяется
+# bind-mount'ом поверх этого).
+export HOME=/app
 exec setpriv --reuid=appuser --regid=appgroup --init-groups \
   uvicorn app.main:app --host 0.0.0.0 --port 8000 --forwarded-allow-ips '*'

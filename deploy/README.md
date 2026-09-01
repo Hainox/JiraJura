@@ -317,7 +317,7 @@ git status --short | grep -v '^??' || true   # должно быть пусто 
                       # упасть на конфликте, либо (если изменённый файл не задет входящими
                       # коммитами) молча пройти и оставить в следующей сборке чужой
                       # незакоммиченный код вместо актуального main
-git pull origin main
+git pull --ff-only origin main
 docker compose -f docker-compose.prod.yml build
 docker compose -f docker-compose.prod.yml up -d
 ```

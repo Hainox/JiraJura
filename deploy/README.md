@@ -323,13 +323,33 @@ git status --short | grep -v '^??' || true   # должно быть пусто 
 git pull --ff-only origin main
 docker compose -f docker-compose.prod.yml build
 docker compose -f docker-compose.prod.yml up -d
+
+# deploy/nginx/active.conf.template — НЕ отслеживаемая git'ом копия
+# proxy.conf.template (переключается один раз при выпуске сертификата, см.
+# issue-cert-standalone.sh) — git pull её никогда не трогает и не может.
+# Если proxy.conf.template в репозитории с тех пор поменялся (так уже было —
+# порт frontend 80→8080 в релизе «непривилегированные контейнеры»), у
+# active.conf.template на сервере просто нет способа узнать об этом: она
+# тихо расходится с источником и держит сайт недоступным (502), пока кто-то
+# не заметит и не пересоздаст её руками. Синхронизируем на каждом
+# обновлении, но только когда прод уже на TLS (ssl_certificate есть только
+# в proxy.conf.template, не в http-only.conf.template) — на первичной
+# установке до выпуска сертификата эта строка не должна тронуть бутстрап-конфиг.
+grep -q 'ssl_certificate' deploy/nginx/active.conf.template 2>/dev/null && \
+  cp deploy/nginx/proxy.conf.template deploy/nginx/active.conf.template
+# up -d выше не пересоздаёт proxy, если его секция в docker-compose.prod.yml
+# не менялась, а nginx рендерит шаблон в реальный конфиг ТОЛЬКО при старте
+# контейнера — без явного restart обновлённый файл до nginx не долетит,
+# даже если команда выше его только что переписала.
+docker compose -f docker-compose.prod.yml restart proxy
 ```
 
 С релиза «непривилегированные контейнеры» `api` работает от пользователя
 `appuser` (UID/GID `10001`), не от root — `docker-entrypoint.sh` сам чинит
 владельца примонтированного `backend/uploads` под этот UID при каждом
 старте контейнера, никаких ручных действий на сервере не требуется (в т.ч.
-и при автодеплое по кнопке «Деплой» — см. п.10).
+и при автодеплое по кнопке «Деплой» — см. п.10, `deploy-watcher.sh` делает
+тот же `proxy`-ресинк+restart автоматически).
 
 Миграции применяет сам контейнер `api` при старте — `docker-entrypoint.sh`
 гоняет `alembic upgrade head` перед запуском uvicorn на каждом старте
@@ -342,10 +362,11 @@ foreground на запущенном сервере, пока её не прер
 
 `deploy/nginx/proxy.conf.template` использует Docker DNS-резолвер
 (`resolver 127.0.0.11 valid=10s;` + `set $api_upstream` + явный `$request_uri` в
-`proxy_pass`) — nginx сам переоткрывает соединение на актуальный IP `api`/`frontend`
-в течение ~10 секунд после пересборки, отдельный `restart proxy` для этого не нужен.
-Перезапускать `proxy` вручную нужно, только если менялся сам
-`proxy.conf.template`/`http-only.conf.template`.
+`proxy_pass`) — это лечит только устаревший IP уже пересобранного `api`/`frontend`,
+**не** устаревший port/путь/любое другое содержимое самого конфига. Именно
+поэтому `restart proxy` в блоке выше — не опциональная подстраховка на
+случай, если вы точно знаете, что шаблон менялся, а часть стандартной
+последовательности каждого обновления.
 
 ## 10. Деплой по клику из веб-интерфейса («Разработчик» → «Деплой»)
 

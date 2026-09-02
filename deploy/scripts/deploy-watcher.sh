@@ -65,6 +65,28 @@ while IFS=$'\t' read -r ENTITY_ID CREATED_AT; do
     git pull --ff-only origin main
     $COMPOSE build
     $COMPOSE up -d
+
+    # deploy/nginx/active.conf.template — не отслеживаемая git'ом копия
+    # proxy.conf.template (переключается один раз при выпуске сертификата,
+    # см. issue-cert-standalone.sh) — git pull её никогда не трогает. Если
+    # proxy.conf.template в репозитории с тех пор поменялся (например, порт
+    # frontend 80→8080 в PR #140), active.conf.template тихо расходится с
+    # ним и держит сайт недоступным (502) до тех пор, пока кто-то не
+    # заметит и не пересоздаст его руками — так уже один раз положило прод
+    # с самого утра. Синхронизируем на каждом деплое, но только когда прод
+    # уже на TLS (ssl_certificate есть только в proxy.conf.template, не в
+    # http-only.conf.template) — иначе на первичной установке, до выпуска
+    # сертификата, затёрли бы бутстрап-конфиг конфигом, ссылающимся на ещё
+    # не существующие файлы сертификата, и proxy вовсе не стартовал бы.
+    if grep -q 'ssl_certificate' deploy/nginx/active.conf.template 2>/dev/null; then
+      cp deploy/nginx/proxy.conf.template deploy/nginx/active.conf.template
+    fi
+    # up -d выше не пересоздаёт proxy, если его секция в
+    # docker-compose.prod.yml не менялась — а шаблон рендерится
+    # entrypoint'ом ТОЛЬКО при старте контейнера. Без явного restart
+    # обновлённый active.conf.template до nginx не долетит, даже если
+    # строка выше его только что переписала.
+    $COMPOSE restart proxy
   ) >"$LOG_TMP" 2>&1; then
     STATUS_FLAG=--ok
   else

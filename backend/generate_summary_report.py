@@ -248,8 +248,11 @@ async def fetch_all(db: AsyncSession) -> dict:
     ]
 
     # ── Замечания ──
+    # LEFT JOIN issue_categories, не JOIN — у старых замечаний до Statistics v2
+    # category_id мог остаться NULL, такие не должны выпадать из отчёта.
     issues = (await db.execute(text(
-        "SELECT iss.created_at, dist.name AS dist_name, c.name AS court_name, iss.title, "
+        "SELECT iss.created_at, dist.name AS dist_name, c.name AS court_name, "
+        "COALESCE(ic.name, 'Без категории') AS category_name, iss.title, "
         "iss.description, iss.criticality, iss.status, author.full_name AS author_name, "
         "assignee.full_name AS assignee_name, iss.due_date, iss.fixed_at "
         "FROM issues iss "
@@ -258,6 +261,7 @@ async def fetch_all(db: AsyncSession) -> dict:
         "JOIN districts dist ON dist.id = c.district_id "
         "JOIN users author ON author.id = iss.created_by "
         "LEFT JOIN users assignee ON assignee.id = iss.assigned_to "
+        "LEFT JOIN issue_categories ic ON ic.id = iss.category_id "
         "ORDER BY iss.created_at DESC"
     ))).fetchall()
     # Для диаграмм на листе "Замечания" — те же строки, но посчитанные, а
@@ -265,7 +269,7 @@ async def fetch_all(db: AsyncSession) -> dict:
     data["issues_by_criticality"] = Counter(CRITICALITY_RU.get(r.criticality, r.criticality) for r in issues)
     data["issues_by_status"] = Counter(ISSUE_STATUS_RU.get(r.status, r.status) for r in issues)
     data["issue_rows"] = [
-        (_fmt_dt(r.created_at), r.dist_name, r.court_name, r.title, r.description or "",
+        (_fmt_dt(r.created_at), r.dist_name, r.court_name, r.category_name, r.title, r.description or "",
          CRITICALITY_RU.get(r.criticality, r.criticality), ISSUE_STATUS_RU.get(r.status, r.status),
          r.author_name, r.assignee_name or "", _fmt_dt(r.due_date), _fmt_dt(r.fixed_at))
         for r in issues
@@ -280,20 +284,22 @@ async def fetch_all(db: AsyncSession) -> dict:
     # определением, что и everywhere else (OVERDUE_STATUSES в
     # app/services/statistics/definitions.py, list_issues в issues.py).
     overdue = (await db.execute(text(
-        "SELECT iss.title, dist.name AS dist_name, c.name AS court_name, author.full_name AS author_name, "
+        "SELECT iss.title, dist.name AS dist_name, c.name AS court_name, "
+        "COALESCE(ic.name, 'Без категории') AS category_name, author.full_name AS author_name, "
         "iss.created_at, iss.due_date, iss.description "
         "FROM issues iss "
         "JOIN sites s ON s.id = iss.site_id "
         "JOIN courtyards c ON c.id = s.courtyard_id "
         "JOIN districts dist ON dist.id = c.district_id "
         "JOIN users author ON author.id = iss.created_by "
+        "LEFT JOIN issue_categories ic ON ic.id = iss.category_id "
         "WHERE iss.status IN ('open', 'assigned', 'in_work', 'revision_needed') "
         "AND iss.due_date IS NOT NULL "
         "AND iss.due_date < (now() AT TIME ZONE 'Europe/Moscow')::date "
         "ORDER BY iss.due_date"
     ))).fetchall()
     data["overdue_rows"] = [
-        (r.title, r.dist_name, r.court_name, r.author_name,
+        (r.title, r.dist_name, r.court_name, r.category_name, r.author_name,
          _fmt_dt(r.created_at), _fmt_dt(r.due_date), r.description or "")
         for r in overdue
     ]
@@ -589,8 +595,8 @@ def build_workbook(data: dict):
         ["Дата обхода", "Район", "Двор", "Тип площадки", "Категория", "Пункт чек-листа", "Комментарий инспектора", "Инспектор"],
         data["defect_rows"], [16, 20, 40, 20, 18, 50, 40, 24])
     iss_ws = _sheet(wb, "Замечания",
-        ["Дата", "Район", "Двор", "Заголовок", "Описание", "Критичность", "Статус", "Автор", "Назначено", "Срок", "Устранено"],
-        data["issue_rows"], [16, 20, 40, 30, 40, 12, 14, 24, 24, 16, 16])
+        ["Дата", "Район", "Двор", "Категория", "Заголовок", "Описание", "Критичность", "Статус", "Автор", "Назначено", "Срок", "Устранено"],
+        data["issue_rows"], [16, 20, 40, 18, 30, 40, 12, 14, 24, 24, 16, 16])
 
     # Диаграммы по критичности/статусу — данные для них в стороне от
     # таблицы (та занимает колонки A-K)
@@ -621,8 +627,8 @@ def build_workbook(data: dict):
         _pie(iss_ws, "Замечания по статусу",
              Reference(iss_ws, min_col=14, min_row=18, max_row=last), Reference(iss_ws, min_col=15, min_row=18, max_row=last), "P17")
     _sheet(wb, "Просроченные замечания",
-        ["Заголовок", "Район", "Двор", "Автор", "Создано", "Срок", "Описание"],
-        data["overdue_rows"], [30, 20, 40, 24, 16, 16, 40])
+        ["Заголовок", "Район", "Двор", "Категория", "Автор", "Создано", "Срок", "Описание"],
+        data["overdue_rows"], [30, 20, 40, 18, 24, 16, 16, 40])
     if data["dynamics_rows"]:
         _sheet(wb, "Динамика",
             ["Дата"] + data["dynamics_inspectors"],

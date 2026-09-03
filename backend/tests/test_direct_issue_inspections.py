@@ -145,3 +145,61 @@ async def test_checklist_defect_issue_also_gets_a_due_date(client: AsyncClient, 
     assert len(items) == 1
     expected_days = 3 if is_critical else 7
     assert items[0]["due_date"] == str(today_msk + timedelta(days=expected_days))
+
+
+@pytest.mark.asyncio
+async def test_maf_issue_gets_at_most_3day_due_date(client: AsyncClient, admin_headers):
+    """Поручение со штаба: МАФ устраняется не дольше чем за 3 дня — даже
+    если формальная критичность мягче (CATEGORY_SLA_DAYS в
+    app/services/issues.py — потолок поверх ISSUE_SLA_DAYS). Без этого
+    правила "medium"/"low" по МАФ получили бы 7/14 дней вместо 3.
+    "critical" остаётся строже (1 день) — категория не ослабляет срок."""
+    site_id = await _create_site(client, admin_headers)
+    inspection = await client.post("/api/v1/inspections/", json={"site_id": site_id}, headers=admin_headers)
+    assert inspection.status_code == 200, inspection.text
+    inspection_id = inspection.json()["id"]
+
+    categories = (await client.get("/api/v1/issues/categories", headers=admin_headers)).json()
+    maf_category = next(c for c in categories if c["name"] == "МАФ")
+
+    today_msk = datetime.now(MSK).date()
+    for criticality in ("critical", "high", "medium", "low"):
+        created = await client.post("/api/v1/issues/", json={
+            "inspection_id": inspection_id, "category_id": maf_category["id"],
+            "title": f"МАФ, критичность {criticality}", "criticality": criticality,
+        }, headers=admin_headers)
+        assert created.status_code == 200, created.text
+        expected_days = 3 if criticality != "critical" else 1  # critical=1 день короче штабного правила, оставляем как есть
+        assert created.json()["due_date"] == str(today_msk + timedelta(days=expected_days)), criticality
+
+
+@pytest.mark.asyncio
+async def test_checklist_maf_defect_gets_3day_due_date_even_if_not_critical(client: AsyncClient, admin_headers):
+    """Тот же штабной срок — и для дефекта, автосозданного из некритичного
+    пункта чек-листа категории МАФ (без правила получил бы 7 дней, а не 3,
+    как остальные некритичные категории)."""
+    site_id = await _create_site(client, admin_headers)
+    item_id, is_critical = _query_one(
+        "SELECT id, is_critical FROM checklist_items WHERE template_id = %(t)s "
+        "AND category = 'МАФ' AND is_critical = FALSE ORDER BY sort_order LIMIT 1",
+        {"t": TEMPLATE_ID},
+    )
+    assert not is_critical  # сид-данные это гарантируют, но явная проверка честнее допущения в комментарии
+
+    inspection = await client.post("/api/v1/inspections/", json={"site_id": site_id}, headers=admin_headers)
+    assert inspection.status_code == 200, inspection.text
+    inspection_id = inspection.json()["id"]
+
+    today_msk = datetime.now(MSK).date()
+    completed = await client.patch(
+        f"/api/v1/inspections/{inspection_id}",
+        json={"status": "completed", "answers": [{"checklist_item_id": str(item_id), "result": "defect"}]},
+        headers=admin_headers,
+    )
+    assert completed.status_code == 200, completed.text
+
+    issues = await client.get("/api/v1/issues/", params={"inspection_id": inspection_id}, headers=admin_headers)
+    assert issues.status_code == 200, issues.text
+    items = issues.json()["items"]
+    assert len(items) == 1
+    assert items[0]["due_date"] == str(today_msk + timedelta(days=3))

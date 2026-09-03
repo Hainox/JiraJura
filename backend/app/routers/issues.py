@@ -127,7 +127,7 @@ async def create_issue(
         category_id=category.id,
         status="open",
         created_by=current_user.id,
-        due_date=default_due_date(data.criticality),
+        due_date=default_due_date(data.criticality, category.name),
     )
 
     db.add(issue)

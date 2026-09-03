@@ -50,8 +50,16 @@ alembic revision -m "..."   # новая ревизия (пишется вруч
 
 ## Структура
 
-- `app/routers/` — эндпоинты: `auth` (login, приглашения, пользователи), `districts`, `sites`, `inspections`, `issues`, `reports`
-- `app/services/` — бизнес-логика: `auth.py` (JWT/пароли), `permissions.py` (роли/scoping)
+- `app/routers/` — эндпоинты: `auth` (login, приглашения, пользователи), `districts`,
+  `courtyards`, `sites` (+ шаблоны чек-листов), `checklists`, `inspections`, `issues`,
+  `reports`, `pdf_report`, `stats` (штабная статистика), `feedback`, `audit`, `system`
+- `app/services/` — бизнес-логика: `auth.py` (JWT/пароли), `permissions.py`
+  (роли/scoping), `issues.py` (SLA/критичность по типу нарушения), `statistics.py`,
+  `safe_export.py` и `xlsx_style.py` (единый стиль Excel-отчётов, защита от
+  формула-инъекций), `rate_limit.py`, `timezone.py`, `audit.py`
 - `app/models.py` / `app/schemas.py` — ORM-модели (SQLAlchemy) и API-схемы (Pydantic)
 - `alembic/` — миграции; `schema.sql` / `seed.sql` — DDL и тестовые данные для локальной БД
 - `import_kml.py` — разовый скрипт импорта геометрии площадок из KML-файлов (детские/спортивные площадки) в PostGIS; пути к исходным KML в скрипте нужно указать под своё окружение
+- Остальные `*.py` в корне `backend/` — разовые эксплуатационные скрипты (приглашения,
+  диагностика логинов/фото, сверка площадок с перечнем, бэкфиллы, отчёты для деплоя) —
+  см. docstring/`--help` каждого; полный список — в [корневом README](../README.md#структура-репозитория)

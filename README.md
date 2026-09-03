@@ -1,6 +1,6 @@
 # Электронный журнал обхода площадок САО
 
-PWA-приложение для учёта обходов детских и спортивных площадок Северного административного округа (САО) г. Москвы: инспекторы создают нарушения с категорией, фото и GPS-привязкой, руководители принимают устранение и видят сводные отчёты на карте. Чек-листы сохранены только для просмотра исторических обходов.
+PWA-приложение для учёта обходов детских и спортивных площадок Северного административного округа (САО) г. Москвы: инспекторы проходят чек-лист площадки, дефект по пункту чек-листа автоматически создаёт нарушение (категория, фото, GPS, критичность и срок устранения — по типу пункта), руководители принимают устранение и видят сводные отчёты на карте.
 
 ## Стек
 
@@ -14,34 +14,45 @@ PWA-приложение для учёта обходов детских и сп
 .
 ├── backend/            FastAPI-приложение
 │   ├── app/
-│   │   ├── routers/    auth, districts, sites, courtyards, inspections, issues,
-│   │   │               checklists, reports, pdf_report, audit, system
-│   │   ├── services/   бизнес-логика (auth, permissions, audit, timezone и т.д.)
+│   │   ├── routers/    auth, districts, courtyards, sites, checklists, inspections,
+│   │   │               issues, reports, pdf_report, stats, feedback, audit, system
+│   │   ├── services/   бизнес-логика: auth, permissions, issues (SLA/критичность),
+│   │   │               statistics, safe_export, xlsx_style, rate_limit, timezone, audit
 │   │   ├── models.py   SQLAlchemy ORM-модели
 │   │   ├── schemas.py  Pydantic-схемы
 │   │   └── main.py     точка входа FastAPI
 │   ├── schema.sql       DDL: районы, площадки, оборудование, обходы, замечания...
 │   ├── seed.sql         тестовый пользователь для локальной разработки
 │   ├── import_kml.py    импорт геометрии площадок из KML в PostGIS
+│   ├── apply_titul.py, titul_2026-08.csv   сверка площадок БД с актуальным
+│   │                                        перечнем (лист ТИТУЛ), 1:1
 │   ├── bulk_invite.py, reissue_invites.py, split_invites_by_district.py,
 │   │   roster_district_status.py, verify_invite_links.py, diagnose_logins.py,
-│   │   fix_passwords.py, reset_shared_passwords.py, production_status_report.py,
-│   │   generate_summary_report.py, apply_titul.py   разовые эксплуатационные
-│   │                                                  скрипты, см. деплой-README
+│   │   fix_passwords.py, reset_shared_passwords.py, reset_passwords_for_logins.py,
+│   │   production_status_report.py, generate_summary_report.py,
+│   │   backfill_issue_due_dates.py, backfill_missing_issues.py,
+│   │   diagnose_missing_required_photos.py, site_coating_report.py,
+│   │   list_maf_deadlines.py, list_deploy_requests.py, record_deploy_result.py
+│   │                                        разовые эксплуатационные скрипты,
+│   │                                        см. `--help` каждого и деплой-README
 │   └── docker-compose.yml
 ├── frontend/            PWA-клиент (Vite + React)
 │   └── src/
-│       ├── pages/       Login, Register, ChangePassword, Map, SiteDetail, Inspection,
-│       │               Summary, Profile, MyInspections, Dashboard, Issues, IssueFix,
-│       │               Audit, AdminPanel, AdminUsers, AdminSites,
-│       │               AdminReviews, AdminSystem
+│       ├── pages/       Login, Register, ChangePassword, LoginHistory, Map, SiteDetail,
+│       │               Inspection, Summary, Profile, MyInspections, Dashboard,
+│       │               Issues, IssueFix, Feedback(Form), Audit, AdminPanel, AdminUsers,
+│       │               AdminSites, AdminReviews, AdminChecklists, AdminIssueControl,
+│       │               AdminFeedback, AdminSystem
 │       ├── stores/      Zustand: auth, демо-режим, вид карты
 │       └── lib/api.ts   HTTP-клиент (axios + JWT-интерсептор)
 ├── deploy/              Продакшн-деплой (docker-compose.prod.yml, nginx, certbot, бэкапы) — см. deploy/README.md
 └── docs/
-    ├── ARCHITECTURE_RESEARCH.md                              обоснование выбора стека
-    ├── user-onboarding.md, video-instruction-*.md            инструкции для сотрудников
-    └── Техническое_задание_Электронный_журнал_обхода.docx    ТЗ
+    ├── design-system.md                                      визуальный язык и правила подачи статистики
+    ├── ARCHITECTURE_RESEARCH.md                               обоснование выбора стека, план офлайн-очереди
+    ├── STATS_MODEL_V2.md                                      модель статистики/штабной отчётности (утверждена)
+    ├── coordination/                                          доска задач и журнал решений между агентами (см. AGENTS.md)
+    ├── user-onboarding.md, video-instruction-*.md             инструкции для сотрудников
+    └── Техническое_задание_Электронный_журнал_обхода.docx     ТЗ
 ```
 
 ## Быстрый старт
@@ -103,6 +114,6 @@ npm run lint       # oxlint
 
 ## Статус проекта
 
-Развёрнуто и работает в проде: авторизация по JWT, приглашения и роли со scoping по району, карта и список площадок, обходы с единой карточкой нарушения «выявлено → в работе → устранено (с фото до/после) → принято/на доработку», приёмка обходов, сводные Excel/PDF/PPTX-отчёты, аудит-лог действий, Alembic-миграции, CI и production-деплой. Для новых обходов категория нарушения обязательна; исторические чек-листовые обходы доступны только для просмотра.
+Развёрнуто и работает в проде: авторизация по JWT, приглашения и роли со scoping по району, карта и список площадок, обход по чек-листу площадки (дефект по пункту автоматически создаёт нарушение с критичностью/сроком устранения по типу пункта), единая карточка нарушения «выявлено → в работе → устранено (с фото до/после) → принято/на доработку», приёмка обходов, сводные Excel/PDF/PPTX-отчёты, форма обратной связи с очередью админа, аудит-лог действий, Alembic-миграции, CI и production-деплой.
 
 В планах (см. `docs/ARCHITECTURE_RESEARCH.md`): перевод офлайн-очереди на IndexedDB (Dexie.js) для надёжного хранения фото до синхронизации, push-уведомления. Кластеризация меток на карте (`react-leaflet-cluster`, отключается на крупном зуме) и офлайн-кэш тайлов OSM (Workbox `CacheFirst`) уже реализованы.

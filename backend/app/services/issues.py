@@ -23,9 +23,33 @@ ISSUE_SLA_DAYS: dict[str, int] = {
     "low": 14,
 }
 
+# Срок по категории — верхняя граница срока по критичности (ISSUE_SLA_DAYS),
+# не безусловная замена. По поручению со штаба: МАФ устраняется не дольше,
+# чем за 3 дня — раньше это негласно держалось на допущении, что дефекты
+# МАФ в чек-листе всегда is_critical=TRUE (→ criticality="high" → 3 дня,
+# см. list_maf_deadlines.py), но замечание по МАФ, заведённое вручную с
+# criticality="medium"/"low", получало 7/14 дней. Явное правило чинит это —
+# но именно как ПОТОЛОК: если замечание по МАФ отдельно помечено
+# "critical" (1 день — реальная опасность прямо сейчас), это строже
+# штабных 3 дней и не должно ослабляться категорией; берём минимум из
+# двух, а не жёстко значение по категории.
+CATEGORY_SLA_DAYS: dict[str, int] = {
+    "МАФ": 3,
+}
 
-def default_due_date(criticality: str, created_on: date | None = None) -> date:
-    """Срок устранения по умолчанию: дата создания (МСК) + SLA по критичности."""
+
+def default_due_date(
+    criticality: str,
+    category_name: str | None = None,
+    created_on: date | None = None,
+) -> date:
+    """Срок устранения по умолчанию: дата создания (МСК) + SLA.
+
+    Срок по критичности (ISSUE_SLA_DAYS) и срок по категории
+    (CATEGORY_SLA_DAYS, если для категории задан) — берём меньший (более
+    строгий) из двух, см. комментарий у CATEGORY_SLA_DAYS."""
     anchor = created_on or datetime.now(MSK).date()
     days = ISSUE_SLA_DAYS.get(criticality, ISSUE_SLA_DAYS["medium"])
+    if category_name in CATEGORY_SLA_DAYS:
+        days = min(days, CATEGORY_SLA_DAYS[category_name])
     return anchor + timedelta(days=days)

@@ -524,7 +524,7 @@ async def update_inspection(
                     criticality=criticality,
                     status="open",
                     created_by=current_user.id,
-                    due_date=default_due_date(criticality),
+                    due_date=default_due_date(criticality, item.category),
                 ))
 
     # Пункты чек-листа с requires_photo=TRUE (например «Фото общего вида

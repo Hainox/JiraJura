@@ -9,7 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models import User
-from app.schemas import StatsCategoriesOut, StatsDashboardOut, StatsDynamicsOut
+from app.schemas import (
+    StatsCategoriesOut, StatsDashboardOut, StatsDynamicsOut, StatsSectionsOut,
+)
 from app.services.permissions import require_role
 from app.services.statistics import StatisticsService
 from app.services.statistics.filters import build_filter
@@ -42,6 +44,20 @@ async def dashboard(
     current_user: User = Depends(require_role("reviewer", "admin")),
 ):
     return await _service(db, current_user, date_from, date_to, district_id, all_time=all_time, site_type=site_type).dashboard()
+
+
+@router.get("/sections", response_model=StatsSectionsOut)
+async def sections(
+    district_id: UUID = Query(...),
+    date_from: date | None = Query(None), date_to: date | None = Query(None),
+    all_time: bool = Query(False),
+    # Свод по участкам внутри района — запрос районов для углублённого
+    # самоконтроля (не для окружного штаба, формат dashboard не меняется).
+    site_type: str | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("reviewer", "admin")),
+):
+    return await _service(db, current_user, date_from, date_to, district_id, all_time=all_time, site_type=site_type).sections()
 
 
 @router.get("/dynamics", response_model=StatsDynamicsOut)

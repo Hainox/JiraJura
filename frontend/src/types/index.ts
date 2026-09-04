@@ -87,6 +87,7 @@ export interface CourtyardOut {
   id: string
   name: string
   district_id: string
+  section?: string | null
 }
 
 // ── Districts ──
@@ -104,6 +105,7 @@ export interface CourtyardAdminOut {
   id: string
   name: string
   district_id: string
+  section?: string | null
   district_name: string
   sites_count: number
 }
@@ -341,6 +343,52 @@ export interface StatsDashboardOut {
   methodology: 'v2'
   districts: StatsDistrictRow[]
   totals: StatsDistrictRow
+}
+
+// Свод по участкам внутри одного района — внутренний разрез для районов,
+// на окружной штаб не подаётся (StatsDashboardOut/districts не меняется).
+export interface StatsSectionRow {
+  section: string
+  total_sites: number
+  sites_inspected: number
+  coverage_pct: number
+  sites_latest_clean: number
+  sites_latest_with_defects: number
+  clean_sites_pct: number | null
+  defect_sites_pct: number | null
+  inspections_total: number
+  inspections_green: number
+  inspections_with_defects: number
+  issues_found: number
+  issues_cohort_closed_as_of: number
+  issues_cohort_closed_pct: number | null
+  issues_fixed_events: number
+  issues_closed_events: number
+  issues_revision_events: number
+  issues_pending_final_current: number
+  issues_requires_work_current: number
+  issues_snapshot_total: number
+  issues_requires_work_pct: number | null
+  issues_overdue_current: number
+  issues_closed: number
+  issues_on_check: number
+  issues_revision: number
+  issues_in_work: number
+  issues_open: number
+  issues_not_fixed: number
+  issues_overdue: number
+  issues_closed_pct: number
+}
+
+export interface StatsSectionsOut {
+  period: StatsPeriod
+  timezone: string
+  generated_at: string
+  methodology: 'v2'
+  district_id: string
+  district_name: string
+  sections: StatsSectionRow[]
+  totals: StatsSectionRow
 }
 
 export interface StatsDynamicsDay {

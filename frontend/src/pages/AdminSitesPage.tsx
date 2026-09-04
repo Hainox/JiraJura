@@ -139,10 +139,11 @@ function CourtyardsTab() {
   const [editing, setEditing] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
   const [editDistrict, setEditDistrict] = useState('')
+  const [editSection, setEditSection] = useState('')
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, name, district_id }: { id: string; name: string; district_id: string }) =>
-      courtyardsApi.update(id, { name, district_id }),
+    mutationFn: ({ id, name, district_id, section }: { id: string; name: string; district_id: string; section: string }) =>
+      courtyardsApi.update(id, { name, district_id, section }),
     onSuccess: () => {
       toast.success('Двор обновлён')
       setEditing(null)
@@ -171,8 +172,14 @@ function CourtyardsTab() {
               <select className="input-field text-sm w-full" value={editDistrict} onChange={(e) => setEditDistrict(e.target.value)}>
                 {districts?.map((d) => (<option key={d.id} value={d.id}>{d.name}</option>))}
               </select>
+              <input
+                className="input-field text-sm w-full"
+                value={editSection}
+                onChange={(e) => setEditSection(e.target.value)}
+                placeholder="Участок (для внутреннего свода района, необязательно)"
+              />
               <div className="flex gap-2">
-                <button onClick={() => guardDemoAction(() => updateMutation.mutate({ id: c.id, name: editName, district_id: editDistrict }))} disabled={!editName.trim() || updateMutation.isPending} className="btn-primary text-sm px-3 flex-1">Сохранить</button>
+                <button onClick={() => guardDemoAction(() => updateMutation.mutate({ id: c.id, name: editName, district_id: editDistrict, section: editSection }))} disabled={!editName.trim() || updateMutation.isPending} className="btn-primary text-sm px-3 flex-1">Сохранить</button>
                 <button onClick={() => setEditing(null)} className="btn-outline text-sm px-3 flex-1">Отмена</button>
               </div>
             </div>
@@ -180,9 +187,12 @@ function CourtyardsTab() {
             <div className="flex items-center justify-between gap-2">
               <div className="min-w-0">
                 <div className="font-medium text-gray-800 truncate">{c.name}</div>
-                <div className="text-xs text-gray-500 mt-0.5">{c.district_name} · Площадок: {c.sites_count}</div>
+                <div className="text-xs text-gray-500 mt-0.5">
+                  {c.district_name} · Площадок: {c.sites_count}
+                  {c.section && <> · Участок: {c.section}</>}
+                </div>
               </div>
-              <button onClick={() => { setEditing(c.id); setEditName(c.name); setEditDistrict(c.district_id) }} className="p-2 rounded-lg hover:bg-gray-100 shrink-0" title="Изменить">
+              <button onClick={() => { setEditing(c.id); setEditName(c.name); setEditDistrict(c.district_id); setEditSection(c.section ?? '') }} className="p-2 rounded-lg hover:bg-gray-100 shrink-0" title="Изменить">
                 <Pencil className="w-4 h-4 text-gray-500" />
               </button>
             </div>

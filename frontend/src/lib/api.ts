@@ -36,6 +36,7 @@ import type {
   StatsDashboardOut,
   StatsDynamicsOut,
   StatsCategoriesOut,
+  StatsSectionsOut,
 } from '@/types'
 
 // Нативный fetch вместо axios: тот тянул в главный бандл ~46 kB ради
@@ -293,7 +294,7 @@ export const courtyardsApi = {
   list: (params?: { district_id?: string; search?: string }) =>
     api.get<CourtyardAdminOut[]>('/courtyards/', { params }).then((r) => r.data),
 
-  update: (id: string, data: { name?: string; district_id?: string }) =>
+  update: (id: string, data: { name?: string; district_id?: string; section?: string | null }) =>
     api.patch<CourtyardAdminOut>(`/courtyards/${id}`, data).then((r) => r.data),
 }
 
@@ -411,6 +412,10 @@ export const statsApi = {
     api.get<StatsDynamicsOut>('/stats/dynamics', { params }).then((r) => r.data),
   categories: (params?: StatsParams) =>
     api.get<StatsCategoriesOut>('/stats/categories', { params }).then((r) => r.data),
+  // Свод по участкам — только внутри одного района (district_id обязателен
+  // на бэкенде), для окружного штаба не используется.
+  sections: (params: StatsParams & { district_id: string }) =>
+    api.get<StatsSectionsOut>('/stats/sections', { params }).then((r) => r.data),
   downloadShtab: async (params?: StatsParams) => {
     const res = await api.get('/stats/shtab.pptx', { params, responseType: 'blob' })
     const url = URL.createObjectURL(res.data as Blob)

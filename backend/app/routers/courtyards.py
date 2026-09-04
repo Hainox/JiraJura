@@ -38,7 +38,7 @@ async def list_courtyards(
     return [
         CourtyardAdminOut(
             id=r.Courtyard.id, name=r.Courtyard.name, district_id=r.Courtyard.district_id,
-            district_name=r.district_name, sites_count=r.sites_count,
+            section=r.Courtyard.section, district_name=r.district_name, sites_count=r.sites_count,
         )
         for r in rows
     ]
@@ -58,8 +58,13 @@ async def update_courtyard(
         c.name = data.name
     if data.district_id is not None:
         c.district_id = data.district_id
+    if data.section is not None:
+        # Пустая строка — это "снять участок" (двор размечен неверно или
+        # ещё не размечен), а не буквальное значение "" в БД.
+        c.section = data.section or None
     await log_action(db, str(current_user.id), "courtyard_update", "courtyard", courtyard_id, {
         "name": data.name, "district_id": str(data.district_id) if data.district_id else None,
+        "section": data.section,
     })
     try:
         await db.commit()
@@ -78,6 +83,6 @@ async def update_courtyard(
     )
     district_name, sites_count = (await db.execute(q)).one()
     return CourtyardAdminOut(
-        id=c.id, name=c.name, district_id=c.district_id,
+        id=c.id, name=c.name, district_id=c.district_id, section=c.section,
         district_name=district_name, sites_count=sites_count,
     )

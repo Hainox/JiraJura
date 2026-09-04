@@ -2,6 +2,7 @@
 
 from datetime import timedelta, timezone, datetime
 
+from fastapi import HTTPException
 from sqlalchemy import Date, cast, func, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,7 +12,8 @@ from app.models import (
 )
 from app.schemas import (
     StatsCategoriesOut, StatsCategoryRow, StatsDashboardOut, StatsDistrictRow,
-    StatsDynamicsDay, StatsDynamicsOut, StatsPeriodOut,
+    StatsDynamicsDay, StatsDynamicsOut, StatsPeriodOut, StatsSectionRow,
+    StatsSectionsOut,
 )
 from app.services.timezone import MSK
 from .definitions import DONE_STATUSES, NIL_UUID, ON_CHECK_STATUSES, OVERDUE_STATUSES, percent
@@ -303,6 +305,272 @@ class StatisticsService:
         return StatsDashboardOut(
             period=self._period, generated_at=self.generated_at,
             districts=result, totals=totals,
+        )
+
+    async def sections(self) -> StatsSectionsOut:
+        """Тот же расчёт, что dashboard(), но разбивка не по районам, а по
+        участкам внутри одного района (Courtyard.section) — для
+        внутрирайонного контроля, не для окружного штаба (см. схемы)."""
+        f = self.filters
+        if f.district_id is None:
+            raise HTTPException(422, "district_id обязателен для разбивки по участкам")
+        district = (await self.db.execute(
+            select(District.id, District.name).where(District.id == f.district_id)
+        )).one_or_none()
+        if district is None:
+            raise HTTPException(404, "Район не найден")
+
+        section_expr = func.coalesce(Courtyard.section, "Без участка")
+        district_clause = Courtyard.district_id == f.district_id
+
+        section_names = [
+            row[0] for row in (await self.db.execute(
+                select(section_expr).where(district_clause)
+                .group_by(section_expr).order_by(section_expr)
+            )).all()
+        ]
+
+        site_counts = dict((await self.db.execute(
+            select(section_expr, func.count(Site.id))
+            .join(Site, Site.courtyard_id == Courtyard.id)
+            .where(Site.is_active.is_(True), district_clause, _site_type_clause(f))
+            .group_by(section_expr)
+        )).all())
+
+        defect_exists = select(ChecklistAnswer.id).where(
+            ChecklistAnswer.inspection_id == Inspection.id,
+            ChecklistAnswer.result == "defect",
+        ).exists()
+        issue_exists = select(Issue.id).where(
+            Issue.inspection_id == Inspection.id,
+        ).exists()
+        has_violations = defect_exists | issue_exists
+
+        latest_inspections = (
+            select(
+                Inspection.id.label("inspection_id"),
+                Inspection.site_id,
+                func.row_number().over(
+                    partition_by=Inspection.site_id,
+                    order_by=(Inspection.completed_at.desc(), Inspection.created_at.desc()),
+                ).label("rank"),
+            )
+            .where(
+                Inspection.status.in_(DONE_STATUSES),
+                Inspection.completed_at >= f.start_utc,
+                Inspection.completed_at < f.end_utc,
+            )
+            .subquery()
+        )
+        site_quality_rows = (await self.db.execute(
+            select(
+                section_expr,
+                func.count(Inspection.id).filter(Site.is_active.is_(True)).label("sites"),
+                func.count(Inspection.id)
+                .filter(Site.is_active.is_(True) & ~has_violations)
+                .label("clean"),
+                func.count(Inspection.id)
+                .filter(Site.is_active.is_(True) & has_violations)
+                .label("defects"),
+            )
+            .select_from(Inspection)
+            .join(latest_inspections, latest_inspections.c.inspection_id == Inspection.id)
+            .join(Site, Site.id == Inspection.site_id)
+            .join(Courtyard, Courtyard.id == Site.courtyard_id)
+            .where(latest_inspections.c.rank == 1, district_clause, _site_type_clause(f))
+            .group_by(section_expr)
+        )).all()
+        site_quality = {row[0]: row for row in site_quality_rows}
+
+        inspection_rows = (await self.db.execute(
+            select(
+                section_expr,
+                func.count(Inspection.id).label("total"),
+                func.count(func.distinct(Inspection.site_id))
+                .filter(Site.is_active.is_(True)).label("sites"),
+                func.count(Inspection.id).filter(~has_violations).label("green"),
+                func.count(Inspection.id).filter(has_violations).label("defects"),
+            )
+            .join(Site, Site.id == Inspection.site_id)
+            .join(Courtyard, Courtyard.id == Site.courtyard_id)
+            .where(
+                Inspection.status.in_(DONE_STATUSES),
+                Inspection.completed_at >= f.start_utc,
+                Inspection.completed_at < f.end_utc,
+                district_clause, _site_type_clause(f),
+            )
+            .group_by(section_expr)
+        )).all()
+        inspections = {row[0]: row for row in inspection_rows}
+
+        today = datetime.now(MSK).date()
+        issue_rows = (await self.db.execute(
+            select(section_expr, *issue_bucket_columns(today))
+            .join(Site, Site.id == Issue.site_id)
+            .join(Courtyard, Courtyard.id == Site.courtyard_id)
+            .where(
+                Issue.created_at >= f.start_utc,
+                Issue.created_at < f.end_utc,
+                district_clause, _site_type_clause(f),
+            )
+            .group_by(section_expr)
+        )).all()
+        issues = {row[0]: row for row in issue_rows}
+
+        status_event_rows = (await self.db.execute(
+            select(
+                section_expr,
+                func.count(IssueStatusHistory.id)
+                .filter(IssueStatusHistory.new_status == "fixed")
+                .label("fixed_events"),
+                func.count(IssueStatusHistory.id)
+                .filter(IssueStatusHistory.new_status == "closed")
+                .label("closed_events"),
+                func.count(IssueStatusHistory.id)
+                .filter(IssueStatusHistory.new_status == "revision_needed")
+                .label("revision_events"),
+            )
+            .join(Issue, Issue.id == IssueStatusHistory.issue_id)
+            .join(Site, Site.id == Issue.site_id)
+            .join(Courtyard, Courtyard.id == Site.courtyard_id)
+            .where(
+                IssueStatusHistory.created_at >= f.start_utc,
+                IssueStatusHistory.created_at < f.end_utc,
+                district_clause, _site_type_clause(f),
+            )
+            .group_by(section_expr)
+        )).all()
+        status_events = {row[0]: row for row in status_event_rows}
+
+        latest_issue_status = (
+            select(
+                IssueStatusHistory.issue_id,
+                IssueStatusHistory.new_status.label("status"),
+                func.row_number().over(
+                    partition_by=IssueStatusHistory.issue_id,
+                    order_by=(IssueStatusHistory.created_at.desc(), IssueStatusHistory.id.desc()),
+                ).label("rank"),
+            )
+            .where(IssueStatusHistory.created_at < f.end_utc)
+            .subquery()
+        )
+        snapshot_status = func.coalesce(
+            latest_issue_status.c.status,
+            cast("open", IssueStatusHistory.new_status.type),
+        )
+        snapshot_issue_rows = (await self.db.execute(
+            select(
+                section_expr,
+                func.count(Issue.id).label("snapshot_total"),
+                func.count(Issue.id).filter(
+                    (Issue.created_at >= f.start_utc)
+                    & (Issue.created_at < f.end_utc)
+                    & (snapshot_status == "closed")
+                ).label("cohort_closed_as_of"),
+                func.count(Issue.id).filter(snapshot_status.in_(ON_CHECK_STATUSES)).label("pending_final"),
+                func.count(Issue.id).filter(
+                    snapshot_status.in_(("open", "assigned", "in_work", "revision_needed"))
+                ).label("requires_work"),
+                func.count(Issue.id).filter(
+                    snapshot_status.in_(OVERDUE_STATUSES)
+                    & Issue.due_date.is_not(None)
+                    & (Issue.due_date < f.date_to)
+                ).label("overdue"),
+            )
+            .join(Site, Site.id == Issue.site_id)
+            .join(Courtyard, Courtyard.id == Site.courtyard_id)
+            .outerjoin(
+                latest_issue_status,
+                (latest_issue_status.c.issue_id == Issue.id) & (latest_issue_status.c.rank == 1),
+            )
+            .where(Issue.created_at < f.end_utc, district_clause, _site_type_clause(f))
+            .group_by(section_expr)
+        )).all()
+        snapshot_issues = {row[0]: row for row in snapshot_issue_rows}
+
+        result = []
+        for section in section_names:
+            ins = inspections.get(section)
+            quality = site_quality.get(section)
+            iss = issues.get(section)
+            events = status_events.get(section)
+            snapshot_issues_row = snapshot_issues.get(section)
+            found = int(iss.found if iss else 0)
+            closed = int(iss.closed if iss else 0)
+            total_sites = int(site_counts.get(section, 0))
+            inspected = int(quality.sites if quality else 0)
+            clean_sites = int(quality.clean if quality else 0)
+            defect_sites = int(quality.defects if quality else 0)
+            snapshot_total = int(snapshot_issues_row.snapshot_total if snapshot_issues_row else 0)
+            cohort_closed_as_of = int(
+                snapshot_issues_row.cohort_closed_as_of if snapshot_issues_row else 0
+            )
+            requires_work = int(snapshot_issues_row.requires_work if snapshot_issues_row else 0)
+            result.append(StatsSectionRow(
+                section=section,
+                total_sites=total_sites, sites_inspected=inspected,
+                coverage_pct=percent(inspected, total_sites),
+                sites_latest_clean=clean_sites,
+                sites_latest_with_defects=defect_sites,
+                clean_sites_pct=percent(clean_sites, inspected) if inspected else None,
+                defect_sites_pct=percent(defect_sites, inspected) if inspected else None,
+                inspections_total=int(ins.total if ins else 0),
+                inspections_green=int(ins.green if ins else 0),
+                inspections_with_defects=int(ins.defects if ins else 0),
+                issues_found=found,
+                issues_cohort_closed_as_of=cohort_closed_as_of,
+                issues_cohort_closed_pct=percent(cohort_closed_as_of, found) if found else None,
+                issues_fixed_events=int(events.fixed_events if events else 0),
+                issues_closed_events=int(events.closed_events if events else 0),
+                issues_revision_events=int(events.revision_events if events else 0),
+                issues_pending_final_current=int(snapshot_issues_row.pending_final if snapshot_issues_row else 0),
+                issues_requires_work_current=requires_work,
+                issues_snapshot_total=snapshot_total,
+                issues_requires_work_pct=percent(requires_work, snapshot_total) if snapshot_total else None,
+                issues_overdue_current=int(snapshot_issues_row.overdue if snapshot_issues_row else 0),
+                issues_closed=closed,
+                issues_on_check=int(iss.on_check if iss else 0),
+                issues_revision=int(iss.revision if iss else 0),
+                issues_in_work=int(iss.in_work if iss else 0),
+                issues_open=int(iss.open if iss else 0),
+                issues_not_fixed=found - closed,
+                issues_overdue=int(iss.overdue if iss else 0),
+                issues_closed_pct=percent(closed, found),
+            ))
+        totals_values = {
+            name: sum(getattr(row, name) for row in result)
+            for name in StatsSectionRow.model_fields
+            if name not in {
+                "section", "coverage_pct", "clean_sites_pct",
+                "defect_sites_pct", "issues_closed_pct", "issues_cohort_closed_pct",
+                "issues_requires_work_pct",
+            }
+        }
+        totals = StatsSectionRow(
+            section="ВСЕГО", **totals_values,
+            coverage_pct=percent(totals_values["sites_inspected"], totals_values["total_sites"]),
+            clean_sites_pct=(
+                percent(totals_values["sites_latest_clean"], totals_values["sites_inspected"])
+                if totals_values["sites_inspected"] else None
+            ),
+            defect_sites_pct=(
+                percent(totals_values["sites_latest_with_defects"], totals_values["sites_inspected"])
+                if totals_values["sites_inspected"] else None
+            ),
+            issues_closed_pct=percent(totals_values["issues_closed"], totals_values["issues_found"]),
+            issues_cohort_closed_pct=(
+                percent(totals_values["issues_cohort_closed_as_of"], totals_values["issues_found"])
+                if totals_values["issues_found"] else None
+            ),
+            issues_requires_work_pct=(
+                percent(totals_values["issues_requires_work_current"], totals_values["issues_snapshot_total"])
+                if totals_values["issues_snapshot_total"] else None
+            ),
+        )
+        return StatsSectionsOut(
+            period=self._period, generated_at=self.generated_at,
+            district_id=str(district.id), district_name=district.name,
+            sections=result, totals=totals,
         )
 
     async def dynamics(self) -> StatsDynamicsOut:

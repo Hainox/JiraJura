@@ -173,6 +173,7 @@ class CourtyardOut(BaseModel):
     id: UUID
     name: str
     district_id: UUID
+    section: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -185,6 +186,7 @@ class CourtyardAdminOut(CourtyardOut):
 class CourtyardUpdate(BaseModel):
     name: Optional[str] = None
     district_id: Optional[UUID] = None
+    section: Optional[str] = None
 
 
 # ── Площадки ───────────────────────────────────────────────────
@@ -530,6 +532,54 @@ class StatsDashboardOut(BaseModel):
     methodology: str = "v2"
     districts: list[StatsDistrictRow]
     totals: StatsDistrictRow
+
+
+# Свод по участкам внутри одного района — только для внутреннего контроля
+# самого района (см. StatisticsService.sections). На окружной штаб этот
+# разрез не подаётся, формат districts/StatsDashboardOut для отчётности
+# не меняется.
+class StatsSectionRow(BaseModel):
+    section: str
+    total_sites: int = 0
+    sites_inspected: int = 0
+    coverage_pct: int = 0
+    sites_latest_clean: int = 0
+    sites_latest_with_defects: int = 0
+    clean_sites_pct: Optional[int] = None
+    defect_sites_pct: Optional[int] = None
+    inspections_total: int = 0
+    inspections_green: int = 0
+    inspections_with_defects: int = 0
+    issues_found: int = 0
+    issues_cohort_closed_as_of: int = 0
+    issues_cohort_closed_pct: Optional[int] = None
+    issues_fixed_events: int = 0
+    issues_closed_events: int = 0
+    issues_revision_events: int = 0
+    issues_pending_final_current: int = 0
+    issues_requires_work_current: int = 0
+    issues_snapshot_total: int = 0
+    issues_requires_work_pct: Optional[int] = None
+    issues_overdue_current: int = 0
+    issues_closed: int = 0
+    issues_on_check: int = 0
+    issues_revision: int = 0
+    issues_in_work: int = 0
+    issues_open: int = 0
+    issues_not_fixed: int = 0
+    issues_overdue: int = 0
+    issues_closed_pct: int = 0
+
+
+class StatsSectionsOut(BaseModel):
+    period: StatsPeriodOut
+    timezone: str = "Europe/Moscow"
+    generated_at: datetime
+    methodology: str = "v2"
+    district_id: str
+    district_name: str
+    sections: list[StatsSectionRow]
+    totals: StatsSectionRow
 
 
 class StatsDynamicsDay(BaseModel):

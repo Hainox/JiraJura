@@ -24,6 +24,7 @@ CREATE TABLE courtyards (
     id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     district_id UUID NOT NULL REFERENCES districts(id),
     name        VARCHAR(500) NOT NULL,                 -- "Красноармейская ул. 26 к.2"
+    section     VARCHAR(50),                            -- "Участок 1" — внутрирайонное деление, см. models.py
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE(district_id, name)
 );

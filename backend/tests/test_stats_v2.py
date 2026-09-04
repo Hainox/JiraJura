@@ -502,3 +502,73 @@ async def test_dashboard_query_count_does_not_grow_with_districts():
         await engine.dispose()
 
     assert len(statements) == 7
+
+
+@pytest.mark.asyncio
+async def test_stats_sections_requires_district_id(client, admin_headers):
+    response = await client.get(
+        "/api/v1/stats/sections",
+        params={"date_from": "2026-08-18", "date_to": "2026-08-20"},
+        headers=admin_headers,
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_stats_sections_breaks_down_by_courtyard_section(client, admin_headers):
+    me = await client.get("/api/v1/auth/me", headers=admin_headers)
+    user_id = me.json()["id"]
+    district_id = str(uuid.uuid4())
+    courtyard_a, courtyard_b, courtyard_c = [str(uuid.uuid4()) for _ in range(3)]
+    site_a, site_b, site_c = [str(uuid.uuid4()) for _ in range(3)]
+    inspection_a, inspection_b, inspection_c = [str(uuid.uuid4()) for _ in range(3)]
+    _exec(
+        "INSERT INTO districts(id,name,code) VALUES (%(d)s,%(n)s,%(c)s);"
+        "INSERT INTO courtyards(id,district_id,name,section) VALUES "
+        "(%(ya)s,%(d)s,'Двор А','Участок 1'),"
+        "(%(yb)s,%(d)s,'Двор Б','Участок 2'),"
+        "(%(yc)s,%(d)s,'Двор В',NULL);"
+        "INSERT INTO sites(id,courtyard_id,type,area_m2,geometry,is_active) VALUES "
+        "(%(sa)s,%(ya)s,'Детская площадка',100,ST_GeomFromText("
+        "'POLYGON((40 55,40.01 55,40.01 55.01,40 55.01,40 55))',4326),true),"
+        "(%(sb)s,%(yb)s,'Детская площадка',100,ST_GeomFromText("
+        "'POLYGON((41 55,41.01 55,41.01 55.01,41 55.01,41 55))',4326),true),"
+        "(%(sc)s,%(yc)s,'Детская площадка',100,ST_GeomFromText("
+        "'POLYGON((42 55,42.01 55,42.01 55.01,42 55.01,42 55))',4326),true);"
+        "INSERT INTO inspections(id,site_id,inspector_id,type,status,created_at,completed_at) VALUES "
+        "(%(ia)s,%(sa)s,%(u)s,'regular','completed','2026-08-19T08:00:00Z','2026-08-19T09:00:00Z'),"
+        "(%(ib)s,%(sb)s,%(u)s,'regular','completed','2026-08-19T08:00:00Z','2026-08-19T09:00:00Z'),"
+        "(%(ic)s,%(sc)s,%(u)s,'regular','completed','2026-08-19T08:00:00Z','2026-08-19T09:00:00Z');",
+        {"d": district_id, "n": f"Sections {district_id[:8]}", "c": district_id[:8],
+         "ya": courtyard_a, "yb": courtyard_b, "yc": courtyard_c,
+         "sa": site_a, "sb": site_b, "sc": site_c,
+         "ia": inspection_a, "ib": inspection_b, "ic": inspection_c, "u": user_id},
+    )
+
+    response = await client.get(
+        "/api/v1/stats/sections",
+        params={"date_from": "2026-08-19", "date_to": "2026-08-19", "district_id": district_id},
+        headers=admin_headers,
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["district_id"] == district_id
+    by_section = {row["section"]: row for row in payload["sections"]}
+    assert set(by_section) == {"Участок 1", "Участок 2", "Без участка"}
+    assert by_section["Участок 1"]["total_sites"] == 1
+    assert by_section["Участок 1"]["sites_inspected"] == 1
+    assert by_section["Участок 2"]["total_sites"] == 1
+    assert by_section["Без участка"]["total_sites"] == 1
+    assert payload["totals"]["total_sites"] == 3
+    assert payload["totals"]["sites_inspected"] == 3
+    assert payload["totals"]["inspections_total"] == 3
+
+    # На окружной штаб этот разрез не подаётся — /dashboard не меняется и
+    # видит те же три площадки одной строкой по району.
+    dashboard = await client.get(
+        "/api/v1/stats/dashboard",
+        params={"date_from": "2026-08-19", "date_to": "2026-08-19", "district_id": district_id},
+        headers=admin_headers,
+    )
+    assert dashboard.status_code == 200, dashboard.text
+    assert dashboard.json()["districts"][0]["total_sites"] == 3

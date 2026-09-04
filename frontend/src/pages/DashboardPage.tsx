@@ -13,7 +13,7 @@ import {
   coverageColor, currentMskWeek, percentageColor, periodRange, qualityColor,
   remediationMetricLabel, withTotalsRow, type StatisticsPreset,
 } from '@/lib/statistics'
-import type { StatsDistrictRow } from '@/types'
+import type { StatsDistrictRow, StatsSectionRow, StatsSectionsOut } from '@/types'
 
 type Tab = 'overview' | 'dynamics' | 'categories' | 'districts' | 'remediation' | 'shtab'
 type PeriodMode = StatisticsPreset | 'all' | 'custom'
@@ -80,6 +80,14 @@ export default function DashboardPage() {
     queryKey: ['stats-v2-categories', params], queryFn: () => statsApi.categories(params),
     enabled: tab === 'categories',
   })
+  // Свод по участкам — только внутри одного выбранного района, для
+  // внутреннего контроля самих районов (см. StatisticsService.sections).
+  // На окружной штаб (вкладка "Штаб-отчёт") этот разрез не подаётся.
+  const sections = useQuery({
+    queryKey: ['stats-v2-sections', params, districtId],
+    queryFn: () => statsApi.sections({ ...params, district_id: districtId }),
+    enabled: tab === 'districts' && !!districtId,
+  })
   const generated = dashboard.data?.generated_at
     ? new Date(dashboard.data.generated_at).toLocaleString('ru-RU') : '—'
 
@@ -116,7 +124,12 @@ export default function DashboardPage() {
         {tab === 'overview' && <Overview total={dashboard.data.totals} />}
         {tab === 'dynamics' && (dynamics.data ? <Dynamics data={dynamics.data.days} /> : <State text="Загрузка динамики…" />)}
         {tab === 'categories' && (categories.data ? <Categories data={categories.data.categories} /> : <State text="Загрузка категорий…" />)}
-        {tab === 'districts' && <DistrictTable rows={dashboard.data.districts} totals={dashboard.data.totals} onSelect={lockedDistrict ? undefined : setDistrictId} />}
+        {tab === 'districts' && (districtId
+          ? (sections.data
+              ? <SectionsPanel data={sections.data} onBack={lockedDistrict ? undefined : () => setDistrictId('')} />
+              : sections.isError ? <State text="Не удалось загрузить участки" /> : <State text="Загрузка участков…" />)
+          : <DistrictTable rows={dashboard.data.districts} totals={dashboard.data.totals} onSelect={lockedDistrict ? undefined : setDistrictId} />
+        )}
         {tab === 'remediation' && <RemediationTable rows={dashboard.data.districts} totals={dashboard.data.totals} />}
         {tab === 'shtab' && <Shtab params={params} />}
       </>}
@@ -274,6 +287,125 @@ function DistrictTable({ rows, totals, onSelect }: { rows: StatsDistrictRow[]; t
       </tbody>
     </table>
     </div>
+  </div>
+}
+// Свод по участкам внутри одного района — внутренний разрез по запросу
+// самих районов для углублённого контроля своих мест. На окружной штаб и
+// совещания эти цифры не подаются отдельным источником: DistrictTable и
+// PPTX-отчёт (Shtab) выше остаются единственным принятым форматом доклада.
+const sectionColumns: { key: keyof StatsSectionRow; label: string; group?: DistrictMetricGroup; groupStart?: boolean }[] = [
+  { key: 'section', label: 'Участок' },
+  { key: 'total_sites', label: 'Площадок', group: 'sites', groupStart: true },
+  { key: 'sites_inspected', label: 'Проверено', group: 'sites' },
+  { key: 'coverage_pct', label: 'Охват %', group: 'sites' },
+  { key: 'clean_sites_pct', label: 'Чистые площадки', group: 'quality', groupStart: true },
+  { key: 'defect_sites_pct', label: 'Площадки с нарушениями', group: 'quality' },
+  { key: 'inspections_total', label: 'Обходов', group: 'inspections', groupStart: true },
+  { key: 'inspections_green', label: 'Без нарушений', group: 'inspections' },
+  { key: 'inspections_with_defects', label: 'С нарушениями', group: 'inspections' },
+]
+
+function sectionCellValue(r: StatsSectionRow, key: keyof StatsSectionRow, isTotal: boolean) {
+  const qualityKey = key === 'clean_sites_pct' || key === 'defect_sites_pct'
+  const qualityValue: number | null = qualityKey ? r[key] as number | null : null
+  const qualityNumerator = key === 'clean_sites_pct' ? r.sites_latest_clean : r.sites_latest_with_defects
+  const qualityDirection = key === 'clean_sites_pct' ? 'direct' as const : 'inverse' as const
+  const noData = Boolean(qualityKey && qualityValue === null)
+  const style = !isTotal && key === 'coverage_pct'
+    ? { background: coverageColor(Number(r[key])) }
+    : !isTotal && qualityKey && qualityValue !== null
+      ? { background: qualityColor(qualityValue, qualityDirection) }
+      : undefined
+  const value = key === 'section' && isTotal ? 'ИТОГО'
+    : key === 'coverage_pct' ? `${r[key]}%`
+    : qualityKey ? (noData ? '—' : `${qualityNumerator} из ${r.sites_inspected} · ${qualityValue}%`)
+    : r[key]
+  return { value, style, noData }
+}
+
+function SectionCard({ r, isTotal }: { r: StatsSectionRow; isTotal: boolean }) {
+  return <div className={`card ${isTotal ? 'bg-slate-700' : ''}`}>
+    <div className={`font-bold text-sm mb-2 ${isTotal ? 'text-white' : 'text-slate-800'}`}>{isTotal ? 'ИТОГО' : r.section}</div>
+    {districtMetricGroups.map((group) => (
+      <div key={group.id} className="mb-2 last:mb-0">
+        <div className={`text-[10px] uppercase font-semibold mb-1 ${isTotal ? 'text-white/70' : 'text-slate-500'}`}>{group.label}</div>
+        <div className="grid grid-cols-2 gap-2">
+          {sectionColumns.filter((c) => c.group === group.id).map(({ key, label }) => {
+            const cell = sectionCellValue(r, key, isTotal)
+            return <div key={key} className={`rounded-lg p-1.5 text-center ${isTotal ? 'bg-white/10' : ''}`} style={!isTotal ? cell.style : undefined} title={cell.noData ? 'Нет завершённых обходов за период' : undefined}>
+              <div className={`text-[9px] ${isTotal ? 'text-white/70' : 'text-slate-500'}`}>{label}</div>
+              <div className={`text-xs font-semibold ${isTotal ? 'text-white' : cell.noData ? 'text-slate-500' : 'text-slate-800'}`}>{cell.value}</div>
+            </div>
+          })}
+        </div>
+      </div>
+    ))}
+  </div>
+}
+function SectionTable({ rows, totals }: { rows: StatsSectionRow[]; totals: StatsSectionRow }) {
+  const [sort, setSort] = useState<keyof StatsSectionRow>('section')
+  const ordered = useMemo(() => [...rows].sort((a, b) => typeof a[sort] === 'number' ? Number(b[sort]) - Number(a[sort]) : String(a[sort]).localeCompare(String(b[sort]), 'ru')), [rows, sort])
+  const withTotals = withTotalsRow(ordered, totals)
+  return <div className="card">
+    <div className="sm:hidden space-y-3">
+      {withTotals.map((r, i) => <SectionCard key={r.section + i} r={r} isTotal={i === withTotals.length - 1} />)}
+    </div>
+    <div className="hidden sm:block overflow-x-auto">
+    <table className="w-full min-w-[760px] text-xs border border-slate-300">
+      <thead>
+        <tr>
+          <th rowSpan={2} aria-sort={sort === 'section' ? 'ascending' : 'none'} className="border border-slate-300 bg-slate-100 p-0 text-center text-slate-800">
+            <button type="button" onClick={() => setSort('section')} className="h-full w-full px-3 py-2 text-center font-semibold hover:bg-slate-200 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary-700">
+              Участок
+            </button>
+          </th>
+          {districtMetricGroups.map((group) => (
+            <th key={group.id} colSpan={sectionColumns.filter((column) => column.group === group.id).length} className={`border border-slate-300 px-2 py-1.5 text-center font-bold ${group.className}`}>
+              {group.label}<span className="ml-1 font-normal opacity-70">· {group.hint}</span>
+            </th>
+          ))}
+        </tr>
+        <tr>
+          {sectionColumns.slice(1).map(({ key, label, group, groupStart }) => {
+            const groupClass = districtMetricGroups.find((item) => item.id === group)?.className ?? 'bg-slate-100 text-slate-800'
+            return <th key={key} aria-sort={sort === key ? 'descending' : 'none'} className={`border border-slate-300 p-0 whitespace-nowrap ${groupClass} ${groupStart ? 'border-l-2 border-l-slate-500' : ''}`}>
+              <button type="button" onClick={() => setSort(key)} className="w-full px-2 py-2 text-center font-semibold hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary-700">
+                {label}
+              </button>
+            </th>
+          })}
+        </tr>
+      </thead>
+      <tbody>
+        {withTotals.map((r, i) => {
+          const isTotal = i === withTotals.length - 1
+          return <tr key={r.section + i} className={isTotal ? 'border-t text-center bg-slate-700 text-white font-bold' : 'border-t text-center'}>
+          {sectionColumns.map(({ key, groupStart }) => {
+            const cell = sectionCellValue(r, key, isTotal)
+            return <td key={key} title={cell.noData ? 'Нет завершённых обходов за период' : undefined} className={`border border-slate-300 p-2 whitespace-nowrap ${groupStart ? isTotal ? 'border-l-2 border-l-white/50' : 'border-l-2 border-l-slate-400' : ''} ${cell.noData ? 'bg-slate-100 text-slate-500' : ''} ${!isTotal && key === 'inspections_with_defects' && Number(r[key]) === 0 && Number(r.inspections_total) > 0 ? 'bg-emerald-50 text-emerald-800 font-semibold' : ''}`} style={cell.style}>
+              {cell.value}
+            </td>
+          })}
+          </tr>
+        })}
+      </tbody>
+    </table>
+    </div>
+  </div>
+}
+function SectionsPanel({ data, onBack }: { data: StatsSectionsOut; onBack?: () => void }) {
+  return <div className="space-y-3">
+    <div className="card flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <div className="font-bold text-slate-800">{data.district_name} · свод по участкам</div>
+        <p className="text-xs text-slate-500 mt-1 max-w-2xl">
+          Внутренний разрез для углублённого контроля работы в своих местах. На окружной штаб и совещания подаётся
+          только сводка по району — этот разрез не заменяет и не дополняет её как отдельный источник.
+        </p>
+      </div>
+      {onBack && <button onClick={onBack} className="btn-outline text-sm px-3 shrink-0">← Все районы</button>}
+    </div>
+    <SectionTable rows={data.sections} totals={data.totals} />
   </div>
 }
 // Подписи "Устранено"/"Принято" (не "На финальной проверке"/"Исправлено") —

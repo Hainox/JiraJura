@@ -1,5 +1,5 @@
 """Inspections router."""
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Optional
 import uuid as _uuid
 import os
@@ -13,7 +13,7 @@ from sqlalchemy.orm import selectinload
 from app.config import settings
 from app.database import get_db
 from app.services.permissions import check_own_or_role, in_district_scope
-from app.services.timezone import MSK
+from app.services.timezone import MSK, msk_day_bounds_utc
 from app.models import (
     Inspection, Site, Courtyard, User,
     ChecklistAnswer, ChecklistItem, ChecklistTemplate, Photo, Issue,
@@ -128,6 +128,8 @@ async def list_inspections(
     status: Optional[str] = Query(None),
     exclude_status: Optional[str] = Query(None),
     district_id: Optional[str] = Query(None),
+    date_from: Optional[date] = Query(None),
+    date_to: Optional[date] = Query(None),
     all_in_district: bool = Query(False),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=1000),
@@ -151,6 +153,14 @@ async def list_inspections(
     # status=!completed.
     if exclude_status:
         base = base.where(Inspection.status != exclude_status)
+
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(422, "date_from не может быть позже date_to")
+    start_utc, end_utc = msk_day_bounds_utc(date_from, date_to)
+    if start_utc:
+        base = base.where(Inspection.created_at >= start_utc)
+    if end_utc:
+        base = base.where(Inspection.created_at < end_utc)
 
     # all_in_district=True — инспектор просит обходы всего своего района,
     # не только свои: чтобы видеть, что площадку уже обошёл коллега, и не

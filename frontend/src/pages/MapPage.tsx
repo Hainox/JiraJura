@@ -18,6 +18,15 @@ import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
 
 const CHILD_TYPE = 'Детская площадка'
 const SPORT_TYPE = 'Спортивная площадка'
+const VISITED_STATUSES = new Set(['completed', 'issues_found', 'critical'])
+
+const moscowToday = () => {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/Moscow', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date())
+  const value = (type: string) => parts.find((part) => part.type === type)?.value
+  return `${value('year')}-${value('month')}-${value('day')}`
+}
 
 const childIcon = (status?: string | null) => {
   const base = status === 'completed' ? '#16a34a' : status === 'in_progress' ? '#ca8a04' : status === 'issues_found' || status === 'critical' ? '#dc2626' : '#2563eb'
@@ -90,6 +99,7 @@ export default function MapPage() {
   // можно оставить локальными
   const [showFilters, setShowFilters] = useState(false)
   const [showLegend, setShowLegend] = useState(false)
+  const todayMsk = moscowToday()
 
   const isAdmin = user?.role === 'admin'
   const isReviewerLike = user?.role === 'reviewer' || isAdmin
@@ -221,27 +231,22 @@ export default function MapPage() {
     onError: () => toast.error('Не удалось принять обходы'),
   })
 
-  // Обходы для раскраски меток: инспектору — весь его район (all_in_district),
-  // не только свои — иначе площадка, которую уже обошёл коллега, выглядела
-  // на карте нетронутой (синей), и это провоцировало задваивание работы на
-  // одной и той же площадке (жалоба из поля — "не видим, кто из коллег
-  // какие площадки уже обошёл"). Проверяющему/админу — по выбранному
-  // району, как и раньше.
-  // page_size=1000 — реальный максимум на бэкенде (Query(..., le=1000) в
-  // list_inspections); запрос 5000 всегда падал 422 и молча оставлял карту
-  // нераскрашенной даже для инспектора.
+  // Обходы для раскраски меток берём только за текущий московский день.
+  // Исторический обход остаётся в журнале площадки, но не должен создавать
+  // ложную зелёную галочку и скрывать площадку из «Только необойдённые».
+  // Инспектор видит коллег по своему району, чтобы не дублировать работу.
   const { data: districtInspectionsData } = useQuery<{ total: number; items: InspectionOut[] }>({
-    queryKey: ['district-inspections-map', effectiveDistrictFilter],
+    queryKey: ['district-inspections-map', effectiveDistrictFilter, todayMsk],
     queryFn: () => inspectionsApi.list({
       page_size: 1000, district_id: effectiveDistrictFilter,
+      date_from: todayMsk, date_to: todayMsk,
       all_in_district: user?.role === 'inspector' || undefined,
     }),
     enabled: user?.role === 'inspector' || isReviewerLike,
   })
   const myInspections = districtInspectionsData?.items ?? []
 
-  // Карта: site_id → последний обход (статус + кто/когда, чтобы инспектор
-  // видел не только "обойдено", но и кем — включая себя самого).
+  // Карта: site_id → сегодняшний обход (статус + кто/когда).
   // Зависимость от districtInspectionsData?.items, а не от производного
   // `myInspections ?? []` — тот новый массив на каждый рендер, useMemo
   // пересчитывался бы впустую (см. тот же паттерн в MyInspectionsPage).
@@ -372,7 +377,7 @@ export default function MapPage() {
                 Легенда
               </button>
               <span className="text-xs text-gray-400">
-                Обойдено: {Object.values(siteStatusMap).filter((s) => s.status === 'completed' || s.status === 'issues_found').length}/{totalCount}
+                Сегодня обойдено: {Object.values(siteStatusMap).filter((s) => VISITED_STATUSES.has(s.status)).length}/{totalCount}
               </span>
             </div>
           )}
@@ -590,7 +595,7 @@ export default function MapPage() {
               // наведении — на карте с 3800+ площадками это визуальный шум.
               showCoverageOnHover={false}
             >
-              {sites.filter((s) => !myInspOnly || !siteStatusMap[s.id] || siteStatusMap[s.id].status !== 'completed').map((s) => {
+              {sites.filter((s) => !myInspOnly || !siteStatusMap[s.id] || !VISITED_STATUSES.has(siteStatusMap[s.id].status)).map((s) => {
                 const coverage = (user?.role === 'inspector' || isReviewerLike) ? siteStatusMap[s.id] : undefined
                 const icon = s.type === CHILD_TYPE ? childIcon(coverage?.status) : sportIcon(coverage?.status)
                 return <Marker key={s.id} position={[s.lat ?? 55.829, s.lon ?? 37.532]} icon={icon}>
@@ -608,7 +613,7 @@ export default function MapPage() {
                       )}
                       {user?.role === 'inspector' && coverage && (
                         <div className="text-xs text-gray-400 mt-0.5">
-                          Обошёл: {coverage.inspectorName}, {new Date(coverage.date).toLocaleDateString('ru')}
+                          Сегодня обошёл: {coverage.inspectorName}
                         </div>
                       )}
                       <button onClick={() => navigate(`/sites/${s.id}`)} data-prefetch={`/sites/${s.id}`} className="mt-2 text-xs btn-primary py-1 px-3 w-full flex items-center justify-center gap-1">
@@ -639,7 +644,7 @@ export default function MapPage() {
                     )}
                     {user?.role === 'inspector' && siteStatusMap[s.id] && (
                       <div className="text-xs text-gray-400 mt-0.5">
-                        Обошёл: {siteStatusMap[s.id].inspectorName}, {new Date(siteStatusMap[s.id].date).toLocaleDateString('ru')}
+                        Сегодня обошёл: {siteStatusMap[s.id].inspectorName}
                       </div>
                     )}
                   </div>

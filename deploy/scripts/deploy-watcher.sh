@@ -64,7 +64,6 @@ while IFS=$'\t' read -r ENTITY_ID CREATED_AT; do
     fi
     git pull --ff-only origin main
     $COMPOSE build
-    $COMPOSE up -d
 
     # deploy/nginx/active.conf.template — не отслеживаемая git'ом копия
     # proxy.conf.template (переключается один раз при выпуске сертификата,
@@ -85,11 +84,13 @@ while IFS=$'\t' read -r ENTITY_ID CREATED_AT; do
     # действующего proxy. Если nginx не примет конфигурацию, живой сайт не
     # будет остановлен ради заведомо невалидного релиза.
     $COMPOSE run --rm --no-deps proxy nginx -t
-    # up -d выше не пересоздаёт proxy, если его секция в
+    # После успешной проверки можно безопасно обновить сервисы. up -d не
+    # пересоздаёт proxy, если его секция в
     # docker-compose.prod.yml не менялась — а шаблон рендерится
     # entrypoint'ом ТОЛЬКО при старте контейнера. Без явного restart
     # обновлённый active.conf.template до nginx не долетит, даже если
     # строка выше его только что переписала.
+    $COMPOSE up -d
     $COMPOSE restart proxy
     DOMAIN=$(sed -n 's/^DOMAIN=//p' .env | tail -n 1)
     if [ -z "$DOMAIN" ]; then

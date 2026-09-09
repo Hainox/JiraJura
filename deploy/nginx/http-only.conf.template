@@ -12,7 +12,7 @@ server {
     # чтобы nginx не кэшировал IP api/frontend навсегда.
     resolver 127.0.0.11 valid=10s;
 
-    include /etc/nginx/conf.d/odh-api.conf;
+    include /etc/nginx/odh-api.conf;
 
     # Синхронно с client_max_body_size в proxy.conf.template (25m = лимит
     # приложения MAX_PHOTO_SIZE_MB=20 + запас на заголовки, см. комментарий

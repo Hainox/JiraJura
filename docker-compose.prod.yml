@@ -61,6 +61,7 @@ services:
       # active.conf.template переключается между http-only.conf.template и
       # proxy.conf.template скриптами в deploy/scripts/ — см. deploy/README.md
       - ./deploy/nginx/active.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./deploy/nginx/odh-api.conf.template:/etc/nginx/templates/odh-api.conf.template:ro
       - ./deploy/certbot/www:/var/www/certbot:ro
       - ./deploy/certbot/conf:/etc/letsencrypt:ro
     environment:

@@ -147,6 +147,48 @@ Certbot получает сертификат методом webroot — кла�
 (crontab -l 2>/dev/null; echo "0 3 * * * cd /opt/jirajura && ./deploy/scripts/renew-cert-standalone.sh >> /var/log/jirajura-renew.log 2>&1") | crontab -
 ```
 
+## ODH-карта: отдельный API за общим proxy
+
+Публичная карта размещена отдельно на GitHub Pages, а её API доступен только
+через `https://obhod-sao.ru/odh-api/`. JiraJura не управляет этим сервисом и
+не использует его БД. В репозитории JiraJura versioned только nginx-маршрут;
+порт ODH API `8787` не публикуйте в `ports:`.
+
+ODH compose-проект должен присоединить свой API к уже существующей сети
+JiraJura с DNS-алиасом `odh-sao-api`:
+
+```yaml
+services:
+  api:
+    networks:
+      jirajura_proxy:
+        aliases:
+          - odh-sao-api
+
+networks:
+  jirajura_proxy:
+    external: true
+    name: jirajura_default
+```
+
+После запуска ODH проверьте сеть на сервере:
+
+```bash
+docker network inspect jirajura_default
+curl -fsS https://obhod-sao.ru/odh-api/<health-path>
+```
+
+Если у ODH есть endpoint здоровья, задайте в `/opt/jirajura/.env` его путь,
+например `ODH_HEALTH_PATH=/health`. Тогда `deploy-watcher.sh` проверит ODH
+после перезапуска proxy. Если значение не задано, watcher не блокирует релиз
+JiraJura и явно записывает, что проверка ODH пропущена.
+
+Перед каждым деплоем рабочая копия должна быть чистой:
+
+```bash
+git status --short
+```
+
 ## 6. Импорт площадок из KML
 
 Площадки заводятся импортом KML-выгрузок (`backend/import_kml.py`). Скрипт уже

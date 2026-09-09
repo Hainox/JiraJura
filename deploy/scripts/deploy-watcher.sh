@@ -87,6 +87,7 @@ while IFS=$'\t' read -r ENTITY_ID CREATED_AT; do
     # обновлённый active.conf.template до nginx не долетит, даже если
     # строка выше его только что переписала.
     $COMPOSE restart proxy
+    ./deploy/scripts/verify-odh-proxy.sh
   ) >"$LOG_TMP" 2>&1; then
     STATUS_FLAG=--ok
   else

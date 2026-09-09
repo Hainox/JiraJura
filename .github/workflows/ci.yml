@@ -21,6 +21,17 @@ jobs:
       - name: Validate production Compose configuration
         run: docker compose -f docker-compose.prod.yml config >/dev/null
 
+      - name: Render and validate nginx configuration
+        run: |
+          cp deploy/nginx/http-only.conf.template deploy/nginx/active.conf.template
+          trap 'rm -f deploy/nginx/active.conf.template' EXIT
+          docker run --rm \
+            -e DOMAIN=example.test \
+            -e HTTPS_PORT=443 \
+            -v "$PWD/deploy/nginx/active.conf.template:/etc/nginx/templates/default.conf.template:ro" \
+            -v "$PWD/deploy/nginx/odh-api.conf:/etc/nginx/odh-api.conf:ro" \
+            nginx:1.30-alpine nginx -t
+
   backend:
     runs-on: ubuntu-latest
     services:

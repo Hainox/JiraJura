@@ -23,7 +23,7 @@
 ### Task 1: Version the ODH route and mount it into nginx
 
 **Files:**
-- Create: `deploy/nginx/odh-api.conf.template`
+- Create: `deploy/nginx/odh-api.conf`
 - Modify: `deploy/nginx/proxy.conf.template`
 - Modify: `deploy/nginx/http-only.conf.template`
 - Modify: `docker-compose.prod.yml`
@@ -39,13 +39,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 root="$(cd "$(dirname "$0")/../.." && pwd)"
-snippet="$root/deploy/nginx/odh-api.conf.template"
+snippet="$root/deploy/nginx/odh-api.conf"
 grep -Fq 'location /odh-api/' "$snippet"
 grep -Fq 'set $odh_api_upstream odh-sao-api:8787;' "$snippet"
 grep -Fq 'proxy_pass http://$odh_api_upstream$uri$is_args$args;' "$snippet"
-grep -Fq 'include /etc/nginx/conf.d/odh-api.conf;' "$root/deploy/nginx/proxy.conf.template"
-grep -Fq 'include /etc/nginx/conf.d/odh-api.conf;' "$root/deploy/nginx/http-only.conf.template"
-grep -Fq './deploy/nginx/odh-api.conf.template:/etc/nginx/templates/odh-api.conf.template:ro' "$root/docker-compose.prod.yml"
+grep -Fq 'include /etc/nginx/odh-api.conf;' "$root/deploy/nginx/proxy.conf.template"
+grep -Fq 'include /etc/nginx/odh-api.conf;' "$root/deploy/nginx/http-only.conf.template"
+grep -Fq './deploy/nginx/odh-api.conf:/etc/nginx/odh-api.conf:ro' "$root/docker-compose.prod.yml"
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
@@ -70,9 +70,10 @@ location /odh-api/ {
 }
 ```
 
-Insert `include /etc/nginx/conf.d/odh-api.conf;` after the Docker resolver in
-both server configurations. Mount the template in the `proxy` service so the
-standard nginx entrypoint renders it at container startup.
+Insert `include /etc/nginx/odh-api.conf;` after the Docker resolver in both
+server configurations. Mount the ordinary read-only config outside
+`/etc/nginx/conf.d`, because that directory is automatically included at HTTP
+scope and cannot contain a `location` block.
 
 - [ ] **Step 4: Run static and Compose validation**
 
@@ -88,7 +89,7 @@ Expected: both commands exit `0`.
 - [ ] **Step 5: Commit the feature**
 
 ```bash
-git add deploy/nginx/odh-api.conf.template deploy/nginx/proxy.conf.template \
+git add deploy/nginx/odh-api.conf deploy/nginx/proxy.conf.template \
   deploy/nginx/http-only.conf.template docker-compose.prod.yml \
   deploy/tests/test_odh_proxy_config.sh
 git commit -m "feat(deploy): isolate ODH API proxy route"

@@ -7,6 +7,20 @@ on:
     branches: [main]
 
 jobs:
+  deploy-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate ODH proxy configuration
+        run: bash deploy/tests/test_odh_proxy_config.sh
+
+      - name: Validate deployment scripts
+        run: bash -n deploy/scripts/deploy-watcher.sh deploy/scripts/verify-odh-proxy.sh
+
+      - name: Validate production Compose configuration
+        run: docker compose -f docker-compose.prod.yml config >/dev/null
+
   backend:
     runs-on: ubuntu-latest
     services:

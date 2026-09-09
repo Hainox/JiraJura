@@ -13,6 +13,9 @@ grep -Fq './deploy/nginx/odh-api.conf:/etc/nginx/odh-api.conf:ro' "$root/docker-
 grep -Fq 'ODH_HEALTH_PATH' "$root/deploy/scripts/verify-odh-proxy.sh"
 grep -Fq 'bash ./deploy/scripts/verify-odh-proxy.sh' "$root/deploy/scripts/deploy-watcher.sh"
 grep -Fq 'run --rm --no-deps proxy nginx -t' "$root/deploy/scripts/deploy-watcher.sh"
+preflight_line=$(grep -nF '$COMPOSE run --rm --no-deps proxy nginx -t' "$root/deploy/scripts/deploy-watcher.sh" | cut -d: -f1)
+compose_up_line=$(grep -nF '$COMPOSE up -d' "$root/deploy/scripts/deploy-watcher.sh" | head -n 1 | cut -d: -f1)
+test "$preflight_line" -lt "$compose_up_line"
 grep -Fq 'https://${DOMAIN}/api/v1/health' "$root/deploy/scripts/deploy-watcher.sh"
 grep -Fq 'jirajura_default' "$root/deploy/README.md"
 grep -Fq 'nginx -t' "$root/.github/workflows/ci.yml"

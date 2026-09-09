@@ -33,7 +33,7 @@ server {
     # хост заново на каждый запрос (не чаще, чем раз в valid=10s).
     resolver 127.0.0.11 valid=10s;
 
-    include /etc/nginx/conf.d/odh-api.conf;
+    include /etc/nginx/odh-api.conf;
 
     location /api/v1/ {
         set $api_upstream api:8000;

@@ -48,6 +48,12 @@ Path("uploads").mkdir(exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 
+@app.get("/api/v1/health")
+def health():
+    """Public, data-free liveness endpoint used by the deployment watcher."""
+    return {"status": "ok"}
+
+
 @app.get("/")
 def root():
     return {"app": "Журнал обхода площадок САО", "version": "0.1.0"}

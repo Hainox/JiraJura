@@ -64,7 +64,6 @@ while IFS=$'\t' read -r ENTITY_ID CREATED_AT; do
     fi
     git pull --ff-only origin main
     $COMPOSE build
-    $COMPOSE up -d
 
     # deploy/nginx/active.conf.template — не отслеживаемая git'ом копия
     # proxy.conf.template (переключается один раз при выпуске сертификата,
@@ -81,12 +80,26 @@ while IFS=$'\t' read -r ENTITY_ID CREATED_AT; do
     if grep -q 'ssl_certificate' deploy/nginx/active.conf.template 2>/dev/null; then
       cp deploy/nginx/proxy.conf.template deploy/nginx/active.conf.template
     fi
-    # up -d выше не пересоздаёт proxy, если его секция в
+    # Проверяем именно новый шаблон в изолированном контейнере до перезапуска
+    # действующего proxy. Если nginx не примет конфигурацию, живой сайт не
+    # будет остановлен ради заведомо невалидного релиза.
+    $COMPOSE run --rm --no-deps proxy nginx -t
+    # После успешной проверки можно безопасно обновить сервисы. up -d не
+    # пересоздаёт proxy, если его секция в
     # docker-compose.prod.yml не менялась — а шаблон рендерится
     # entrypoint'ом ТОЛЬКО при старте контейнера. Без явного restart
     # обновлённый active.conf.template до nginx не долетит, даже если
     # строка выше его только что переписала.
+    $COMPOSE up -d
     $COMPOSE restart proxy
+    DOMAIN=$(sed -n 's/^DOMAIN=//p' .env | tail -n 1)
+    if [ -z "$DOMAIN" ]; then
+      echo "DOMAIN не задан в .env" >&2
+      exit 1
+    fi
+    curl --fail --silent --show-error "https://${DOMAIN}/" >/dev/null
+    curl --fail --silent --show-error "https://${DOMAIN}/api/v1/health" >/dev/null
+    bash ./deploy/scripts/verify-odh-proxy.sh
   ) >"$LOG_TMP" 2>&1; then
     STATUS_FLAG=--ok
   else

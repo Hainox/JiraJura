@@ -20,12 +20,13 @@ and also synchronizes the active proxy configuration from the repository.
 ## Chosen architecture
 
 1. JiraJura version-controls only the reverse-proxy boundary:
-   `deploy/nginx/odh-api.conf.template` contains the ODH `location` block.
+   `deploy/nginx/odh-api.conf` contains the ODH `location` block.
 2. `proxy.conf.template` and `http-only.conf.template` both include that
    generated snippet inside their `server` blocks, so TLS and first-install
    configurations expose the same route.
-3. The `proxy` service mounts the snippet into nginx's template directory.
-   The stock nginx entrypoint renders it to `/etc/nginx/conf.d/odh-api.conf`.
+3. The `proxy` service mounts the snippet read-only at
+   `/etc/nginx/odh-api.conf`. It is outside nginx's automatically included
+   `conf.d` directory and is included only from the intended `server` blocks.
 4. The ODH API must join the external Docker network named `jirajura_default`
    with the alias `odh-sao-api`.  JiraJura does not start, stop, or rebuild the
    ODH service.

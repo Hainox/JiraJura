@@ -8,7 +8,7 @@ import type { IssueOut } from '@/types'
 import {
   Camera, CheckCircle2, AlertTriangle, XCircle,
   Calendar, User, MapPin, Clock, RotateCcw, GitCompare,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, Check, Lock, Upload,
 } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
 import BeforeAfterCompare from '@/components/BeforeAfterCompare'
@@ -153,6 +153,8 @@ export default function IssueFixPage() {
   if (!issue) return <div className="h-full flex items-center justify-center bg-gray-50"><div className="text-gray-400">Замечание не найдено</div></div>
 
   const fixPhotos = issue.fix_photos ?? []
+  const isResubmission = issue.status === 'revision_needed'
+  const readyToResubmit = fixPhotos.length > 0 && !!executorName.trim()
 
   return (
     <div className="h-full flex flex-col bg-gray-50">
@@ -164,8 +166,8 @@ export default function IssueFixPage() {
             </svg>
           </button>
           <div className="flex-1 min-w-0">
-            <h1 className="font-bold text-lg truncate">Исправление нарушения</h1>
-            <p className="text-blue-200 text-xs">Замечание #{issueId.slice(0, 8)}</p>
+            <h1 className="font-bold text-lg truncate">{isResubmission ? 'Доработка карточки' : 'Исправление нарушения'}</h1>
+            <p className="text-blue-200 text-xs">Замечание #{issueId.slice(0, 8)}{isResubmission ? ' · повторная отправка' : ''}</p>
           </div>
         </div>
       </div>
@@ -191,30 +193,44 @@ export default function IssueFixPage() {
           <button onClick={() => navigate(`/inspections/${issue.inspection_id}`)} className="text-xs text-primary-600 hover:text-primary-800 underline">Открыть обход</button>
         </div>
 
-        {/* До Do youрусский комментарий (если вернули на доработку) */}
+        {/* Ясно объясняем следующий шаг, чтобы фото не попадали в общий альбом обхода. */}
         {issue.reviewer_comment && issue.status === 'revision_needed' && (
-          <div className="card bg-orange-50 border-orange-200">
-            <h3 className="font-semibold text-orange-800 mb-2 flex items-center gap-1.5"><RotateCcw className="w-4 h-4" />Возвращено на доработку</h3>
-            <p className="text-sm text-orange-700 whitespace-pre-wrap">{issue.reviewer_comment}</p>
+          <div className="card bg-orange-50 border-orange-200 shadow-none" role="status">
+            <h3 className="font-semibold text-orange-900 mb-1 flex items-center gap-1.5"><RotateCcw className="w-4 h-4" />Карточка возвращена на доработку</h3>
+            <p className="text-sm text-orange-800 whitespace-pre-wrap">{issue.reviewer_comment}</p>
+            <p className="text-xs text-orange-700 mt-2">Добавьте новое фото результата ниже — прежнее фото не подойдёт для повторной проверки.</p>
+          </div>
+        )}
+
+        {isResubmission && isReviewerLike && (
+          <div className="rounded-2xl border border-primary-100 bg-primary-50/60 p-3" aria-label="Шаги повторной отправки">
+            <div className="grid grid-cols-3 gap-2 text-center text-[11px] font-medium text-primary-900">
+              <div className="flex flex-col items-center gap-1"><span className="flex h-6 w-6 items-center justify-center rounded-full bg-green-600 text-white"><Check className="h-3.5 w-3.5" /></span><span>Фото нарушения</span></div>
+              <div className="flex flex-col items-center gap-1"><span className={`flex h-6 w-6 items-center justify-center rounded-full ${fixPhotos.length ? 'bg-green-600 text-white' : 'bg-primary-600 text-white'}`}>{fixPhotos.length ? <Check className="h-3.5 w-3.5" /> : '2'}</span><span>Фото результата</span></div>
+              <div className="flex flex-col items-center gap-1"><span className={`flex h-6 w-6 items-center justify-center rounded-full ${readyToResubmit ? 'bg-primary-600 text-white' : 'bg-white text-primary-700 border border-primary-200'}`}>3</span><span>Отправка</span></div>
+            </div>
           </div>
         )}
 
         {/* Слайдер ДО/ПОСЛЕ + загрузка фото */}
-        <IssuePhotoComparison inspectionId={issue.inspection_id} issuePhotos={issue.photos ?? []} fixPhotos={fixPhotos} onPhotoClick={setLightboxUrl} />
+        <section aria-labelledby="before-after-title">
+          {isResubmission && <div className="mb-2 flex items-center justify-between px-1"><h2 id="before-after-title" className="text-sm font-semibold text-gray-800">1. Фото нарушения</h2><span className="flex items-center gap-1 text-xs text-gray-500"><Lock className="h-3 w-3" />Только просмотр</span></div>}
+          <IssuePhotoComparison inspectionId={issue.inspection_id} issuePhotos={issue.photos ?? []} fixPhotos={fixPhotos} onPhotoClick={setLightboxUrl} />
+        </section>
 
         {issue.status !== 'closed' && (
-          <div className="card space-y-2">
-            <h3 className="text-sm font-medium text-gray-600 flex items-center gap-1"><Camera className="w-4 h-4" />Загрузить фото исправления</h3>
+          <div className={`card space-y-3 ${isResubmission ? 'border-green-200 bg-green-50/40 shadow-none' : ''}`}>
+            <div><h3 className="text-sm font-semibold text-gray-800 flex items-center gap-1"><Camera className="w-4 h-4 text-primary-700" />{isResubmission ? '2. Фото после исправления' : 'Загрузить фото исправления'}</h3>{isResubmission && <p className="mt-1 text-xs text-gray-600">Снимите тот же объект после ремонта. Это фото увидит проверяющий.</p>}</div>
             <div className="flex gap-2">
               {/* Без capture="environment" — см. комментарий в InspectionPage.tsx:
                   на некоторых Android WebView с заблокированным разрешением
                   камеры input с этим атрибутом молча ничего не делал по тапу */}
               <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileInput} />
-              <button onClick={() => fileInputRef.current?.click()} disabled={isUploading} className="btn-outline flex items-center gap-1.5 py-2 px-4 text-sm">
+              <button onClick={() => fileInputRef.current?.click()} disabled={isUploading} className={`${isResubmission ? 'w-full rounded-xl border-2 border-dashed border-green-300 bg-white px-4 py-4 text-left hover:border-primary-500' : 'btn-outline py-2 px-4'} flex items-center gap-2 text-sm transition-colors`}>
                 {isUploading ? (
                   <><span className="w-4 h-4 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />Загрузка...</>
                 ) : (
-                  <><Camera className="w-4 h-4" />Загрузить фото</>
+                  <><Upload className="w-5 h-5 text-primary-700" /><span><span className="block font-semibold text-primary-800">{fixPhotos.length ? 'Добавить ещё фото результата' : 'Загрузить фото после исправления'}</span>{isResubmission && <span className="mt-0.5 block text-xs text-gray-500">Поддерживаются фото до 20 МБ</span>}</span></>
                 )}
               </button>
             </div>
@@ -226,19 +242,22 @@ export default function IssueFixPage() {
             того как админ вернул его на доработку (иначе замечание зависало
             без единой кнопки, ведущей к повторной отправке) */}
         {isReviewerLike && issue.status !== 'fixed' && issue.status !== 'closed' && (
-          <div className="card space-y-3">
-            <h3 className="font-semibold text-gray-800">Зафиксировать исправление</h3>
+          <div className={`card space-y-3 ${isResubmission ? 'border-primary-100 shadow-none' : ''}`}>
+            <h3 className="font-semibold text-gray-800">{isResubmission ? '3. Что исправили?' : 'Зафиксировать исправление'}</h3>
             <input className="input-field text-sm" maxLength={300} placeholder="Исполнитель работ *" value={executorName} onChange={(e) => setExecutorName(e.target.value)} />
-            <textarea className="input-field text-sm" rows={3} placeholder="Опишите, что было сделано для устранения нарушения..." value={fixComment} onChange={(e) => setFixComment(e.target.value)} />
+            <textarea className="input-field text-sm" rows={3} maxLength={500} placeholder="Например: заменили сломанную доску и закрепили крепёж..." value={fixComment} onChange={(e) => setFixComment(e.target.value)} />
+            {isResubmission && <p className="-mt-2 text-right text-xs text-gray-400">{fixComment.length}/500</p>}
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800 flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
               <div><div className="font-medium mb-0.5">Перед фиксацией проверьте:</div><ul className="list-disc list-inside space-y-0.5"><li>Фото исправления загружены</li><li>Нарушение действительно устранено</li><li>Описание исправления заполнено</li></ul></div>
             </div>
+            {isResubmission && <div className="space-y-1 text-xs text-gray-600"><p className={fixPhotos.length ? 'flex items-center gap-1 text-green-700' : 'flex items-center gap-1'}><CheckCircle2 className="h-4 w-4" />Фото результата {fixPhotos.length ? 'добавлено' : 'ещё не добавлено'}</p><p className={executorName.trim() ? 'flex items-center gap-1 text-green-700' : 'flex items-center gap-1'}><CheckCircle2 className="h-4 w-4" />Исполнитель {executorName.trim() ? 'указан' : 'ещё не указан'}</p></div>}
             <button onClick={() => guardDemoAction(() => markFixedMutation.mutate())} disabled={markFixedMutation.isPending || fixPhotos.length === 0 || !executorName.trim()} className="btn-primary w-full py-3 flex items-center justify-center gap-2 disabled:opacity-50">
               {markFixedMutation.isPending ? <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
-              Зафиксировать исправление
+              {isResubmission ? 'Отправить на повторную проверку' : 'Зафиксировать исправление'}
             </button>
-            {fixPhotos.length === 0 && <p className="text-xs text-gray-400 text-center">Загрузите хотя бы одно фото исправления</p>}
+            {fixPhotos.length === 0 && <p className="text-xs text-gray-400 text-center">Загрузите хотя бы одно новое фото исправления</p>}
+            {isResubmission && <p className="text-xs text-gray-400 text-center">После отправки карточка снова попадёт проверяющему.</p>}
           </div>
         )}
 

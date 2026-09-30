@@ -86,6 +86,12 @@ describe('LoginPage', () => {
     expect(passwordInput).toHaveValue('testpass')
   })
 
+  it('ведёт на страницу помощи без входа', async () => {
+    renderLogin()
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Помощь и ответы на вопросы' }))
+    expect(mockNavigate).toHaveBeenCalledWith('/help')
+  })
+
   it('показывает ошибку при неверном логине', async () => {
     const { authApi } = await import('@/lib/api')
     vi.mocked(authApi.login).mockRejectedValueOnce({ response: { status: 401 } })

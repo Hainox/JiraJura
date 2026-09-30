@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/auth'
 import { authApi } from '@/lib/api'
 import { notify as toast } from '@/lib/toast'
-import { Shield, MessageSquareWarning } from 'lucide-react'
+import { Shield, MessageSquareWarning, HelpCircle } from 'lucide-react'
 
 export default function LoginPage() {
   const [loginValue, setLoginValue] = useState(() => sessionStorage.getItem('last_login') ?? '')
@@ -104,6 +104,14 @@ export default function LoginPage() {
         >
           <MessageSquareWarning className="w-4 h-4" />
           Не получается войти или другая проблема?
+        </button>
+        <button
+          onClick={() => navigate('/help')}
+          data-prefetch="/help"
+          className="w-full mt-2 min-h-11 flex items-center justify-center gap-1.5 text-sm font-medium text-blue-100 hover:text-white underline-offset-4 hover:underline transition-colors"
+        >
+          <HelpCircle className="w-4 h-4" />
+          Помощь и ответы на вопросы
         </button>
       </div>
     </div>

@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { inspectionsApi, checklistsApi, issuesApi, reportsApi, hatchesApi, describeUploadError, describeInspectionUpdateError } from '@/lib/api'
+import { inspectionsApi, checklistsApi, issuesApi, reportsApi, describeUploadError, describeInspectionUpdateError } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
 import type { InspectionOut, ChecklistTemplateOut, ChecklistItemOut, PhotoOut, IssueOut } from '@/types'
 import {
@@ -11,8 +11,6 @@ import {
 } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
 import PhotoLightbox from '@/components/PhotoLightbox'
-import HatchChecksBlock from '@/components/HatchChecksBlock'
-import { hatchCompletionProblem, inspectionHatchesKey } from '@/lib/hatches'
 
 type AnswerResult = 'ok' | 'defect' | 'pending'
 
@@ -226,15 +224,6 @@ export default function InspectionPage() {
     queryFn: () => issuesApi.list({ inspection_id: inspectionId }).then((r) => r.items),
     enabled: !!inspectionId,
   })
-
-  // Люки площадки — тот же запрос (и кэш), что и в HatchChecksBlock; здесь
-  // нужен только для подсказки в панели завершения обхода.
-  const { data: inspectionHatches } = useQuery({
-    queryKey: inspectionHatchesKey(inspectionId),
-    queryFn: () => hatchesApi.forInspection(inspectionId),
-    enabled: !!inspectionId,
-  })
-  const hatchProblem = hatchCompletionProblem(inspectionHatches)
 
   const allItems: ChecklistItemOut[] = useMemo(
     () => checklists?.flatMap((tmpl) => tmpl.items) ?? [],
@@ -720,12 +709,6 @@ export default function InspectionPage() {
               ? <>Проверено ✓{stats.ok} пунктов, выявлено ✕{stats.nok} нарушений.{stats.pending > 0 && ` Осталось ${stats.pending} непроверенных.`}</>
               : <>Создано нарушений: {existingIssues?.length ?? 0}. Итоговый статус определит сервер.</>}
           </p>
-          {hatchProblem && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-700 flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-              <div className="font-medium">{hatchProblem}</div>
-            </div>
-          )}
           {usesLegacyChecklist && missingRequiredPhotoItems.length > 0 && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-700 flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
@@ -977,14 +960,6 @@ export default function InspectionPage() {
             )}
           </div>
         )})}
-
-        {/* Люки площадки: у нового обхода чек-листа нет, и этот блок —
-            основное содержимое середины экрана. Площадка без люков —
-            блока нет вообще. */}
-        <HatchChecksBlock
-          inspectionId={inspectionId}
-          editable={isInspector && inspection.status === 'in_progress'}
-        />
       </div>
 
       {/* Нижняя панель (только для инспектора) */}

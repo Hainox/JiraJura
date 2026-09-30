@@ -76,7 +76,7 @@ async def test_stats_contract_and_pptx(client, admin_headers):
 
     categories = await client.get("/api/v1/stats/categories", params=params, headers=admin_headers)
     assert categories.status_code == 200, categories.text
-    assert len(categories.json()["categories"]) == 10
+    assert len(categories.json()["categories"]) == 9
     category_reference = await client.get("/api/v1/issues/categories", headers=admin_headers)
     assert category_reference.status_code == 200, category_reference.text
     assert [row["name"] for row in category_reference.json()][-1] == "Прочее"

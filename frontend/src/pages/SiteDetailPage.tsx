@@ -1,18 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { sitesApi, inspectionsApi, checklistsApi, authApi, hatchesApi } from '@/lib/api'
+import { sitesApi, inspectionsApi, checklistsApi, authApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
-import type { SiteOut, ChecklistTemplateOut, InspectionOut, UserAdminOut, SiteHatchOut } from '@/types'
-import { ArrowLeft, Play, Eye, Clock, UserCog, CircleDot } from 'lucide-react'
+import type { SiteOut, ChecklistTemplateOut, InspectionOut, UserAdminOut } from '@/types'
+import { ArrowLeft, Play, Eye, Clock, UserCog } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
-import { HATCH_STATE_PILL, HATCH_STATE_SHORT, hatchTitle, mskDateTime, mskTime, ruDate } from '@/lib/hatches'
-
-const ISSUE_STATUS_LABELS: Record<string, string> = {
-  open: 'Открыто', assigned: 'Назначено', in_work: 'В работе',
-  fixed: 'Исправлено', control: 'На контроле', closed: 'Закрыто',
-  revision_needed: 'На доработке',
-}
 
 const STATUS_LABELS: Record<string, string> = {
   planned: 'Запланирован', in_progress: 'В процессе',
@@ -51,12 +44,6 @@ export default function SiteDetailPage() {
   const { data: inspectionsData } = useQuery<{ items: InspectionOut[] }>({
     queryKey: ['inspections', siteId],
     queryFn: () => inspectionsApi.list({ site_id: siteId, all_in_district: user?.role === 'inspector' || undefined }),
-    enabled: !!siteId,
-  })
-
-  const { data: hatches } = useQuery<SiteHatchOut[]>({
-    queryKey: ['site-hatches', siteId],
-    queryFn: () => hatchesApi.forSite(siteId),
     enabled: !!siteId,
   })
 
@@ -181,62 +168,6 @@ export default function SiteDetailPage() {
             {districtInspectors.length === 0 && (
               <p className="text-xs text-gray-400 mt-2">В этом районе пока нет зарегистрированных инспекторов.</p>
             )}
-          </div>
-        )}
-
-        {/* Люки площадки — только просмотр; отмечают их в самом обходе */}
-        {hatches && hatches.length > 0 && (
-          <div className="card">
-            <h2 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
-              <CircleDot className="w-4 h-4 text-gray-400" />
-              Люки ({hatches.length})
-            </h2>
-            <div className="space-y-2">
-              {hatches.map((h) => {
-                // Карточка замечания открывается только проверяющему/админу —
-                // у инспектора нет страницы замечания, показываем статус текстом.
-                const issuePath = h.open_issue && isReviewerOrAdmin
-                  ? (user?.role === 'admin' ? `/admin/issues/${h.open_issue.id}` : `/issues/${h.open_issue.id}`)
-                  : null
-                const issueText = h.open_issue && (
-                  <>
-                    Замечание: {ISSUE_STATUS_LABELS[h.open_issue.status] ?? h.open_issue.status}
-                    {h.open_issue.due_date && `, срок ${ruDate(h.open_issue.due_date)}`}
-                    {h.open_issue.is_overdue && ' — просрочено'}
-                  </>
-                )
-                return (
-                  <div key={h.id} className="rounded-lg border border-gray-200 p-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="text-sm font-medium text-gray-800">{hatchTitle(h)}</div>
-                        {h.location_note && <div className="text-xs text-gray-500">{h.location_note}</div>}
-                      </div>
-                      {h.last_check
-                        ? <span className={`badge text-xs shrink-0 ${HATCH_STATE_PILL[h.last_check.state]}`}>{HATCH_STATE_SHORT[h.last_check.state]}</span>
-                        : <span className="badge text-xs shrink-0 bg-gray-100 text-gray-500">не осматривался</span>}
-                    </div>
-                    <div className={`text-xs mt-1 ${h.checked_today ? 'text-green-700' : 'text-amber-700'}`}>
-                      {h.checked_today && h.last_check
-                        ? `Осмотрен сегодня в ${mskTime(h.last_check.created_at)}`
-                        : 'Не осмотрен сегодня'}
-                      {!h.checked_today && h.last_check && (
-                        <span className="text-gray-400"> · последний осмотр {mskDateTime(h.last_check.created_at)}</span>
-                      )}
-                    </div>
-                    {h.open_issue && (
-                      <div className={`text-xs mt-1.5 ${h.open_issue.is_overdue ? 'text-red-700 font-semibold' : 'text-gray-700'}`}>
-                        {issuePath ? (
-                          <button type="button" onClick={() => navigate(issuePath)} data-prefetch={issuePath} className="underline text-left">
-                            {issueText}
-                          </button>
-                        ) : issueText}
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
           </div>
         )}
 

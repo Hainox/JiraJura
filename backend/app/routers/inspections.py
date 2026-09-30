@@ -27,7 +27,6 @@ from app.schemas import (
 from app.services.auth import get_current_user
 from app.services.audit import log_action
 from app.services.issues import default_due_date
-from app.services.hatches import hatch_completion_error, inspection_has_hatch_issues
 
 router = APIRouter()
 
@@ -389,16 +388,6 @@ async def update_inspection(
                 effective_status = "issues_found"
             else:
                 effective_status = "completed"
-        elif (
-            is_owner
-            and data.status in ("completed", "issues_found")
-            and await inspection_has_hatch_issues(db, obj.id)
-        ):
-            # Старый чек-листовый обход: итоговый статус выбирает клиент
-            # («Всё в порядке» / «С нарушениями»), но про люки он не знает.
-            # Дефект люка — всегда критическое замечание, так что обход с
-            # ним не может закрыться как «Завершён» или просто «Есть нарушения».
-            effective_status = "critical"
         # Фото общего вида площадки обязательно при завершении обхода самим
         # инспектором — это чек-листовый пункт "Общий вид / Фото общего
         # вида площадки" (requires_photo=TRUE), проверяется чуть ниже вместе
@@ -569,11 +558,6 @@ async def update_inspection(
         )).scalars().all()
         if missing_photo_items:
             raise HTTPException(400, f"Нужно фото для пункта(ов) чек-листа: {', '.join(missing_photo_items)}")
-        # Люки площадки: каждый должен быть отмечен в этом обходе, у каждого
-        # дефекта — фото нарушения. Площадка без люков гейта не имеет.
-        hatch_error = await hatch_completion_error(db, obj)
-        if hatch_error:
-            raise HTTPException(400, hatch_error)
 
     await db.commit()
 

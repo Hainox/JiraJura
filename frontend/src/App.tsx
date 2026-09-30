@@ -38,7 +38,6 @@ const AdminSitesPage = lazy(routeLoaders['/admin/sites'])
 const AdminReviewsPage = lazy(routeLoaders['/admin/reviews'])
 const AdminIssueControlPage = lazy(routeLoaders['/admin/control'])
 const AdminSystemPage = lazy(routeLoaders['/admin/system'])
-const HatchJournalPage = lazy(routeLoaders['/hatches/journal'])
 
 // Пока чанк страницы скачивается, показываем аккуратный спиннер вместо
 // пустого экрана. flex-1 — растягивается на оставшуюся высоту под
@@ -290,16 +289,6 @@ export default function App() {
           element={
             <ProtectedRoute roles={['reviewer']}>
               <IssueFixPage />
-            </ProtectedRoute>
-          }
-        />
-        {/* Один роут на район и округ: страница сама закрепляет проверяющего
-            за его районом и ведёт «назад» по роли. */}
-        <Route
-          path="/hatches/journal"
-          element={
-            <ProtectedRoute roles={['reviewer', 'admin']}>
-              <HatchJournalPage />
             </ProtectedRoute>
           }
         />

@@ -5,7 +5,7 @@ import {
   Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
-import { ArrowLeft, CircleDot, Download, FileSpreadsheet, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Download, FileSpreadsheet, RefreshCw } from 'lucide-react'
 import { districtsApi, reportsApi, statsApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
 import { notify as toast } from '@/lib/toast'
@@ -99,9 +99,6 @@ export default function DashboardPage() {
     <header className="bg-primary-800 text-white px-4 py-3 flex items-center gap-3 shrink-0">
       <button onClick={() => navigate(user?.role === 'admin' ? '/admin' : '/')} className="p-2"><ArrowLeft /></button>
       <div className="flex-1"><h1 className="font-bold text-lg">Статистика v2</h1><p className="text-xs text-blue-200">МСК (UTC+3) · сформировано {generated}</p></div>
-      <button onClick={() => navigate('/hatches/journal')} data-prefetch="/hatches/journal" className="text-xs bg-white/20 px-3 py-1.5 rounded-lg hover:bg-white/30 flex items-center gap-1.5 whitespace-nowrap">
-        <CircleDot className="w-4 h-4" />Журнал люков
-      </button>
       <button aria-label="Обновить статистику" onClick={refreshStatistics} className="p-2"><RefreshCw className="w-5" /></button>
     </header>
 

@@ -142,7 +142,7 @@ CREATE TABLE issue_categories (
 
 INSERT INTO issue_categories (name, sort_order) VALUES
     ('Оборудование', 10), ('Покрытие', 20), ('Ограждения', 30),
-    ('МАФ', 40), ('Люки', 45), ('Санитарное состояние', 50), ('Безопасность', 60),
+    ('МАФ', 40), ('Санитарное состояние', 50), ('Безопасность', 60),
     ('Документация', 70), ('Освещение', 80), ('Прочее', 999);
 
 CREATE TABLE checklist_items (
@@ -435,46 +435,3 @@ CREATE TABLE feedback_attachments (
 );
 
 CREATE INDEX idx_feedback_attachments_report ON feedback_attachments(feedback_report_id);
-
--- ============================================================
--- 15. ЛЮКИ НА ПЛОЩАДКАХ И ЖУРНАЛ ИХ ОСМОТРА
--- ============================================================
-
--- Перечень люков на площадке задаёт округ (районы люки не заводят),
--- external_id — идентификатор из окружного перечня для повторного импорта.
-CREATE TABLE hatches (
-    id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    site_id        UUID NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
-    number         VARCHAR(20) NOT NULL,                 -- "1", "2а"
-    owner          VARCHAR(150),                         -- Мосводоканал / МОЭК / связь ...
-    location_note  VARCHAR(300),                         -- "у входа на площадку"
-    point          GEOMETRY(POINT, 4326),
-    external_id    VARCHAR(100) UNIQUE,
-    is_active      BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (site_id, number)
-);
-
-CREATE INDEX idx_hatches_site ON hatches(site_id);
-
--- Осмотр люка — часть ежедневного обхода площадки (не отдельный визит).
--- Дефект порождает замечание категории «Люки» того же обхода (issue_id).
-CREATE TABLE hatch_checks (
-    id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    inspection_id  UUID NOT NULL REFERENCES inspections(id) ON DELETE CASCADE,
-    hatch_id       UUID NOT NULL REFERENCES hatches(id) ON DELETE CASCADE,
-    state          VARCHAR(20) NOT NULL
-                   CHECK (state IN ('ok', 'shifted', 'damaged', 'missing', 'sink')),
-    fenced         BOOLEAN,                              -- опасное место ограждено
-    owner_ticket   VARCHAR(100),                         -- № заявки владельцу люка
-    comment        TEXT,
-    issue_id       UUID REFERENCES issues(id) ON DELETE SET NULL,
-    checked_by     UUID NOT NULL REFERENCES users(id),
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at     TIMESTAMPTZ,
-    UNIQUE (inspection_id, hatch_id)
-);
-
-CREATE INDEX idx_hatch_checks_hatch ON hatch_checks(hatch_id);
-CREATE INDEX idx_hatch_checks_created ON hatch_checks(created_at);
-CREATE INDEX idx_hatch_checks_issue ON hatch_checks(issue_id);

@@ -15,11 +15,9 @@ PWA-приложение для учёта обходов детских и сп
 ├── backend/            FastAPI-приложение
 │   ├── app/
 │   │   ├── routers/    auth, districts, courtyards, sites, checklists, inspections,
-│   │   │               issues, reports, pdf_report, stats, feedback, audit, system,
-│   │   │               hatches (журнал осмотра люков)
+│   │   │               issues, reports, pdf_report, stats, feedback, audit, system
 │   │   ├── services/   бизнес-логика: auth, permissions, issues (SLA/критичность),
-│   │   │               statistics, safe_export, xlsx_style, rate_limit, timezone, audit,
-│   │   │               hatches (замечания по люкам, гейт завершения обхода)
+│   │   │               statistics, safe_export, xlsx_style, rate_limit, timezone, audit
 │   │   ├── models.py   SQLAlchemy ORM-модели
 │   │   ├── schemas.py  Pydantic-схемы
 │   │   └── main.py     точка входа FastAPI
@@ -44,7 +42,7 @@ PWA-приложение для учёта обходов детских и сп
 │       │               Inspection, Summary, Profile, MyInspections, Dashboard,
 │       │               Issues, IssueFix, Feedback(Form), Audit, AdminPanel, AdminUsers,
 │       │               AdminSites, AdminReviews, AdminChecklists, AdminIssueControl,
-│       │               AdminFeedback, AdminSystem, HatchJournal
+│       │               AdminFeedback, AdminSystem
 │       ├── stores/      Zustand: auth, демо-режим, вид карты
 │       └── lib/api.ts   HTTP-клиент (axios + JWT-интерсептор)
 ├── deploy/              Продакшн-деплой (docker-compose.prod.yml, nginx, certbot, бэкапы) — см. deploy/README.md

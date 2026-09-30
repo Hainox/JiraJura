@@ -28,6 +28,7 @@ const routes: Array<{ pattern: string; load: RouteLoader }> = [
   { pattern: '/admin/issues', load: () => import('@/pages/IssuesPage') },
   { pattern: '/admin/issues/:id', load: () => import('@/pages/IssueFixPage') },
   { pattern: '/admin/dashboard', load: () => import('@/pages/DashboardPage') },
+  { pattern: '/hatches/journal', load: () => import('@/pages/HatchJournalPage') },
   { pattern: '/admin/feedback', load: () => import('@/pages/AdminFeedbackPage') },
   { pattern: '/admin/audit', load: () => import('@/pages/AuditPage') },
   { pattern: '/admin/login-history', load: () => import('@/pages/LoginHistoryPage') },

@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Users, Clock, KeyRound, MapPinned, AlertCircle, ClipboardCheck, ShieldCheck, BarChart3, Clapperboard, Wrench, MessageSquareWarning } from 'lucide-react'
+import { ArrowLeft, Users, Clock, KeyRound, MapPinned, AlertCircle, ClipboardCheck, ShieldCheck, BarChart3, Clapperboard, Wrench, MessageSquareWarning, CircleDot } from 'lucide-react'
 import { useDemoModeStore } from '@/stores/demoMode'
 import { useAuthStore } from '@/stores/auth'
 
@@ -12,6 +12,7 @@ const REVIEW_SECTIONS = [
   { to: '/admin/control', icon: ShieldCheck, title: 'Финальный контроль', desc: 'Исправленные замечания: принять и закрыть или вернуть на доработку' },
   { to: '/admin/issues', icon: AlertCircle, title: 'Замечания', desc: 'Все замечания округа, назначение, приёмка исправлений' },
   { to: '/admin/dashboard', icon: BarChart3, title: 'Дашборд', desc: 'Сводка по округу, выгрузка в Excel' },
+  { to: '/hatches/journal', icon: CircleDot, title: 'Журнал люков', desc: 'Ежедневный осмотр люков на площадках, выгрузка журнала в Excel' },
   { to: '/admin/feedback', icon: MessageSquareWarning, title: 'Обращения', desc: 'Жалобы с публичной формы /feedback — очередь на разбор' },
 ]
 

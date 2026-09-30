@@ -62,11 +62,17 @@ services:
       # proxy.conf.template скриптами в deploy/scripts/ — см. deploy/README.md
       - ./deploy/nginx/active.conf.template:/etc/nginx/templates/default.conf.template:ro
       - ./deploy/nginx/odh-api.conf:/etc/nginx/odh-api.conf:ro
+      - ./deploy/nginx/sao-photo-location.conf:/etc/nginx/sao-photo-location.conf:ro
       - ./deploy/certbot/www:/var/www/certbot:ro
       - ./deploy/certbot/conf:/etc/letsencrypt:ro
     environment:
       DOMAIN: ${DOMAIN}
       HTTPS_PORT: ${HTTPS_PORT:-443}
+    # sao_photo_edge — сеть фото-сервиса (/photo-api/): proxy видит только его
+    # API, БД и хранилище фото-сервиса остаются в его приватных сетях.
+    networks:
+      default: {}
+      sao_photo_edge: {}
     depends_on:
       - api
       - frontend
@@ -81,3 +87,11 @@ services:
 
 volumes:
   pgdata:
+
+# Сеть создаёт compose-проект фото-сервиса. Без неё `up -d` здесь упадёт с
+# «network sao-photo-service-edge declared as external, but could not be
+# found» — см. deploy/README.md, «Фото-сервис».
+networks:
+  sao_photo_edge:
+    name: sao-photo-service-edge
+    external: true

@@ -50,10 +50,12 @@
   хранятся 20 ч) и неотслеживаемый `deploy/nginx/sao-photo-location.conf`,
   подключённый строкой `include` в `active.conf.template`. Стандартный деплой
   (§9, `cp proxy.conf.template active.conf.template`) эту строку стирает —
-  так и случилось 30.09, вернули руками. Перенос в репозиторий ждёт
-  разрешения владельца продукта; до этого после ручного деплоя строку
-  `include /etc/nginx/sao-photo-location.conf;` возвращать, а
-  deploy-watcher блокируется «грязной» рабочей копией.
+  так и случилось 30.09, вернули руками. С ветки `claude/sao-photo-proxy`
+  всё это в репозитории (маршрут, include в обоих шаблонах, том и внешняя
+  сеть в compose, срок хранения в backup.sh, проверка в CI) —
+  `deploy/README.md`, «Фото-сервис». Сеть `sao-photo-service-edge`
+  создаёт проект фото-сервиса; без неё `up -d` JiraJura падает.
+
 **2026-09-30, Claude Code — «Помощь» и UX-мелочи (`claude/help-faq-ux`):**
 - Тексты FAQ — `frontend/src/lib/faq.ts`, отдельно от вёрстки. Каждый
   ответ сверен с текущим UI: названия кнопок в «ёлочках» — дословно.

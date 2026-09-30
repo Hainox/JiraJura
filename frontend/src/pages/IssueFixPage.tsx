@@ -3,6 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { issuesApi, inspectionsApi } from '@/lib/api'
 import { usePhotoUpload } from '@/lib/usePhotoUpload'
+import { acceptableFixPhotos } from '@/lib/issueFix'
 import { useAuthStore } from '@/stores/auth'
 import type { IssueOut } from '@/types'
 import {
@@ -42,7 +43,10 @@ export default function IssueFixPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [fixComment, setFixComment] = useState('')
-  const [executorName, setExecutorName] = useState('')
+  // null — человек ещё не трогал поле: показываем исполнителя, уже
+  // сохранённого в карточке, иначе при повторной отправке его приходилось
+  // вводить заново.
+  const [executorDraft, setExecutorDraft] = useState<string | null>(null)
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [reviewerComment, setReviewerComment] = useState('')
 
@@ -95,6 +99,7 @@ export default function IssueFixPage() {
   const { data: issue, isLoading } = useQuery<IssueOut>({
     queryKey: ['issue', issueId], queryFn: () => issuesApi.get(issueId), enabled: !!issueId,
   })
+  const executorName = executorDraft ?? issue?.executor_name ?? ''
 
   const fixPhotoUpload = useMutation({
     mutationFn: (file: File) => issuesApi.uploadFixPhoto(issueId, file),
@@ -154,7 +159,8 @@ export default function IssueFixPage() {
 
   const fixPhotos = issue.fix_photos ?? []
   const isResubmission = issue.status === 'revision_needed'
-  const readyToResubmit = fixPhotos.length > 0 && !!executorName.trim()
+  const hasAcceptablePhoto = acceptableFixPhotos(issue).length > 0
+  const readyToResubmit = hasAcceptablePhoto && !!executorName.trim()
 
   return (
     <div className="h-full flex flex-col bg-gray-50">
@@ -206,7 +212,7 @@ export default function IssueFixPage() {
           <div className="rounded-2xl border border-primary-100 bg-primary-50/60 p-3" aria-label="Шаги повторной отправки">
             <div className="grid grid-cols-3 gap-2 text-center text-[11px] font-medium text-primary-900">
               <div className="flex flex-col items-center gap-1"><span className="flex h-6 w-6 items-center justify-center rounded-full bg-green-600 text-white"><Check className="h-3.5 w-3.5" /></span><span>Фото нарушения</span></div>
-              <div className="flex flex-col items-center gap-1"><span className={`flex h-6 w-6 items-center justify-center rounded-full ${fixPhotos.length ? 'bg-green-600 text-white' : 'bg-primary-600 text-white'}`}>{fixPhotos.length ? <Check className="h-3.5 w-3.5" /> : '2'}</span><span>Фото результата</span></div>
+              <div className="flex flex-col items-center gap-1"><span className={`flex h-6 w-6 items-center justify-center rounded-full ${hasAcceptablePhoto ? 'bg-green-600 text-white' : 'bg-primary-600 text-white'}`}>{hasAcceptablePhoto ? <Check className="h-3.5 w-3.5" /> : '2'}</span><span>Фото результата</span></div>
               <div className="flex flex-col items-center gap-1"><span className={`flex h-6 w-6 items-center justify-center rounded-full ${readyToResubmit ? 'bg-primary-600 text-white' : 'bg-white text-primary-700 border border-primary-200'}`}>3</span><span>Отправка</span></div>
             </div>
           </div>
@@ -220,7 +226,7 @@ export default function IssueFixPage() {
 
         {issue.status !== 'closed' && (
           <div className={`card space-y-3 ${isResubmission ? 'border-green-200 bg-green-50/40 shadow-none' : ''}`}>
-            <div><h3 className="text-sm font-semibold text-gray-800 flex items-center gap-1"><Camera className="w-4 h-4 text-primary-700" />{isResubmission ? '2. Фото после исправления' : 'Загрузить фото исправления'}</h3>{isResubmission && <p className="mt-1 text-xs text-gray-600">Снимите тот же объект после ремонта. Это фото увидит проверяющий.</p>}</div>
+            <div><h3 className="text-sm font-semibold text-gray-800 flex items-center gap-1"><Camera className="w-4 h-4 text-primary-700" />{isResubmission ? '2. Фото после исправления' : 'Загрузить фото исправления'}</h3>{isResubmission && <p className="mt-1 text-xs text-gray-600">Снимите тот же объект после ремонта. Это фото увидит администратор округа.</p>}</div>
             <div className="flex gap-2">
               {/* Без capture="environment" — см. комментарий в InspectionPage.tsx:
                   на некоторых Android WebView с заблокированным разрешением
@@ -230,7 +236,7 @@ export default function IssueFixPage() {
                 {isUploading ? (
                   <><span className="w-4 h-4 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />Загрузка...</>
                 ) : (
-                  <><Upload className="w-5 h-5 text-primary-700" /><span><span className="block font-semibold text-primary-800">{fixPhotos.length ? 'Добавить ещё фото результата' : 'Загрузить фото после исправления'}</span>{isResubmission && <span className="mt-0.5 block text-xs text-gray-500">Поддерживаются фото до 20 МБ</span>}</span></>
+                  <><Upload className="w-5 h-5 text-primary-700" /><span><span className="block font-semibold text-primary-800">{hasAcceptablePhoto ? 'Добавить ещё фото результата' : isResubmission ? 'Загрузить новое фото после исправления' : 'Загрузить фото после исправления'}</span>{isResubmission && <span className="mt-0.5 block text-xs text-gray-500">Поддерживаются фото до 20 МБ</span>}</span></>
                 )}
               </button>
             </div>
@@ -244,20 +250,26 @@ export default function IssueFixPage() {
         {isReviewerLike && issue.status !== 'fixed' && issue.status !== 'closed' && (
           <div className={`card space-y-3 ${isResubmission ? 'border-primary-100 shadow-none' : ''}`}>
             <h3 className="font-semibold text-gray-800">{isResubmission ? '3. Что исправили?' : 'Зафиксировать исправление'}</h3>
-            <input className="input-field text-sm" maxLength={300} placeholder="Исполнитель работ *" value={executorName} onChange={(e) => setExecutorName(e.target.value)} />
+            <input className="input-field text-sm" maxLength={300} placeholder="Исполнитель работ *" aria-label="Исполнитель работ" value={executorName} onChange={(e) => setExecutorDraft(e.target.value)} />
             <textarea className="input-field text-sm" rows={3} maxLength={500} placeholder="Например: заменили сломанную доску и закрепили крепёж..." value={fixComment} onChange={(e) => setFixComment(e.target.value)} />
             {isResubmission && <p className="-mt-2 text-right text-xs text-gray-400">{fixComment.length}/500</p>}
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800 flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
               <div><div className="font-medium mb-0.5">Перед фиксацией проверьте:</div><ul className="list-disc list-inside space-y-0.5"><li>Фото исправления загружены</li><li>Нарушение действительно устранено</li><li>Описание исправления заполнено</li></ul></div>
             </div>
-            {isResubmission && <div className="space-y-1 text-xs text-gray-600"><p className={fixPhotos.length ? 'flex items-center gap-1 text-green-700' : 'flex items-center gap-1'}><CheckCircle2 className="h-4 w-4" />Фото результата {fixPhotos.length ? 'добавлено' : 'ещё не добавлено'}</p><p className={executorName.trim() ? 'flex items-center gap-1 text-green-700' : 'flex items-center gap-1'}><CheckCircle2 className="h-4 w-4" />Исполнитель {executorName.trim() ? 'указан' : 'ещё не указан'}</p></div>}
-            <button onClick={() => guardDemoAction(() => markFixedMutation.mutate())} disabled={markFixedMutation.isPending || fixPhotos.length === 0 || !executorName.trim()} className="btn-primary w-full py-3 flex items-center justify-center gap-2 disabled:opacity-50">
+            {isResubmission && <div className="space-y-1 text-xs text-gray-600"><p className={hasAcceptablePhoto ? 'flex items-center gap-1 text-green-700' : 'flex items-center gap-1'}><CheckCircle2 className="h-4 w-4" />Новое фото результата {hasAcceptablePhoto ? 'добавлено' : 'ещё не добавлено'}</p><p className={executorName.trim() ? 'flex items-center gap-1 text-green-700' : 'flex items-center gap-1'}><CheckCircle2 className="h-4 w-4" />Исполнитель {executorName.trim() ? 'указан' : 'ещё не указан'}</p></div>}
+            <button onClick={() => guardDemoAction(() => markFixedMutation.mutate())} disabled={markFixedMutation.isPending || !hasAcceptablePhoto || !executorName.trim()} className="btn-primary w-full py-3 flex items-center justify-center gap-2 disabled:opacity-50">
               {markFixedMutation.isPending ? <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
               {isResubmission ? 'Отправить на повторную проверку' : 'Зафиксировать исправление'}
             </button>
-            {fixPhotos.length === 0 && <p className="text-xs text-gray-400 text-center">Загрузите хотя бы одно новое фото исправления</p>}
-            {isResubmission && <p className="text-xs text-gray-400 text-center">После отправки карточка снова попадёт проверяющему.</p>}
+            {!hasAcceptablePhoto && (
+              <p className="text-xs text-gray-400 text-center">
+                {isResubmission && fixPhotos.length > 0
+                  ? 'Фото, загруженное до возврата на доработку, не засчитывается — добавьте новое'
+                  : 'Загрузите хотя бы одно новое фото исправления'}
+              </p>
+            )}
+            {isResubmission && <p className="text-xs text-gray-400 text-center">После отправки карточка снова попадёт на проверку администратору округа.</p>}
           </div>
         )}
 

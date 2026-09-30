@@ -14,7 +14,7 @@ import uuid as _uuid
 from fastapi import UploadFile, File
 
 from app.config import settings
-from app.models import Issue, IssueCategory, IssueStatusHistory, Site, Courtyard, User, Photo
+from app.models import Inspection, Issue, IssueCategory, IssueStatusHistory, Site, Courtyard, User, Photo
 from app.schemas import (
     IssueCategoryOut, IssueCreate, IssueUpdate, IssueOut, IssueListOut, UserOut, PhotoOut,
 )
@@ -443,7 +443,14 @@ async def upload_issue_photo(
         raise HTTPException(404, "Замечание не найдено")
 
     if current_user.role == "inspector":
-        check_own_or_role(current_user, issue.created_by, "reviewer", "admin")
+        if str(issue.created_by) != str(current_user.id):
+            # Замечание по люку мог завести проверяющий, отметивший люк в
+            # обходе инспектора, — а фото нарушения обязательно для
+            # завершения этого обхода, и сделать его может только владелец.
+            owner_id = (await db.execute(
+                select(Inspection.inspector_id).where(Inspection.id == issue.inspection_id)
+            )).scalar_one_or_none()
+            check_own_or_role(current_user, owner_id, "reviewer", "admin")
     elif current_user.role == "reviewer":
         district_id = issue.site_ref.courtyard.district_id if issue.site_ref and issue.site_ref.courtyard else None
         if not in_district_scope(current_user, district_id):

@@ -171,22 +171,23 @@ export default function IssuesPage() {
       <div className="bg-white border-b px-4 py-2 shrink-0 space-y-2">
         <div className="flex gap-2">
           {isAdmin && (
-            <select className="input-field text-sm flex-1" value={districtFilter} onChange={(e) => { setDistrictFilter(e.target.value); setPage(1) }}>
+            <select aria-label="Район" className="input-field text-sm flex-1" value={districtFilter} onChange={(e) => { setDistrictFilter(e.target.value); setPage(1) }}>
               <option value="">Все районы</option>
               {districts?.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
           )}
-          <select className="input-field text-sm flex-1" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }}>
+          <select aria-label="Статус" className="input-field text-sm flex-1" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }}>
             <option value="">Все статусы</option>
             <option value="open">Открыто</option>
             <option value="assigned">Назначено</option>
             <option value="in_work">В работе</option>
             <option value="fixed">Исправлено</option>
+            <option value="revision_needed">На доработке</option>
             <option value="control">На контроле</option>
             <option value="closed">Закрыто</option>
             <option value="overdue">Просрочено</option>
           </select>
-          <select className="input-field text-sm flex-1" value={criticalityFilter} onChange={(e) => { setCriticalityFilter(e.target.value); setPage(1) }}>
+          <select aria-label="Критичность" className="input-field text-sm flex-1" value={criticalityFilter} onChange={(e) => { setCriticalityFilter(e.target.value); setPage(1) }}>
             <option value="">Все критичности</option>
             <option value="low">Низкая</option>
             <option value="medium">Средняя</option>
@@ -197,7 +198,7 @@ export default function IssuesPage() {
         <div className="relative">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
-            className="input-field text-sm pl-9 w-full"
+            className="input-field text-sm !pl-9 w-full"
             placeholder="Поиск по названию, площадке, району..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -222,7 +223,7 @@ export default function IssuesPage() {
             {filteredIssues.map((issue) => (
               <div key={issue.id} className="bg-white hover:bg-gray-50 transition-colors">
                 <div className="p-3">
-                  <div className="flex items-start justify-between gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-semibold text-sm truncate">{issue.title}</span>
@@ -268,7 +269,7 @@ export default function IssuesPage() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1 shrink-0">
+                    <div className="flex items-center gap-1 shrink-0 self-end sm:self-auto">
                       <button
                         onClick={() => navigate(`/inspections/${issue.inspection_id}`)}
                         className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors text-gray-400 hover:text-gray-600"
@@ -280,10 +281,11 @@ export default function IssuesPage() {
                         <>
                           <button
                             onClick={() => navigate(`${basePath}/issues/${issue.id}`)}
-                            className="p-1.5 rounded-lg hover:bg-green-100 transition-colors text-green-600 hover:text-green-700"
-                            title="Зафиксировать исправление"
+                            className="btn-outline text-xs py-1 px-2 flex items-center gap-1"
+                            title={isAdmin ? 'Открыть карточку: приёмка исправления' : 'Открыть карточку: зафиксировать исправление'}
                           >
-                            <Wrench className="w-4 h-4" />
+                            <Wrench className="w-3 h-3" />
+                            Открыть
                           </button>
                           <button
                             onClick={() => handleStatusChange(issue)}

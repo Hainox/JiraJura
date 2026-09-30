@@ -37,13 +37,6 @@ import type {
   StatsDynamicsOut,
   StatsCategoriesOut,
   StatsSectionsOut,
-  HatchOut,
-  HatchCheckIn,
-  HatchCheckOut,
-  InspectionHatchOut,
-  SiteHatchOut,
-  HatchJournalOut,
-  HatchJournalParams,
 } from '@/types'
 
 // Нативный fetch вместо axios: тот тянул в главный бандл ~46 kB ради
@@ -479,53 +472,6 @@ export const issuesApi = {
       })
       .then((r) => r.data)
   },
-}
-
-// ── Люки (журнал осмотра люков) ──
-type HatchAdminFields = {
-  number?: string; owner?: string | null; location_note?: string | null
-  external_id?: string | null; lat?: number | null; lon?: number | null
-}
-
-export const hatchesApi = {
-  forSite: (siteId: string) =>
-    api.get<SiteHatchOut[]>(`/sites/${siteId}/hatches`).then((r) => r.data),
-
-  forInspection: (inspectionId: string) =>
-    api.get<InspectionHatchOut[]>(`/inspections/${inspectionId}/hatches`).then((r) => r.data),
-
-  saveCheck: (inspectionId: string, hatchId: string, data: HatchCheckIn) =>
-    api.put<HatchCheckOut>(`/inspections/${inspectionId}/hatches/${hatchId}`, data).then((r) => r.data),
-
-  markRemainingOk: (inspectionId: string) =>
-    api.post<InspectionHatchOut[]>(`/inspections/${inspectionId}/hatches/all-ok`).then((r) => r.data),
-
-  journal: (params: HatchJournalParams) =>
-    api.get<HatchJournalOut>('/hatches/journal', { params }).then((r) => r.data),
-
-  // Тот же принцип, что и reportsApi.exportXlsx — blob через настроенный
-  // клиент (нужен Authorization-заголовок, обычная ссылка не подходит).
-  exportJournalXlsx: async (params: HatchJournalParams) => {
-    const res = await api.get('/hatches/journal.xlsx', { params, responseType: 'blob' })
-    const url = URL.createObjectURL(res.data as Blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `zhurnal_lyukov_${params.date_from || 'period'}_${params.date_to || 'period'}.xlsx`
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-    URL.revokeObjectURL(url)
-  },
-
-  // Управление перечнем люков — только админ (до загрузки окружного перечня)
-  adminList: (siteId: string) =>
-    api.get<HatchOut[]>('/hatches', { params: { site_id: siteId } }).then((r) => r.data),
-
-  adminCreate: (data: HatchAdminFields & { site_id: string; number: string }) =>
-    api.post<HatchOut>('/hatches', data).then((r) => r.data),
-
-  adminUpdate: (id: string, data: HatchAdminFields & { is_active?: boolean }) =>
-    api.patch<HatchOut>(`/hatches/${id}`, data).then((r) => r.data),
 }
 
 // ── Разработчик (эксплуатационная сводка, диагностика, деплой) ──

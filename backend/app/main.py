@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings, DEV_SECRET_KEY
-from app.routers import auth, districts, sites, inspections, issues, reports, stats, audit, pdf_report, courtyards, checklists, system, feedback, hatches
+from app.routers import auth, districts, sites, inspections, issues, reports, stats, audit, pdf_report, courtyards, checklists, system, feedback
 
 if settings.APP_ENV == "production" and settings.SECRET_KEY == DEV_SECRET_KEY:
     raise RuntimeError(
@@ -42,9 +42,6 @@ app.include_router(audit.router, prefix="/api/v1/audit", tags=["audit"])
 app.include_router(pdf_report.router, prefix="/api/v1/reports/pdf", tags=["pdf"])
 app.include_router(system.router, prefix="/api/v1/system", tags=["system"])
 app.include_router(feedback.router, prefix="/api/v1/feedback", tags=["feedback"])
-# Пути внутри роутера полные (/sites/{id}/hatches, /inspections/{id}/hatches,
-# /hatches/journal) — осмотр люков живёт внутри обхода и площадки.
-app.include_router(hatches.router, prefix="/api/v1", tags=["hatches"])
 
 # Статические файлы (фото)
 Path("uploads").mkdir(exist_ok=True)

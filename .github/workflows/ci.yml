@@ -18,8 +18,11 @@ jobs:
       - name: Validate photo-service proxy configuration
         run: bash deploy/tests/test_sao_photo_proxy_config.sh
 
+      - name: Validate «Люки САО» proxy configuration
+        run: bash deploy/tests/test_luki_proxy_config.sh
+
       - name: Validate deployment scripts
-        run: bash -n deploy/scripts/deploy-watcher.sh deploy/scripts/verify-odh-proxy.sh
+        run: bash -n deploy/scripts/deploy-watcher.sh deploy/scripts/verify-odh-proxy.sh deploy/scripts/enable-luki-sao.sh
 
       - name: Validate production Compose configuration
         run: docker compose -f docker-compose.prod.yml config >/dev/null
@@ -34,6 +37,34 @@ jobs:
             -v "$PWD/deploy/nginx/active.conf.template:/etc/nginx/templates/default.conf.template:ro" \
             -v "$PWD/deploy/nginx/odh-api.conf:/etc/nginx/odh-api.conf:ro" \
             -v "$PWD/deploy/nginx/sao-photo-location.conf:/etc/nginx/sao-photo-location.conf:ro" \
+            -v "$PWD/deploy/nginx/sites:/etc/nginx/sites:ro" \
+            -v "$PWD/deploy/nginx/sites-enabled:/etc/nginx/sites-enabled:ro" \
+            nginx:1.30-alpine nginx -t
+
+      # Полный TLS-конфиг с включённым сайтом «Люки САО» — на временных
+      # самоподписанных сертификатах: http-only выше не содержит include
+      # sites-enabled, а ошибка в luki-sao.conf иначе всплыла бы только на
+      # сервере, в enable-luki-sao.sh.
+      - name: Render and validate TLS nginx configuration with sites enabled
+        run: |
+          certs="$(mktemp -d)"
+          cp deploy/nginx/proxy.conf.template deploy/nginx/active.conf.template
+          ln -sfn ../sites/luki-sao.conf deploy/nginx/sites-enabled/luki-sao.conf
+          trap 'rm -f deploy/nginx/active.conf.template deploy/nginx/sites-enabled/luki-sao.conf; rm -rf "$certs"' EXIT
+          for domain in example.test luki.obhod-sao.ru; do
+            mkdir -p "$certs/live/$domain"
+            openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=$domain" \
+              -keyout "$certs/live/$domain/privkey.pem" -out "$certs/live/$domain/fullchain.pem" 2>/dev/null
+          done
+          docker run --rm \
+            -e DOMAIN=example.test \
+            -e HTTPS_PORT=443 \
+            -v "$PWD/deploy/nginx/active.conf.template:/etc/nginx/templates/default.conf.template:ro" \
+            -v "$PWD/deploy/nginx/odh-api.conf:/etc/nginx/odh-api.conf:ro" \
+            -v "$PWD/deploy/nginx/sao-photo-location.conf:/etc/nginx/sao-photo-location.conf:ro" \
+            -v "$PWD/deploy/nginx/sites:/etc/nginx/sites:ro" \
+            -v "$PWD/deploy/nginx/sites-enabled:/etc/nginx/sites-enabled:ro" \
+            -v "$certs:/etc/letsencrypt:ro" \
             nginx:1.30-alpine nginx -t
 
   backend:

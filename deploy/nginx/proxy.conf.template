@@ -64,3 +64,9 @@ server {
         proxy_set_header Host $host;
     }
 }
+
+# Отдельные сайты на этом же proxy (свой server_name и сертификат), например
+# «Люки САО» — deploy/nginx/sites/luki-sao.conf. Включаются симлинком в
+# sites-enabled скриптом (deploy/scripts/enable-luki-sao.sh) после выпуска
+# их сертификата; пустой каталог — не ошибка.
+include /etc/nginx/sites-enabled/*.conf;

@@ -56,6 +56,10 @@ backend/uploads/**
 
 # === Deploy: generated/secret at runtime, not source ===
 deploy/nginx/active.conf.template
+# Включённые сайты — симлинки на deploy/nginx/sites/*, их создают скрипты
+# на сервере (deploy/scripts/enable-*.sh).
+deploy/nginx/sites-enabled/*
+!deploy/nginx/sites-enabled/.gitkeep
 deploy/certbot/conf/*
 !deploy/certbot/conf/.gitkeep
 deploy/certbot/www/*

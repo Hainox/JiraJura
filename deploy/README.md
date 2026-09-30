@@ -192,6 +192,35 @@ git status --short
 Watcher до перезапуска proxy запускает `nginx -t` в одноразовом контейнере,
 а после перезапуска проверяет главную страницу и `GET /api/v1/health`.
 
+## Фото-сервис: `/photo-api/` за общим proxy
+
+Отдельный фото-сервис (свои API, PostgreSQL и хранилище, свой compose-проект
+на этом же сервере) доступен снаружи только через
+`https://obhod-sao.ru/photo-api/`. JiraJura им не управляет и его БД не
+использует; в этом репозитории versioned только маршрут nginx
+(`deploy/nginx/sao-photo-location.conf`) и подключение proxy к сети сервиса.
+
+В отличие от ODH, здесь proxy JiraJura сам присоединяется к сети фото-сервиса
+`sao-photo-service-edge` (внешняя сеть в `docker-compose.prod.yml`), а API
+сервиса отвечает в ней под именем `sao-photo-service-api:8788`. Его БД и
+хранилище в эту сеть не входят. Следствие: **сеть `sao-photo-service-edge`
+должна существовать до `docker compose up -d` JiraJura** — её создаёт
+compose-проект фото-сервиса. Иначе `up -d` упадёт с «network
+sao-photo-service-edge declared as external, but could not be found».
+Проверить:
+
+```bash
+docker network inspect sao-photo-service-edge >/dev/null && echo OK
+curl -sk -o /dev/null -w "%{http_code}\n" https://obhod-sao.ru/photo-api/
+```
+(`401` — нормально: сервис отвечает и требует авторизацию; `502` — сервис не
+запущен или не в сети.)
+
+⚠️ Маршрут и сеть правятся только через репозиторий. `active.conf.template`
+на сервере пересоздаётся из `proxy.conf.template` при каждом деплое (§9 и
+кнопка «Деплой») — ручная правка в нём будет стёрта, как уже случилось
+30.09.2026.
+
 ## 6. Импорт площадок из KML
 
 Площадки заводятся импортом KML-выгрузок (`backend/import_kml.py`). Скрипт уже

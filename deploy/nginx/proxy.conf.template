@@ -34,6 +34,10 @@ server {
     resolver 127.0.0.11 valid=10s;
 
     include /etc/nginx/odh-api.conf;
+    # Фото-сервис (/photo-api/) — отдельный проект на этом же сервере, см.
+    # deploy/README.md, «Фото-сервис». На сервере эту строку руками не
+    # добавлять: active.conf.template пересоздаётся из этого файла при деплое.
+    include /etc/nginx/sao-photo-location.conf;
 
     location /api/v1/ {
         set $api_upstream api:8000;

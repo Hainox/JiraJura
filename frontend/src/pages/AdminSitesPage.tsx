@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { districtsApi, courtyardsApi, sitesApi } from '@/lib/api'
-import type { DistrictAdminOut, CourtyardAdminOut, SiteOut } from '@/types'
-import { ArrowLeft, Merge, Pencil, Search } from 'lucide-react'
+import { ApiError, districtsApi, courtyardsApi, sitesApi, hatchesApi } from '@/lib/api'
+import type { DistrictAdminOut, CourtyardAdminOut, SiteOut, HatchOut } from '@/types'
+import { ArrowLeft, CircleDot, Merge, Pencil, Search } from 'lucide-react'
+import { hatchTitle } from '@/lib/hatches'
 import { notify as toast } from '@/lib/toast'
 import { guardDemoAction } from '@/stores/demoMode'
 
@@ -218,6 +219,7 @@ function SitesTab() {
   const [editType, setEditType] = useState('')
   const [editArea, setEditArea] = useState('')
   const [editActive, setEditActive] = useState(true)
+  const [hatchesFor, setHatchesFor] = useState<string | null>(null)
 
   const updateMutation = useMutation({
     mutationFn: ({ id, type, area_m2, is_active }: { id: string; type: string; area_m2: number; is_active: boolean }) =>
@@ -276,10 +278,127 @@ function SitesTab() {
                   {!s.is_active && <span className="text-red-500 ml-1">· отключена</span>}
                 </div>
               </div>
+              <div className="flex gap-1 shrink-0">
+                <button
+                  onClick={() => setHatchesFor((cur) => (cur === s.id ? null : s.id))}
+                  className={`min-h-11 px-2 rounded-lg hover:bg-gray-100 flex items-center gap-1 text-xs font-medium text-gray-600 ${hatchesFor === s.id ? 'bg-gray-100' : ''}`}
+                  title="Люки площадки"
+                  aria-expanded={hatchesFor === s.id}
+                >
+                  <CircleDot className="w-4 h-4 text-gray-500" />
+                  Люки
+                </button>
+                <button
+                  onClick={() => { setEditing(s.id); setEditType(s.type); setEditArea(String(s.area_m2)); setEditActive(s.is_active) }}
+                  className="p-2 rounded-lg hover:bg-gray-100"
+                  title="Изменить"
+                >
+                  <Pencil className="w-4 h-4 text-gray-500" />
+                </button>
+              </div>
+            </div>
+          )}
+          {hatchesFor === s.id && <SiteHatchesPanel siteId={s.id} />}
+        </div>
+      ))}
+      {districtFilter && sitesData?.items.length === 0 && <div className="text-center text-gray-400 py-8">Нет площадок</div>}
+    </div>
+  )
+}
+
+function serverDetail(err: unknown, fallback: string): string {
+  const data = err instanceof ApiError ? (err.response?.data as { detail?: unknown } | null) : null
+  return typeof data?.detail === 'string' ? data.detail : fallback
+}
+
+type HatchDraft = { number: string; owner: string; location_note: string; is_active: boolean }
+const EMPTY_HATCH: HatchDraft = { number: '', owner: '', location_note: '', is_active: true }
+
+// Перечень люков по площадкам пришлёт округ (импорт — отдельной задачей);
+// до этого админ заводит люки здесь вручную, в том числе чтобы проверить
+// весь флоу осмотра люков в обходе.
+function SiteHatchesPanel({ siteId }: { siteId: string }) {
+  const queryClient = useQueryClient()
+  const { data: hatches, isLoading } = useQuery<HatchOut[]>({
+    queryKey: ['hatches-admin', siteId],
+    queryFn: () => hatchesApi.adminList(siteId),
+  })
+  const [draft, setDraft] = useState<HatchDraft>(EMPTY_HATCH)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [edit, setEdit] = useState<HatchDraft>(EMPTY_HATCH)
+
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['hatches-admin', siteId] })
+    queryClient.invalidateQueries({ queryKey: ['site-hatches', siteId] })
+  }
+
+  const createMutation = useMutation({
+    mutationFn: (d: HatchDraft) => hatchesApi.adminCreate({
+      site_id: siteId, number: d.number.trim(), owner: d.owner.trim() || null, location_note: d.location_note.trim() || null,
+    }),
+    onSuccess: () => { toast.success('Люк добавлен'); setDraft(EMPTY_HATCH); refresh() },
+    onError: (err) => toast.error(serverDetail(err, 'Не удалось добавить люк')),
+  })
+  const updateMutation = useMutation({
+    mutationFn: ({ id, d }: { id: string; d: HatchDraft }) => hatchesApi.adminUpdate(id, {
+      number: d.number.trim(), owner: d.owner.trim() || null, location_note: d.location_note.trim() || null, is_active: d.is_active,
+    }),
+    onSuccess: () => { toast.success('Люк обновлён'); setEditingId(null); refresh() },
+    onError: (err) => toast.error(serverDetail(err, 'Не удалось сохранить люк')),
+  })
+
+  const fields = (value: HatchDraft, onChange: (v: HatchDraft) => void) => (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+      <input className="input-field text-sm" placeholder="№ люка *" aria-label="Номер люка" maxLength={20}
+        value={value.number} onChange={(e) => onChange({ ...value, number: e.target.value })} />
+      <input className="input-field text-sm" placeholder="Владелец (Мосводоканал, МОЭК…)" aria-label="Владелец люка" maxLength={150}
+        value={value.owner} onChange={(e) => onChange({ ...value, owner: e.target.value })} />
+      <input className="input-field text-sm" placeholder="Где находится" aria-label="Расположение люка" maxLength={300}
+        value={value.location_note} onChange={(e) => onChange({ ...value, location_note: e.target.value })} />
+    </div>
+  )
+
+  return (
+    <div className="mt-3 border-t pt-3 space-y-2">
+      <div className="text-xs font-semibold text-gray-500 uppercase">Люки площадки</div>
+      {isLoading && <div className="text-xs text-gray-400">Загрузка…</div>}
+      {hatches?.length === 0 && <div className="text-xs text-gray-400">Люков пока нет — обход идёт без блока «Люки».</div>}
+      {hatches?.map((h) => (
+        <div key={h.id} className={`rounded-lg border border-gray-200 p-2 ${!h.is_active ? 'opacity-60' : ''}`}>
+          {editingId === h.id ? (
+            <div className="space-y-2">
+              {fields(edit, setEdit)}
+              <label className="flex items-center gap-1.5 text-sm text-gray-700">
+                <input type="checkbox" checked={edit.is_active} onChange={(e) => setEdit({ ...edit, is_active: e.target.checked })} />
+                Активен (осматривается в обходах)
+              </label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => guardDemoAction(() => updateMutation.mutate({ id: h.id, d: edit }))}
+                  disabled={!edit.number.trim() || updateMutation.isPending}
+                  className="btn-primary text-sm px-3 flex-1"
+                >
+                  Сохранить
+                </button>
+                <button onClick={() => setEditingId(null)} className="btn-outline text-sm px-3 flex-1">Отмена</button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0 text-sm">
+                <div className="font-medium text-gray-800">{hatchTitle(h)}</div>
+                <div className="text-xs text-gray-500">
+                  {h.location_note || 'расположение не указано'}
+                  {!h.is_active && <span className="text-red-500 ml-1">· отключён</span>}
+                </div>
+              </div>
               <button
-                onClick={() => { setEditing(s.id); setEditType(s.type); setEditArea(String(s.area_m2)); setEditActive(s.is_active) }}
+                onClick={() => {
+                  setEditingId(h.id)
+                  setEdit({ number: h.number, owner: h.owner ?? '', location_note: h.location_note ?? '', is_active: h.is_active })
+                }}
                 className="p-2 rounded-lg hover:bg-gray-100 shrink-0"
-                title="Изменить"
+                title="Изменить люк"
               >
                 <Pencil className="w-4 h-4 text-gray-500" />
               </button>
@@ -287,7 +406,16 @@ function SitesTab() {
           )}
         </div>
       ))}
-      {districtFilter && sitesData?.items.length === 0 && <div className="text-center text-gray-400 py-8">Нет площадок</div>}
+      <div className="rounded-lg bg-gray-50 p-2 space-y-2">
+        {fields(draft, setDraft)}
+        <button
+          onClick={() => guardDemoAction(() => createMutation.mutate(draft))}
+          disabled={!draft.number.trim() || createMutation.isPending}
+          className="btn-primary text-sm px-3 w-full"
+        >
+          Добавить люк
+        </button>
+      </div>
     </div>
   )
 }

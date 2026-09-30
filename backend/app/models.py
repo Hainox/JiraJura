@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from geoalchemy2 import Geometry
 from sqlalchemy import (
-    Column, Computed, ForeignKey, String, Integer, Numeric, Text, Boolean,
+    CheckConstraint, Column, Computed, ForeignKey, String, Integer, Numeric, Text, Boolean,
     Date, DateTime, Enum, UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -357,6 +357,57 @@ class IssueStatusHistory(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
     issue = relationship("Issue", back_populates="status_history")
+
+
+class Hatch(Base):
+    """Люк на площадке. Перечень задаёт округ — районы люки не заводят,
+    поэтому external_id (id из окружного перечня) нужен для повторного
+    импорта без задвоений."""
+    __tablename__ = "hatches"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    site_id = Column(UUID(as_uuid=True), ForeignKey("sites.id", ondelete="CASCADE"), nullable=False)
+    number = Column(String(20), nullable=False)
+    owner = Column(String(150))
+    location_note = Column(String(300))
+    point = Column(Geometry("POINT", srid=4326), nullable=True)
+    external_id = Column(String(100), unique=True, nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("site_id", "number"),
+    )
+
+    site = relationship("Site")
+
+
+class HatchCheck(Base):
+    """Осмотр люка в рамках обычного обхода площадки — не отдельный визит:
+    issues.inspection_id NOT NULL, и дефект люка становится замечанием
+    этого же обхода со всем существующим циклом устранения."""
+    __tablename__ = "hatch_checks"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    inspection_id = Column(UUID(as_uuid=True), ForeignKey("inspections.id", ondelete="CASCADE"), nullable=False)
+    hatch_id = Column(UUID(as_uuid=True), ForeignKey("hatches.id", ondelete="CASCADE"), nullable=False)
+    state = Column(String(20), nullable=False)
+    fenced = Column(Boolean, nullable=True)
+    owner_ticket = Column(String(100))
+    comment = Column(Text)
+    issue_id = Column(UUID(as_uuid=True), ForeignKey("issues.id", ondelete="SET NULL"), nullable=True)
+    checked_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("inspection_id", "hatch_id"),
+        CheckConstraint(
+            "state IN ('ok', 'shifted', 'damaged', 'missing', 'sink')",
+            name="hatch_checks_state_check",
+        ),
+    )
+
+    hatch = relationship("Hatch")
+    checked_by_user = relationship("User", foreign_keys=[checked_by])
 
 
 class AuditLog(Base):

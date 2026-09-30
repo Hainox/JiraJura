@@ -620,6 +620,153 @@ class StatsCategoriesOut(BaseModel):
     categories: list[StatsCategoryRow]
 
 
+# ── Люки (журнал осмотра люков) ────────────────────────────────
+
+HatchState = Literal["ok", "shifted", "damaged", "missing", "sink"]
+HatchNumber = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=20)]
+
+
+class HatchOut(BaseModel):
+    id: UUID
+    site_id: UUID
+    number: str
+    owner: Optional[str] = None
+    location_note: Optional[str] = None
+    external_id: Optional[str] = None
+    is_active: bool
+    lat: Optional[float] = None
+    lon: Optional[float] = None
+    created_at: datetime
+
+
+class HatchCreate(BaseModel):
+    site_id: UUID
+    number: HatchNumber
+    owner: Optional[str] = Field(None, max_length=150)
+    location_note: Optional[str] = Field(None, max_length=300)
+    lat: Optional[float] = Field(None, ge=-90, le=90)
+    lon: Optional[float] = Field(None, ge=-180, le=180)
+    external_id: Optional[str] = Field(None, max_length=100)
+
+
+class HatchUpdate(BaseModel):
+    # model_fields_set в роутере: явный null очищает поле (как у
+    # SiteAssignUpdate), отсутствие поля — «не менять».
+    number: Optional[HatchNumber] = None
+    owner: Optional[str] = Field(None, max_length=150)
+    location_note: Optional[str] = Field(None, max_length=300)
+    lat: Optional[float] = Field(None, ge=-90, le=90)
+    lon: Optional[float] = Field(None, ge=-180, le=180)
+    external_id: Optional[str] = Field(None, max_length=100)
+    is_active: Optional[bool] = None
+
+
+class HatchCheckIn(BaseModel):
+    state: HatchState
+    fenced: Optional[bool] = None
+    owner_ticket: Optional[str] = Field(None, max_length=100)
+    comment: Optional[str] = Field(None, max_length=2000)
+
+
+class HatchCheckOut(BaseModel):
+    id: UUID
+    inspection_id: UUID
+    hatch_id: UUID
+    state: str
+    fenced: Optional[bool] = None
+    owner_ticket: Optional[str] = None
+    comment: Optional[str] = None
+    issue_id: Optional[UUID] = None
+    issue_status: Optional[str] = None
+    issue_due_date: Optional[date] = None
+    # Фото нарушения (target_type='issue') замечания по этому люку — по ним
+    # клиент видит, выполнено ли требование «фото обязательно» до завершения.
+    photos: list[PhotoOut] = []
+    checked_by: UUID
+    checked_by_name: Optional[str] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+
+class InspectionHatchOut(BaseModel):
+    hatch: HatchOut
+    check: Optional[HatchCheckOut] = None
+
+
+class HatchLastCheckOut(BaseModel):
+    state: str
+    created_at: datetime
+    checked_by_name: Optional[str] = None
+    inspection_id: UUID
+
+
+class HatchOpenIssueOut(BaseModel):
+    id: UUID
+    status: str
+    due_date: Optional[date] = None
+    is_overdue: bool = False
+
+
+class SiteHatchOut(HatchOut):
+    last_check: Optional[HatchLastCheckOut] = None
+    checked_today: bool = False
+    open_issue: Optional[HatchOpenIssueOut] = None
+
+
+class HatchJournalKpis(BaseModel):
+    checked_today: int
+    total_active_hatches: int
+    defects_in_period: int
+    not_fixed: int
+    overdue: int
+
+
+HatchFixState = Literal["none", "in_work", "overdue", "on_check", "accepted"]
+
+
+class HatchJournalRow(BaseModel):
+    n: int
+    check_id: UUID
+    inspection_id: UUID
+    created_at: datetime
+    district_name: str
+    section: Optional[str] = None
+    site_id: UUID
+    site_address: str
+    site_type: str
+    hatch_id: UUID
+    hatch_number: str
+    hatch_owner: Optional[str] = None
+    location_note: Optional[str] = None
+    state: str
+    has_photo: bool
+    fenced: Optional[bool] = None
+    owner_ticket: Optional[str] = None
+    comment: Optional[str] = None
+    measures: str
+    checked_by_name: Optional[str] = None
+    issue_id: Optional[UUID] = None
+    issue_status: Optional[str] = None
+    due_date: Optional[date] = None
+    closed_at: Optional[datetime] = None
+    fix_state: HatchFixState
+
+
+class HatchJournalOut(BaseModel):
+    period: StatsPeriodOut
+    timezone: str = "Europe/Moscow"
+    generated_at: datetime
+    kpis: HatchJournalKpis
+    # Участки выбранного района (courtyards.section) — для фильтра
+    # «Участок»; без выбранного района пусто: «Участок 1» есть в каждом
+    # районе, и без района такой фильтр ничего осмысленного не значит.
+    sections: list[str] = []
+    total: int
+    page: int
+    page_size: int
+    rows: list[HatchJournalRow]
+
+
 # ── Обращения (публичная веб-форма) ──────────────────────────────
 
 class FeedbackReportCreate(BaseModel):

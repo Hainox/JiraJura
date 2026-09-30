@@ -18,6 +18,7 @@ import { routeLoaders } from '@/lib/routePreload'
 const LoginPage = lazy(routeLoaders['/login'])
 const RegisterPage = lazy(routeLoaders['/register/:token'])
 const FeedbackFormPage = lazy(routeLoaders['/feedback'])
+const HelpPage = lazy(routeLoaders['/help'])
 const AdminFeedbackPage = lazy(routeLoaders['/admin/feedback'])
 const ChangePasswordPage = lazy(routeLoaders['/change-password'])
 const MapPage = lazy(routeLoaders['/'])
@@ -111,6 +112,7 @@ export default function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register/:token" element={<RegisterPage />} />
         <Route path="/feedback" element={<FeedbackFormPage />} />
+        <Route path="/help" element={<HelpPage />} />
         <Route
           path="/admin/feedback"
           element={

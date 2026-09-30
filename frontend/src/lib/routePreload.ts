@@ -11,6 +11,7 @@ const routes: Array<{ pattern: string; load: RouteLoader }> = [
   { pattern: '/login', load: () => import('@/pages/LoginPage') },
   { pattern: '/register/:token', load: () => import('@/pages/RegisterPage') },
   { pattern: '/feedback', load: () => import('@/pages/FeedbackFormPage') },
+  { pattern: '/help', load: () => import('@/pages/HelpPage') },
   { pattern: '/change-password', load: () => import('@/pages/ChangePasswordPage') },
   { pattern: '/sites/:id', load: () => import('@/pages/SiteDetailPage') },
   { pattern: '/inspections/:id', load: () => import('@/pages/InspectionPage') },

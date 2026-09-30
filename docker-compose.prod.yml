@@ -63,6 +63,8 @@ services:
       - ./deploy/nginx/active.conf.template:/etc/nginx/templates/default.conf.template:ro
       - ./deploy/nginx/odh-api.conf:/etc/nginx/odh-api.conf:ro
       - ./deploy/nginx/sao-photo-location.conf:/etc/nginx/sao-photo-location.conf:ro
+      - ./deploy/nginx/sites:/etc/nginx/sites:ro
+      - ./deploy/nginx/sites-enabled:/etc/nginx/sites-enabled:ro
       - ./deploy/certbot/www:/var/www/certbot:ro
       - ./deploy/certbot/conf:/etc/letsencrypt:ro
     environment:

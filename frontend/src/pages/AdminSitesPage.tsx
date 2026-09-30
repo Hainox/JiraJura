@@ -281,11 +281,12 @@ function SitesTab() {
               <div className="flex gap-1 shrink-0">
                 <button
                   onClick={() => setHatchesFor((cur) => (cur === s.id ? null : s.id))}
-                  className={`p-2 rounded-lg hover:bg-gray-100 ${hatchesFor === s.id ? 'bg-gray-100' : ''}`}
+                  className={`min-h-11 px-2 rounded-lg hover:bg-gray-100 flex items-center gap-1 text-xs font-medium text-gray-600 ${hatchesFor === s.id ? 'bg-gray-100' : ''}`}
                   title="Люки площадки"
                   aria-expanded={hatchesFor === s.id}
                 >
                   <CircleDot className="w-4 h-4 text-gray-500" />
+                  Люки
                 </button>
                 <button
                   onClick={() => { setEditing(s.id); setEditType(s.type); setEditArea(String(s.area_m2)); setEditActive(s.is_active) }}

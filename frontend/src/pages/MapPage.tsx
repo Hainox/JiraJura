@@ -9,16 +9,17 @@ import { useAuthStore } from '@/stores/auth'
 import { useMapViewStore } from '@/stores/mapView'
 import { guardDemoAction } from '@/stores/demoMode'
 import type { SiteOut, DistrictOut, InspectionOut } from '@/types'
-import { List, Map as MapIcon, LogOut, ChevronRight, Users, Download, ClipboardCheck, AlertCircle, UserCircle, BarChart3, History, CheckCheck } from 'lucide-react'
+import { List, Map as MapIcon, LogOut, ChevronRight, Settings2, Download, ClipboardCheck, AlertCircle, UserCircle, BarChart3, History, CheckCheck, Filter, HelpCircle } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
 import InspectionReviewList from '@/components/InspectionReviewList'
+import MoreMenu, { type MoreMenuItem } from '@/components/MoreMenu'
+import {
+  CHILD_TYPE, SPORT_TYPE, VISITED_STATUSES, COVERAGE_LEGEND,
+  countVisitedToday, markerColor, markerLabel,
+} from '@/lib/mapMarkers'
 import 'leaflet/dist/leaflet.css'
 import 'leaflet.markercluster/dist/MarkerCluster.css'
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
-
-const CHILD_TYPE = 'Детская площадка'
-const SPORT_TYPE = 'Спортивная площадка'
-const VISITED_STATUSES = new Set(['completed', 'issues_found', 'critical'])
 
 const moscowToday = () => {
   const parts = new Intl.DateTimeFormat('en-GB', {
@@ -28,23 +29,27 @@ const moscowToday = () => {
   return `${value('year')}-${value('month')}-${value('day')}`
 }
 
-const childIcon = (status?: string | null) => {
-  const base = status === 'completed' ? '#16a34a' : status === 'in_progress' ? '#ca8a04' : status === 'issues_found' || status === 'critical' ? '#dc2626' : '#2563eb'
-  const letter = status === 'completed' ? '✓' : 'Д'
-  return L.divIcon({
-    className: 'custom-icon',
-    html: `<div style="background:${base};color:white;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;box-shadow:0 2px 6px rgba(0,0,0,.3);border:2px solid white">${letter}</div>`,
-    iconSize: [26, 26], iconAnchor: [13, 13],
-  })
-}
-const sportIcon = (status?: string | null) => {
-  const base = status === 'completed' ? '#16a34a' : status === 'in_progress' ? '#ca8a04' : status === 'issues_found' || status === 'critical' ? '#dc2626' : '#16a34a'
-  const letter = status === 'completed' ? '✓' : 'С'
-  return L.divIcon({
-    className: 'custom-icon',
-    html: `<div style="background:${base};color:white;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;box-shadow:0 2px 6px rgba(0,0,0,.3);border:2px solid white">${letter}</div>`,
-    iconSize: [26, 26], iconAnchor: [13, 13],
-  })
+const siteIcon = (siteType: string | undefined, status?: string | null) => L.divIcon({
+  className: 'custom-icon',
+  html: `<div style="background:${markerColor(status)};color:white;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;box-shadow:0 2px 6px rgba(0,0,0,.3);border:2px solid white">${markerLabel(siteType, status)}</div>`,
+  iconSize: [26, 26], iconAnchor: [13, 13],
+})
+
+function CoverageLegend({ visited, total }: { visited?: number; total: number }) {
+  return (
+    <div role="group" aria-label="Легенда карты" className="bg-white border-b px-3 py-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-600 shrink-0">
+      {COVERAGE_LEGEND.map(({ state, label, color }) => (
+        <span key={state} className="flex items-center gap-1">
+          <span aria-hidden="true" className="w-3 h-3 rounded-full inline-block shrink-0" style={{ background: color }} />
+          {label}
+        </span>
+      ))}
+      <span className="text-gray-400">Д — детская, С — спортивная</span>
+      {visited !== undefined && (
+        <span className="ml-auto font-semibold text-gray-700">Сегодня обойдено: {visited}/{total}</span>
+      )}
+    </div>
+  )
 }
 
 function FitBounds({ data }: { data: SiteOut[] | undefined }) {
@@ -98,7 +103,6 @@ export default function MapPage() {
   // Панели-раскрывашки — не "контекст", просто текущее состояние UI,
   // можно оставить локальными
   const [showFilters, setShowFilters] = useState(false)
-  const [showLegend, setShowLegend] = useState(false)
   const todayMsk = moscowToday()
 
   const isAdmin = user?.role === 'admin'
@@ -262,66 +266,70 @@ export default function MapPage() {
 
   // Фильтр по вкладке теперь применяется на сервере (reviewStatusParams
   // выше) — allInspections уже содержит только нужный вкладке статус.
+  const visitedToday = districtInspectionsData
+    ? countVisitedToday(sites.map((s) => s.id), siteStatusMap)
+    : undefined
+
   const bulkAcceptableIds = allInspections
     .filter((i) => !i.reviewed_by && i.status === 'completed' && (i.issues_count ?? 0) === 0)
     .map((i) => i.id)
 
   const center: L.LatLngExpression = [55.829, 37.532]
 
+  const moreMenuItems: MoreMenuItem[] = [
+    { label: 'Профиль', icon: <UserCircle className="w-5 h-5 text-gray-500" />, prefetch: '/profile', onSelect: () => navigate('/profile') },
+    ...(user?.role !== 'inspector' ? [{
+      label: 'Выгрузка в Excel',
+      icon: <Download className="w-5 h-5 text-gray-500" />,
+      onSelect: () => toast.promise(reportsApi.exportXlsx({ district_id: districtFilter }), {
+        loading: 'Готовлю файл...', success: 'Файл скачан', error: 'Ошибка выгрузки',
+      }),
+    }] : []),
+    { label: 'Выйти', icon: <LogOut className="w-5 h-5" />, danger: true, onSelect: () => { logoutStore(); navigate('/login') } },
+  ]
+
   return (
     <div className="h-full flex flex-col">
-      {/* Header */}
-      <div className="bg-primary-800 text-white px-4 py-3 flex items-center justify-between shrink-0">
-        <div>
-          <h1 className="text-lg font-bold">Обход площадок</h1>
-          <p className="text-blue-200 text-xs">
-            {user?.full_name}
-            {user?.role === 'reviewer' && <span className="ml-1 text-amber-300">(проверяющий)</span>}
-          </p>
+      {/* Шапка: подписи у кнопок видны всегда — title-подсказки на телефоне
+          не показываются, и иконки без слов пользователи не узнавали.
+          Редкие действия убраны в «Ещё», чтобы строка помещалась в 360 px. */}
+      <div className="bg-primary-800 text-white shrink-0">
+        <div className="px-4 pt-2 flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <h1 className="text-lg font-bold leading-tight">Обход площадок</h1>
+            <p className="text-blue-200 text-xs truncate">
+              {user?.full_name}
+              {user?.role === 'reviewer' && <span className="ml-1 text-amber-300">(проверяющий)</span>}
+            </p>
+          </div>
+          <MoreMenu items={moreMenuItems} />
         </div>
-        <div className="flex gap-1">
+        <nav aria-label="Разделы" className="px-2 pt-1 pb-1.5 flex gap-1">
           {user?.role === 'inspector' && (
-            <button onClick={() => navigate('/my-inspections')} data-prefetch="/my-inspections" className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="История обходов">
-              <History className="w-5 h-5" />
-            </button>
+            <HeaderNavButton icon={<History className="w-5 h-5" />} label="История" title="История обходов" prefetch="/my-inspections" onClick={() => navigate('/my-inspections')} />
           )}
           {/* Админ пользуется своими /admin/dashboard и /admin/issues через
-              иконку "Админ-панель" ниже — не должен попадать на reviewer-
+              «Управление» (Админ-панель) — не должен попадать на reviewer-
               роуты /dashboard и /issues (roles={['reviewer']} в App.tsx). */}
           {user?.role === 'reviewer' && (
             <>
-              <button onClick={() => navigate('/dashboard')} data-prefetch="/dashboard" className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="Дашборд">
-                <BarChart3 className="w-5 h-5" />
-              </button>
-              <button onClick={() => navigate('/issues')} data-prefetch="/issues" className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="Замечания">
-                <AlertCircle className="w-5 h-5" />
-              </button>
+              <HeaderNavButton icon={<BarChart3 className="w-5 h-5" />} label="Статистика" title="Статистика (дашборд)" prefetch="/dashboard" onClick={() => navigate('/dashboard')} />
+              <HeaderNavButton icon={<AlertCircle className="w-5 h-5" />} label="Замечания" title="Замечания района" prefetch="/issues" onClick={() => navigate('/issues')} />
             </>
           )}
           {user?.role === 'admin' && (
-            <button onClick={() => navigate('/admin')} data-prefetch="/admin" className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="Админ-панель">
-              <Users className="w-5 h-5" />
-            </button>
+            <HeaderNavButton icon={<Settings2 className="w-5 h-5" />} label="Управление" title="Управление (админ-панель)" prefetch="/admin" onClick={() => navigate('/admin')} />
           )}
-          {user?.role !== 'inspector' && (
-            <button onClick={() => toast.promise(reportsApi.exportXlsx({ district_id: districtFilter }), {
-              loading: 'Готовлю файл...', success: 'Файл скачан', error: 'Ошибка выгрузки',
-            })} className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="Выгрузка в Excel">
-              <Download className="w-5 h-5" />
-            </button>
-          )}
-          <button onClick={() => setShowFilters((v) => !v)} className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="Фильтры">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-            </svg>
-          </button>
-          <button onClick={() => navigate('/profile')} data-prefetch="/profile" className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="Профиль">
-            <UserCircle className="w-5 h-5" />
-          </button>
-          <button onClick={() => { logoutStore(); navigate('/login') }} className="p-2 rounded-lg hover:bg-primary-700 transition-colors" title="Выйти">
-            <LogOut className="w-5 h-5" />
-          </button>
-        </div>
+          <HeaderNavButton
+            icon={<Filter className="w-5 h-5" />}
+            label="Фильтры"
+            title="Фильтры и район"
+            active={showFilters}
+            expanded={showFilters}
+            onClick={() => setShowFilters((v) => !v)}
+          />
+          <HeaderNavButton icon={<HelpCircle className="w-5 h-5" />} label="Помощь" title="Помощь и ответы на вопросы" prefetch="/help" onClick={() => navigate('/help')} />
+        </nav>
       </div>
 
       {/* Фильтры */}
@@ -358,35 +366,16 @@ export default function MapPage() {
               </button>
             </div>
           )}
-          {(user?.role === 'inspector' || isReviewerLike) && myInspections.length > 0 && (
+          {user?.role === 'inspector' && myInspections.length > 0 && (
             <div className="flex items-center gap-2">
-              {user?.role === 'inspector' && (
-                <button
-                  onClick={() => setMyInspOnly(!myInspOnly)}
-                  className={`text-xs px-3 py-1 rounded-full font-medium transition-colors ${
-                    myInspOnly ? 'bg-primary-700 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  Только необойдённые
-                </button>
-              )}
               <button
-                onClick={() => setShowLegend((v) => !v)}
-                className="text-xs px-3 py-1 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 font-medium"
+                onClick={() => setMyInspOnly(!myInspOnly)}
+                className={`text-xs px-3 py-1 rounded-full font-medium transition-colors ${
+                  myInspOnly ? 'bg-primary-700 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
               >
-                Легенда
+                Только необойдённые
               </button>
-              <span className="text-xs text-gray-400">
-                Сегодня обойдено: {Object.values(siteStatusMap).filter((s) => VISITED_STATUSES.has(s.status)).length}/{totalCount}
-              </span>
-            </div>
-          )}
-          {showLegend && (user?.role === 'inspector' || isReviewerLike) && (
-            <div className="flex gap-3 text-xs text-gray-500 flex-wrap">
-              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-blue-600 inline-block" /> Не обойдена</span>
-              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-yellow-500 inline-block" /> В процессе</span>
-              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-green-600 inline-block" /> Завершена</span>
-              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-red-600 inline-block" /> С нарушениями</span>
             </div>
           )}
         </div>
@@ -552,8 +541,7 @@ export default function MapPage() {
               </div>
               <h3 className="text-lg font-semibold text-gray-700 mb-2">Выберите район</h3>
               <p className="text-sm text-gray-500">
-                Нажмите кнопку фильтров <span className="inline-block align-middle mx-0.5"><svg className="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg></span>
-                в шапке и выберите район для отображения площадок.
+                Нажмите «Фильтры» в шапке и выберите район для отображения площадок.
               </p>
               <button
                 onClick={() => setShowFilters(true)}
@@ -574,88 +562,124 @@ export default function MapPage() {
             onLoadMore={() => fetchNextInspectionsPage()}
           />
         ) : viewMode === 'map' ? (
-          <MapContainer center={center} zoom={12} className="h-full w-full" attributionControl={false}>
-            <AttributionControl prefix={false} />
-            <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              maxZoom={19}
-            />
-            <FitBounds data={sites} />
-            {/* Кластеризация — при 3800+ площадках плоский список меток
-                делал карту нечитаемой и тяжёлой при отдалении. */}
-            <MarkerClusterGroup
-              chunkedLoading
-              maxClusterRadius={60}
-              spiderfyOnMaxZoom
-              // На большом зуме площадки уже различимы по отдельности —
-              // кластеризация там только мешает выбору конкретной метки.
-              disableClusteringAtZoom={17}
-              // Не рисуем полупрозрачный полигон зоны охвата кластера при
-              // наведении — на карте с 3800+ площадками это визуальный шум.
-              showCoverageOnHover={false}
-            >
-              {sites.filter((s) => !myInspOnly || !siteStatusMap[s.id] || !VISITED_STATUSES.has(siteStatusMap[s.id].status)).map((s) => {
-                const coverage = (user?.role === 'inspector' || isReviewerLike) ? siteStatusMap[s.id] : undefined
-                const icon = s.type === CHILD_TYPE ? childIcon(coverage?.status) : sportIcon(coverage?.status)
-                return <Marker key={s.id} position={[s.lat ?? 55.829, s.lon ?? 37.532]} icon={icon}>
-                  <Popup>
-                    <div className="min-w-[180px]">
-                      <div className="font-semibold text-sm">{s.courtyard?.name ?? 'Площадка'}</div>
+          <div className="h-full flex flex-col">
+            <CoverageLegend visited={visitedToday} total={totalCount} />
+            <div className="flex-1 min-h-0">
+              <MapContainer center={center} zoom={12} className="h-full w-full" attributionControl={false}>
+                <AttributionControl prefix={false} />
+                <TileLayer
+                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  maxZoom={19}
+                />
+                <FitBounds data={sites} />
+                {/* Кластеризация — при 3800+ площадках плоский список меток
+                    делал карту нечитаемой и тяжёлой при отдалении. */}
+                <MarkerClusterGroup
+                  chunkedLoading
+                  maxClusterRadius={60}
+                  spiderfyOnMaxZoom
+                  // На большом зуме площадки уже различимы по отдельности —
+                  // кластеризация там только мешает выбору конкретной метки.
+                  disableClusteringAtZoom={17}
+                  // Не рисуем полупрозрачный полигон зоны охвата кластера при
+                  // наведении — на карте с 3800+ площадками это визуальный шум.
+                  showCoverageOnHover={false}
+                >
+                  {sites.filter((s) => !myInspOnly || !siteStatusMap[s.id] || !VISITED_STATUSES.has(siteStatusMap[s.id].status)).map((s) => {
+                    const coverage = (user?.role === 'inspector' || isReviewerLike) ? siteStatusMap[s.id] : undefined
+                    const icon = siteIcon(s.type, coverage?.status)
+                    return <Marker key={s.id} position={[s.lat ?? 55.829, s.lon ?? 37.532]} icon={icon}>
+                      <Popup>
+                        <div className="min-w-[180px]">
+                          <div className="font-semibold text-sm">{s.courtyard?.name ?? 'Площадка'}</div>
+                          <div className="text-xs text-gray-500 mt-0.5">{s.district?.name}</div>
+                          <div className="text-xs text-gray-400 mt-0.5">
+                            {s.type === CHILD_TYPE ? 'Детская' : 'Спортивная'} • {s.area_m2} м²
+                          </div>
+                          {isReviewerLike && (
+                            <div className="text-xs text-gray-400 mt-0.5">
+                              {s.assigned_inspector ? `Назначена: ${s.assigned_inspector.full_name}` : 'Не назначена'}
+                            </div>
+                          )}
+                          {user?.role === 'inspector' && coverage && (
+                            <div className="text-xs text-gray-400 mt-0.5">
+                              Сегодня обошёл: {coverage.inspectorName}
+                            </div>
+                          )}
+                          <button onClick={() => navigate(`/sites/${s.id}`)} data-prefetch={`/sites/${s.id}`} className="mt-2 text-xs btn-primary py-1 px-3 w-full flex items-center justify-center gap-1">
+                            Открыть <ChevronRight className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </Popup>
+                    </Marker>
+                  })}
+                </MarkerClusterGroup>
+              </MapContainer>
+            </div>
+          </div>
+        ) : (
+          <div className="h-full flex flex-col">
+            <CoverageLegend visited={visitedToday} total={totalCount} />
+            <div ref={listRef} onScroll={handleListScroll} className="flex-1 min-h-0 overflow-y-auto p-3 space-y-2">
+              {sites.map((s) => (
+                <button key={s.id} onClick={() => navigate(`/sites/${s.id}`)} data-prefetch={`/sites/${s.id}`} className="card w-full text-left hover:border-primary-300 transition-colors">
+                  <div className="flex items-start gap-3">
+                    {/* Цвет — статус сегодняшнего обхода, как на карте и в
+                        легенде; тип площадки — буквой. */}
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white text-lg shrink-0" style={{ background: markerColor(siteStatusMap[s.id]?.status) }}>
+                      {markerLabel(s.type, siteStatusMap[s.id]?.status)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-sm truncate">{s.courtyard?.name ?? 'Площадка'}</div>
                       <div className="text-xs text-gray-500 mt-0.5">{s.district?.name}</div>
-                      <div className="text-xs text-gray-400 mt-0.5">
-                        {s.type === CHILD_TYPE ? 'Детская' : 'Спортивная'} • {s.area_m2} м²
-                      </div>
+                      <div className="text-xs text-gray-400 mt-0.5">{s.type}{' • '}{s.area_m2} м²</div>
                       {isReviewerLike && (
                         <div className="text-xs text-gray-400 mt-0.5">
                           {s.assigned_inspector ? `Назначена: ${s.assigned_inspector.full_name}` : 'Не назначена'}
                         </div>
                       )}
-                      {user?.role === 'inspector' && coverage && (
+                      {user?.role === 'inspector' && siteStatusMap[s.id] && (
                         <div className="text-xs text-gray-400 mt-0.5">
-                          Сегодня обошёл: {coverage.inspectorName}
+                          Сегодня обошёл: {siteStatusMap[s.id].inspectorName}
                         </div>
                       )}
-                      <button onClick={() => navigate(`/sites/${s.id}`)} data-prefetch={`/sites/${s.id}`} className="mt-2 text-xs btn-primary py-1 px-3 w-full flex items-center justify-center gap-1">
-                        Открыть <ChevronRight className="w-3 h-3" />
-                      </button>
                     </div>
-                  </Popup>
-                </Marker>
-              })}
-            </MarkerClusterGroup>
-          </MapContainer>
-        ) : (
-          <div ref={listRef} onScroll={handleListScroll} className="overflow-y-auto h-full p-3 space-y-2">
-            {sites.map((s) => (
-              <button key={s.id} onClick={() => navigate(`/sites/${s.id}`)} data-prefetch={`/sites/${s.id}`} className="card w-full text-left hover:border-primary-300 transition-colors">
-                <div className="flex items-start gap-3">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white text-lg shrink-0 ${s.type === CHILD_TYPE ? 'bg-blue-600' : 'bg-green-600'}`}>
-                    {s.type === CHILD_TYPE ? 'Д' : 'С'}
+                    <ChevronRight className="w-4 h-4 text-gray-300 shrink-0 mt-3" />
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-sm truncate">{s.courtyard?.name ?? 'Площадка'}</div>
-                    <div className="text-xs text-gray-500 mt-0.5">{s.district?.name}</div>
-                    <div className="text-xs text-gray-400 mt-0.5">{s.type}{' • '}{s.area_m2} м²</div>
-                    {isReviewerLike && (
-                      <div className="text-xs text-gray-400 mt-0.5">
-                        {s.assigned_inspector ? `Назначена: ${s.assigned_inspector.full_name}` : 'Не назначена'}
-                      </div>
-                    )}
-                    {user?.role === 'inspector' && siteStatusMap[s.id] && (
-                      <div className="text-xs text-gray-400 mt-0.5">
-                        Сегодня обошёл: {siteStatusMap[s.id].inspectorName}
-                      </div>
-                    )}
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-gray-300 shrink-0 mt-3" />
-                </div>
-              </button>
-            ))}
-            {sites.length === 0 && (<div className="text-center text-gray-400 py-12">Нет площадок</div>)}
+                </button>
+              ))}
+              {sites.length === 0 && (<div className="text-center text-gray-400 py-12">Нет площадок</div>)}
+            </div>
           </div>
         )}
       </div>
     </div>
+  )
+}
+
+function HeaderNavButton({ icon, label, title, onClick, prefetch, active, expanded }: {
+  icon: React.ReactNode
+  label: string
+  title: string
+  onClick: () => void
+  prefetch?: string
+  active?: boolean
+  expanded?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      data-prefetch={prefetch}
+      title={title}
+      aria-expanded={expanded}
+      className={`flex-1 min-w-0 min-h-11 px-1 py-1 rounded-lg flex flex-col items-center justify-center gap-0.5 text-[11px] font-medium leading-tight transition-colors sm:flex-none sm:flex-row sm:gap-1.5 sm:px-3 sm:text-sm ${
+        active ? 'bg-primary-700' : 'hover:bg-primary-700'
+      }`}
+    >
+      {icon}
+      <span className="truncate max-w-full">{label}</span>
+    </button>
   )
 }

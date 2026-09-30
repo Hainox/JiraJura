@@ -52,11 +52,13 @@ alembic revision -m "..."   # новая ревизия (пишется вруч
 
 - `app/routers/` — эндпоинты: `auth` (login, приглашения, пользователи), `districts`,
   `courtyards`, `sites` (+ шаблоны чек-листов), `checklists`, `inspections`, `issues`,
-  `reports`, `pdf_report`, `stats` (штабная статистика), `feedback`, `audit`, `system`
+  `reports`, `pdf_report`, `stats` (штабная статистика), `feedback`, `audit`, `system`,
+  `hatches` (люки площадок, их осмотр внутри обхода, журнал осмотра люков + Excel)
 - `app/services/` — бизнес-логика: `auth.py` (JWT/пароли), `permissions.py`
   (роли/scoping), `issues.py` (SLA/критичность по типу нарушения), `statistics.py`,
   `safe_export.py` и `xlsx_style.py` (единый стиль Excel-отчётов, защита от
-  формула-инъекций), `rate_limit.py`, `timezone.py`, `audit.py`
+  формула-инъекций), `rate_limit.py`, `timezone.py`, `audit.py`, `hatches.py`
+  (дефект люка → критическое замечание «Люки», гейт завершения обхода по люкам)
 - `app/models.py` / `app/schemas.py` — ORM-модели (SQLAlchemy) и API-схемы (Pydantic)
 - `alembic/` — миграции; `schema.sql` / `seed.sql` — DDL и тестовые данные для локальной БД
 - `import_kml.py` — разовый скрипт импорта геометрии площадок из KML-файлов (детские/спортивные площадки) в PostGIS; пути к исходным KML в скрипте нужно указать под своё окружение

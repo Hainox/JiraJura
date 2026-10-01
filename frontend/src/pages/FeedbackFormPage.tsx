@@ -1,8 +1,10 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { feedbackApi } from '@/lib/api'
+import { LUKI_SAO_URL } from '@/lib/externalLinks'
 import { notify as toast } from '@/lib/toast'
 import type { FeedbackReportType } from '@/types'
-import { MessageSquareWarning, CheckCircle2, MapPinned, Bug, HelpCircle, Paperclip, X, FileText } from 'lucide-react'
+import { MessageSquareWarning, CheckCircle2, MapPinned, Bug, HelpCircle, Paperclip, X, FileText, CircleDot } from 'lucide-react'
 
 const TYPE_CONFIG: Record<FeedbackReportType, {
   label: string
@@ -36,7 +38,19 @@ const TYPE_CONFIG: Record<FeedbackReportType, {
     locationPlaceholder: '',
     messagePlaceholder: 'Опишите обращение',
   },
+  luki: {
+    label: 'Люки САО',
+    icon: <CircleDot className="w-4 h-4" />,
+    intro: 'Вопрос или проблема в приложении для люков: не получается войти, не загружается фото, неверные цифры в своде.',
+    locationLabel: 'Где возникло (страница / номер карточки)',
+    locationPlaceholder: 'Например: ОЛХ-012, фото ПОСЛЕ',
+    messagePlaceholder: 'Опишите, что делали и что пошло не так',
+  },
 }
+
+// Форма публичная, её открывают и жители — им выбор «Люки САО» ни к чему.
+// Этот тип ставится только по ссылке ?app=luki из «Помощи» приложения люков.
+const PUBLIC_TYPES: FeedbackReportType[] = ['site', 'app', 'other']
 
 // Синхронно с бэкендом (см. _ALLOWED_EXTENSIONS в
 // app/routers/feedback.py) — тут только для ранней обратной связи,
@@ -51,7 +65,10 @@ function fileExt(name: string): string {
 }
 
 export default function FeedbackFormPage() {
-  const [type, setType] = useState<FeedbackReportType>('site')
+  const [searchParams] = useSearchParams()
+  const lukiMode = searchParams.get('app') === 'luki'
+  const initialType: FeedbackReportType = lukiMode ? 'luki' : 'site'
+  const [type, setType] = useState<FeedbackReportType>(initialType)
   const [fullName, setFullName] = useState('')
   const [phone, setPhone] = useState('')
   const [locationText, setLocationText] = useState('')
@@ -122,7 +139,7 @@ export default function FeedbackFormPage() {
   }
 
   const reset = () => {
-    setSent(false); setType('site'); setFullName(''); setPhone(''); setLocationText(''); setMessage(''); setFiles([])
+    setSent(false); setType(initialType); setFullName(''); setPhone(''); setLocationText(''); setMessage(''); setFiles([])
   }
 
   return (
@@ -133,7 +150,7 @@ export default function FeedbackFormPage() {
             <MessageSquareWarning className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-2xl font-bold text-white">Сообщить о проблеме</h1>
-          <p className="text-blue-200 mt-1">Журнал обхода площадок САО</p>
+          <p className="text-blue-200 mt-1">{lukiMode ? 'Люки САО' : 'Журнал обхода площадок САО'}</p>
         </div>
 
         <div className="card backdrop-blur-sm bg-white/95">
@@ -145,31 +162,40 @@ export default function FeedbackFormPage() {
               <button type="button" className="btn-outline w-full mt-4" onClick={reset}>
                 Отправить ещё одно
               </button>
+              {lukiMode && (
+                <a href={LUKI_SAO_URL} className="btn-primary w-full mt-2 inline-block text-center">
+                  Вернуться в «Люки САО»
+                </a>
+              )}
             </div>
           ) : (
             <form onSubmit={handleSubmit}>
-              <div className="mb-4">
-                <label className="label">Тип обращения</label>
-                <div className="grid grid-cols-3 gap-1.5">
-                  {(Object.keys(TYPE_CONFIG) as FeedbackReportType[]).map((t) => (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={() => setType(t)}
-                      className={`flex flex-col items-center gap-1 py-2 px-1 rounded-lg text-xs font-medium border transition-colors ${
-                        type === t
-                          ? 'bg-primary-600 text-white border-primary-600'
-                          : 'bg-white text-gray-600 border-gray-200 hover:border-primary-300'
-                      }`}
-                    >
-                      {TYPE_CONFIG[t].icon}
-                      {TYPE_CONFIG[t].label}
-                    </button>
-                  ))}
+              {!lukiMode && (
+                <div className="mb-4">
+                  <label className="label">Тип обращения</label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {PUBLIC_TYPES.map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setType(t)}
+                        className={`flex flex-col items-center gap-1 py-2 px-1 rounded-lg text-xs font-medium border transition-colors ${
+                          type === t
+                            ? 'bg-primary-600 text-white border-primary-600'
+                            : 'bg-white text-gray-600 border-gray-200 hover:border-primary-300'
+                        }`}
+                      >
+                        {TYPE_CONFIG[t].icon}
+                        {TYPE_CONFIG[t].label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
-              <p className="mb-4 text-gray-600 text-sm">{cfg.intro} Можно отправить анонимно.</p>
+              <p className="mb-4 text-gray-600 text-sm">
+                {cfg.intro} {lukiMode ? 'Оставьте ФИО и телефон, чтобы мы могли ответить.' : 'Можно отправить анонимно.'}
+              </p>
 
               <div className="mb-4">
                 <label className="label" htmlFor="full_name">ФИО (необязательно)</label>

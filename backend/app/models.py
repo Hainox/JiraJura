@@ -74,7 +74,7 @@ FEEDBACK_STATUS_ENUM = Enum(
 )
 
 FEEDBACK_REPORT_TYPE_ENUM = Enum(
-    'site', 'app', 'other',
+    'site', 'app', 'other', 'luki',
     name='feedback_report_type', create_type=False,
 )
 

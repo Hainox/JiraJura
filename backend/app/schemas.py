@@ -625,7 +625,7 @@ class StatsCategoriesOut(BaseModel):
 class FeedbackReportCreate(BaseModel):
     # Явная валидация вместо тихого приведения невалидного значения к "site"
     # в роутере: опечатка в типе раньше молча загрязняла бакет "Площадка".
-    report_type: Literal["site", "app", "other"] = "site"
+    report_type: Literal["site", "app", "other", "luki"] = "site"
     full_name: Optional[str] = Field(None, max_length=200)
     phone: Optional[str] = Field(None, max_length=20)
     location_text: Optional[str] = Field(None, max_length=500)

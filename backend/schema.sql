@@ -402,8 +402,10 @@ ALTER TABLE checklist_items ALTER COLUMN category_id SET NOT NULL;
 CREATE TYPE feedback_status AS ENUM ('new', 'in_review', 'resolved', 'dismissed');
 -- site — жалоба по конкретной площадке/двору; app — техническая проблема
 -- с самим приложением (не заходит, баг, что-то не отображается); other —
--- всё остальное. Определяет, какие поля формы показывает фронтенд.
-CREATE TYPE feedback_report_type AS ENUM ('site', 'app', 'other');
+-- всё остальное; luki — вопрос по приложению «Люки САО» (его «Написать в
+-- поддержку» ведёт на ту же форму). Определяет, какие поля формы показывает
+-- фронтенд.
+CREATE TYPE feedback_report_type AS ENUM ('site', 'app', 'other', 'luki');
 
 CREATE TABLE feedback_reports (
     id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

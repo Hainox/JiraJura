@@ -279,11 +279,6 @@ export default function MapPage() {
 
   const moreMenuItems: MoreMenuItem[] = [
     { label: 'Профиль', icon: <UserCircle className="w-5 h-5 text-gray-500" />, prefetch: '/profile', onSelect: () => navigate('/profile') },
-    {
-      label: 'Люки САО',
-      icon: <ExternalLink className="w-5 h-5 text-gray-500" />,
-      onSelect: () => window.open(LUKI_SAO_URL, '_blank', 'noopener,noreferrer'),
-    },
     ...(user?.role !== 'inspector' ? [{
       label: 'Выгрузка в Excel',
       icon: <Download className="w-5 h-5 text-gray-500" />,
@@ -302,13 +297,29 @@ export default function MapPage() {
       <div className="bg-primary-800 text-white shrink-0">
         <div className="px-4 pt-2 flex items-center justify-between gap-2">
           <div className="min-w-0">
-            <h1 className="text-lg font-bold leading-tight">Обход площадок</h1>
+            <h1 className="text-lg font-bold leading-tight truncate">Обход площадок</h1>
             <p className="text-blue-200 text-xs truncate">
               {user?.full_name}
               {user?.role === 'reviewer' && <span className="ml-1 text-amber-300">(проверяющий)</span>}
             </p>
           </div>
-          <MoreMenu items={moreMenuItems} />
+          <div className="flex items-center gap-1 shrink-0">
+            {/* Переход в соседнее приложение у всех ролей на виду, а не в «Ещё»:
+                в меню его не находили. На телефоне — короткая подпись, иначе
+                строка с «Ещё» не помещается в 360 px. */}
+            <a
+              href={LUKI_SAO_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Люки САО (откроется в новой вкладке)"
+              className="min-h-9 px-2.5 flex items-center gap-1 rounded-full bg-white/15 hover:bg-white/25 text-xs font-medium sm:text-sm sm:px-3"
+            >
+              <ExternalLink className="w-4 h-4" />
+              <span className="sm:hidden">Люки</span>
+              <span className="hidden sm:inline">Люки САО</span>
+            </a>
+            <MoreMenu items={moreMenuItems} />
+          </div>
         </div>
         <nav aria-label="Разделы" className="px-2 pt-1 pb-1.5 flex gap-1">
           {user?.role === 'inspector' && (

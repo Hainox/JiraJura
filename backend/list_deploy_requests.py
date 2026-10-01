@@ -17,6 +17,7 @@ POST /api/v1/system/deploy/request, кнопка «Деплой» в разде�
 import argparse
 import asyncio
 import os
+from datetime import datetime
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
@@ -25,7 +26,20 @@ from sqlalchemy.orm import sessionmaker
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@db:5432/sao_inspection")
 
 
-async def main(since: str):
+def parse_since(value: str) -> datetime:
+    # asyncpg не приводит строку к timestamptz сам — со строкой в параметре
+    # запрос падал с DataError на каждом запуске cron, и ни один деплой по
+    # кнопке так и не выполнился (state-файл хранит время текстом).
+    try:
+        since = datetime.fromisoformat(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"не ISO-время: {value!r}")
+    if since.tzinfo is None:
+        raise argparse.ArgumentTypeError(f"нужна таймзона (например +00:00): {value!r}")
+    return since
+
+
+async def main(since: datetime):
     engine = create_async_engine(DATABASE_URL, echo=False)
     Session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with Session() as db:
@@ -41,6 +55,7 @@ async def main(since: str):
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--since", required=True, help="ISO-timestamp с таймзоной — только маркеры позже этого времени")
+    p.add_argument("--since", required=True, type=parse_since,
+                   help="ISO-timestamp с таймзоной — только маркеры позже этого времени")
     args = p.parse_args()
     asyncio.run(main(args.since))

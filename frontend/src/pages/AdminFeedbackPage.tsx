@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { feedbackApi } from '@/lib/api'
 import type { FeedbackReportOut, FeedbackStatus, FeedbackReportType } from '@/types'
-import { ArrowLeft, RefreshCw, MessageSquareWarning, Phone, MapPin, User as UserIcon, Bug, HelpCircle, MapPinned, Paperclip, FileSpreadsheet } from 'lucide-react'
+import { ArrowLeft, RefreshCw, MessageSquareWarning, Phone, MapPin, User as UserIcon, Bug, HelpCircle, MapPinned, Paperclip, FileSpreadsheet, CircleDot } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
 import PhotoLightbox from '@/components/PhotoLightbox'
 
@@ -17,17 +17,19 @@ const STATUS_COLORS: Record<FeedbackStatus, string> = {
   dismissed: 'bg-gray-100 text-gray-600',
 }
 const TYPE_LABELS: Record<FeedbackReportType, string> = {
-  site: 'Площадка', app: 'Приложение', other: 'Другое',
+  site: 'Площадка', app: 'Приложение', other: 'Другое', luki: 'Люки САО',
 }
 const TYPE_ICONS: Record<FeedbackReportType, React.ReactNode> = {
   site: <MapPinned className="w-3.5 h-3.5" />,
   app: <Bug className="w-3.5 h-3.5" />,
   other: <HelpCircle className="w-3.5 h-3.5" />,
+  luki: <CircleDot className="w-3.5 h-3.5" />,
 }
 const TYPE_COLORS: Record<FeedbackReportType, string> = {
   site: 'bg-blue-100 text-blue-700',
   app: 'bg-purple-100 text-purple-700',
   other: 'bg-gray-100 text-gray-600',
+  luki: 'bg-teal-100 text-teal-700',
 }
 
 export default function AdminFeedbackPage() {

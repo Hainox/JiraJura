@@ -499,7 +499,7 @@ export interface DeployStatusOut {
 
 // ── Обращения (публичная веб-форма) ──
 export type FeedbackStatus = 'new' | 'in_review' | 'resolved' | 'dismissed'
-export type FeedbackReportType = 'site' | 'app' | 'other'
+export type FeedbackReportType = 'site' | 'app' | 'other' | 'luki'
 
 export interface FeedbackAttachmentOut {
   id: string

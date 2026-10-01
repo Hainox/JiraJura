@@ -78,7 +78,7 @@ def _require_submit_rate_limit(request: Request) -> None:
             headers={"Retry-After": str(retry_after)},
         )
 
-TYPE_LABELS_RU = {"site": "Площадка", "app": "Приложение", "other": "Другое"}
+TYPE_LABELS_RU = {"site": "Площадка", "app": "Приложение", "other": "Другое", "luki": "Люки САО"}
 STATUS_LABELS_RU = {"new": "Новое", "in_review": "В работе", "resolved": "Решено", "dismissed": "Отклонено"}
 
 _STATUSES = ("new", "in_review", "resolved", "dismissed")

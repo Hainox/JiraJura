@@ -118,17 +118,18 @@ describe('MapPage — шапка', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 
-  it('«Люки САО» в меню «Ещё» открываются отдельной вкладкой', async () => {
-    mocks.user = { id: 'u2', full_name: 'Сидоров С.С.', role: 'inspector', district_id: 'd1' }
-    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+  it.each(['inspector', 'reviewer', 'admin'])('у роли %s в шапке есть переход в «Люки САО»', async (role) => {
+    mocks.user = { id: 'u4', full_name: 'Сотрудник', role, district_id: role === 'admin' ? undefined : 'd1' }
     const user = userEvent.setup()
     renderMap()
 
+    const link = screen.getByRole('link', { name: /Люки САО/ })
+    expect(link).toHaveAttribute('href', 'https://luki.obhod-sao.ru')
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+
     await user.click(screen.getByRole('button', { name: 'Ещё' }))
-    await user.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Люки САО' }))
-    expect(open).toHaveBeenCalledWith('https://luki.obhod-sao.ru', '_blank', 'noopener,noreferrer')
-    expect(mocks.navigate).not.toHaveBeenCalled()
-    open.mockRestore()
+    expect(within(screen.getByRole('menu')).queryByRole('menuitem', { name: 'Люки САО' })).not.toBeInTheDocument()
   })
 
   it('у округа кнопка «Управление» ведёт в админ-панель', async () => {

@@ -5,6 +5,7 @@ import { systemApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
 import type { SystemStatsOut, DeployEventOut } from '@/types'
 import { notify as toast } from '@/lib/toast'
+import { deployRequestState, type DeployRequestState } from '@/lib/deployStatus'
 import {
   ArrowLeft, RefreshCw, Database, HardDrive, Clock, Server,
   Search, KeyRound, AlertTriangle, Rocket, CheckCircle2, XCircle, Loader2,
@@ -368,7 +369,11 @@ function DeployTab() {
         ) : (
           <div className="space-y-2">
             {statusQuery.data.events.map((ev) => (
-              <DeployEventRow key={ev.id} event={ev} />
+              <DeployEventRow
+                key={ev.id}
+                event={ev}
+                requestState={ev.action === 'deploy_requested' ? deployRequestState(ev, statusQuery.data.events) : null}
+              />
             ))}
           </div>
         )}
@@ -377,7 +382,7 @@ function DeployTab() {
   )
 }
 
-function DeployEventRow({ event }: { event: DeployEventOut }) {
+function DeployEventRow({ event, requestState }: { event: DeployEventOut; requestState: DeployRequestState | null }) {
   let details: { note?: string; ok?: boolean; log_tail?: string; requested_by_login?: string } | null = null
   try {
     details = event.details ? JSON.parse(event.details) : null
@@ -392,7 +397,9 @@ function DeployEventRow({ event }: { event: DeployEventOut }) {
   return (
     <div className="text-xs bg-gray-50 rounded-lg p-2.5">
       <div className="flex items-center gap-1.5 font-medium text-gray-700">
-        {isRequest && <Loader2 className="w-3.5 h-3.5 text-blue-500" />}
+        {isRequest && requestState === 'pending' && <Loader2 className="w-3.5 h-3.5 text-blue-500 animate-spin" />}
+        {isRequest && requestState === 'done' && <Rocket className="w-3.5 h-3.5 text-gray-400" />}
+        {isRequest && requestState === 'stuck' && <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />}
         {isCompleted && ok && <CheckCircle2 className="w-3.5 h-3.5 text-green-600" />}
         {isCompleted && !ok && <XCircle className="w-3.5 h-3.5 text-red-600" />}
         <span>
@@ -402,6 +409,11 @@ function DeployEventRow({ event }: { event: DeployEventOut }) {
         <span className="text-gray-400 ml-auto">{new Date(event.created_at).toLocaleString('ru')}</span>
       </div>
       {isRequest && details?.note && <div className="text-gray-500 mt-1">Комментарий: {details.note}</div>}
+      {isRequest && requestState === 'stuck' && (
+        <div className="text-amber-700 mt-1">
+          Сервер не взял запрос в работу — проверьте deploy-watcher (cron и /var/log/jirajura-deploy-watcher.log, deploy/README.md, п.10)
+        </div>
+      )}
       {isCompleted && details?.log_tail && (
         <details className="mt-1">
           <summary className="text-gray-400 cursor-pointer">Лог</summary>

@@ -118,6 +118,19 @@ describe('MapPage — шапка', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 
+  it('«Люки САО» в меню «Ещё» открываются отдельной вкладкой', async () => {
+    mocks.user = { id: 'u2', full_name: 'Сидоров С.С.', role: 'inspector', district_id: 'd1' }
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    const user = userEvent.setup()
+    renderMap()
+
+    await user.click(screen.getByRole('button', { name: 'Ещё' }))
+    await user.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Люки САО' }))
+    expect(open).toHaveBeenCalledWith('https://luki.obhod-sao.ru', '_blank', 'noopener,noreferrer')
+    expect(mocks.navigate).not.toHaveBeenCalled()
+    open.mockRestore()
+  })
+
   it('у округа кнопка «Управление» ведёт в админ-панель', async () => {
     mocks.user = { id: 'u3', full_name: 'Админ', role: 'admin' }
     const user = userEvent.setup()

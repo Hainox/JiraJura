@@ -43,7 +43,7 @@ describe('HelpPage', () => {
     expect(screen.getByRole('button', { name: 'Всем' })).toHaveAttribute('aria-pressed', 'true')
     expect(topicButton('Вход и установка')).toHaveAttribute('aria-expanded', 'false')
     expect(topicButton('Статистика и отчёты')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Люки' })).not.toBeInTheDocument()
+    expect(topicButton('Люки САО')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Забыл пароль' })).not.toBeInTheDocument()
   })
 

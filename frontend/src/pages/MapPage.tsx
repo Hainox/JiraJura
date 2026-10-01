@@ -9,10 +9,11 @@ import { useAuthStore } from '@/stores/auth'
 import { useMapViewStore } from '@/stores/mapView'
 import { guardDemoAction } from '@/stores/demoMode'
 import type { SiteOut, DistrictOut, InspectionOut } from '@/types'
-import { List, Map as MapIcon, LogOut, ChevronRight, Settings2, Download, ClipboardCheck, AlertCircle, UserCircle, BarChart3, History, CheckCheck, Filter, HelpCircle } from 'lucide-react'
+import { List, Map as MapIcon, LogOut, ChevronRight, Settings2, Download, ClipboardCheck, AlertCircle, UserCircle, BarChart3, History, CheckCheck, Filter, HelpCircle, ExternalLink } from 'lucide-react'
 import { notify as toast } from '@/lib/toast'
 import InspectionReviewList from '@/components/InspectionReviewList'
 import MoreMenu, { type MoreMenuItem } from '@/components/MoreMenu'
+import { LUKI_SAO_URL } from '@/lib/externalLinks'
 import {
   CHILD_TYPE, SPORT_TYPE, VISITED_STATUSES, COVERAGE_LEGEND,
   countVisitedToday, markerColor, markerLabel,
@@ -278,6 +279,11 @@ export default function MapPage() {
 
   const moreMenuItems: MoreMenuItem[] = [
     { label: 'Профиль', icon: <UserCircle className="w-5 h-5 text-gray-500" />, prefetch: '/profile', onSelect: () => navigate('/profile') },
+    {
+      label: 'Люки САО',
+      icon: <ExternalLink className="w-5 h-5 text-gray-500" />,
+      onSelect: () => window.open(LUKI_SAO_URL, '_blank', 'noopener,noreferrer'),
+    },
     ...(user?.role !== 'inspector' ? [{
       label: 'Выгрузка в Excel',
       icon: <Download className="w-5 h-5 text-gray-500" />,

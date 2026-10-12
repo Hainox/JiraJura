@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "agents-kit": {
+      "source": {
+        "source": "github",
+        "repo": "Hainox/claude-agents-kit"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "agents-kit@agents-kit": true
+  }
+}

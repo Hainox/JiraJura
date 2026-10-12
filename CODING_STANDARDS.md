@@ -6,7 +6,7 @@ Each rule overrides a default. Project linters and configs win over this file; d
 - Validate at the **boundary** (HTTP, CLI, files, env, third-party responses) with a schema, then pass typed values inward and trust them: one owner per check beats defensive re-checks nobody can reason about.
 - Fail **loud**: let errors propagate with added context; catch only where you can recover or translate for a user. A swallowed error turns a crash into corrupted state.
 - Keep data immutable once it crosses a module **boundary**; mutate locals freely. Aliasing bugs live at boundaries, not in loop counters.
-- Load config and secrets at startup and fail fast when one is missing, so the gap surfaces at deploy, not mid-request.
+- Load config and secrets at startup and fail fast when a value the current mode requires is missing, so the gap surfaces at deploy, not mid-request; keep deliberate optional values (demo fallbacks, local health checks) optional.
 
 ## Structure
 - Group by feature, not by layer (`billing/` over `controllers/`), so one change touches one folder.

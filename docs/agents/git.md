@@ -1,16 +1,13 @@
-# Git and PRs
+# Git и PR
 
-## Before committing
+## Перед коммитом
 
-Run the checklist in `docs/agents/security.md` against the staged changes.
+Пройди чеклист из `docs/agents/security.md` по застейдженным изменениям.
 
-## Commits
+## Коммиты
 
-Russian, narrative, no conventional-commit prefix: say why it was done this way,
-not just what the diff shows. Follow the style of `git log`.
+По-русски, повествовательно, без conventional-префикса: объясни, почему сделано так, а не пересказывай дифф. Сверяйся со стилем `git log`.
 
-## Pull requests
+## Pull request'ы
 
-Fill `.github/pull_request_template.md`; «Решения и обоснование» is mandatory for
-non-trivial changes. Write it from the whole branch (`git log origin/main..HEAD`),
-not just the last commit.
+Заполни `.github/pull_request_template.md`; «Решения и обоснование» обязательны для нетривиальных изменений. Описание пиши по всей ветке (`git log origin/main..HEAD`), а не по последнему коммиту. Заголовок PR — в стиле коммитов: при squash-merge он им станет.

@@ -1,23 +1,23 @@
-# Coding Standards
+# Стандарты кода
 
-Each rule overrides a default. Project linters and configs win over this file; delete rules that don't fit.
+Каждое правило перекрывает поведение по умолчанию. Линтеры и конфиги проекта важнее этого файла; лишние правила удаляй.
 
-## Boundaries
-- Validate at the **boundary** (HTTP, CLI, files, env, third-party responses) with a schema, then pass typed values inward and trust them: one owner per check beats defensive re-checks nobody can reason about.
-- Fail **loud**: let errors propagate with added context; catch only where you can recover or translate for a user. A swallowed error turns a crash into corrupted state.
-- Keep data immutable once it crosses a module **boundary**; mutate locals freely. Aliasing bugs live at boundaries, not in loop counters.
-- Load config and secrets at startup and fail fast when a value the current mode requires is missing, so the gap surfaces at deploy, not mid-request; keep deliberate optional values (demo fallbacks, local health checks) optional.
+## Границы
+- Проверяй данные на **границе** (HTTP, CLI, файлы, env, ответы сторонних сервисов) явной схемой, дальше передавай типизированные значения и доверяй им: одна точка проверки лучше защитных перепроверок, о которых никто не может рассуждать.
+- Падай **громко**: пропускай ошибку наверх с добавленным контекстом; перехватывай только там, где можешь восстановиться или перевести её для пользователя. Проглоченная ошибка превращает падение в испорченное состояние.
+- Данные, пересёкшие **границу** модуля, не мутируй; локальные переменные меняй свободно. Ошибки алиасинга живут на границах, а не в счётчиках циклов.
+- Загружай конфиг и секреты при старте и падай сразу, если нет значения, обязательного для текущего режима, — чтобы пробел вскрылся при деплое, а не посреди запроса; намеренно необязательные значения (демо-режим, локальные health-проверки) оставляй необязательными.
 
-## Structure
-- Group by feature, not by layer (`billing/` over `controllers/`), so one change touches one folder.
-- Add an abstraction (repository, response envelope, interface) at the second real caller, not the first: speculative layers are the costliest code to delete.
-- Comment the **why** (constraint, gotcha, rejected alternative); names carry the what.
+## Структура
+- Группируй по фичам, а не по слоям (`billing/`, а не `controllers/`), чтобы одно изменение трогало одну папку.
+- Добавляй абстракцию (репозиторий, обёртку ответа, интерфейс) на втором реальном вызове, а не на первом: умозрительные слои удалять дороже всего.
+- Комментируй **почему** (ограничение, подводный камень, отвергнутая альтернатива); что делает код — говорят имена.
 
-## Tests
-- A bug fix starts **red**: a test that fails on the bug before the fix touches code. No red, no proof.
-- When a test goes red, fix the code. Change the test only when you can name what it got wrong, and say so in your summary.
-- Test through public interfaces, so tests protect refactors instead of blocking them.
+## Тесты
+- Исправление бага начинается с **красного** теста: он падает на баге до того, как правка коснулась кода. Нет красного — нет доказательства.
+- Если тест покраснел, чини код. Меняй тест только когда можешь назвать, в чём он ошибался, и скажи об этом в итоге.
+- Тестируй через публичные интерфейсы — тогда тесты защищают рефакторинг, а не мешают ему.
 
-## Changes
-- Keep each diff to one purpose; report unrelated problems instead of fixing them, so review sees one story.
-- Put durable knowledge in the project's existing docs; ask before creating a new top-level file.
+## Изменения
+- Один дифф — одна цель; о посторонних проблемах сообщай, а не чини их попутно, чтобы ревью видело одну историю.
+- Долговечные знания клади в существующие документы проекта; прежде чем заводить новый файл в корне, спроси.

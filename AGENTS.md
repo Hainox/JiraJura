@@ -1,22 +1,22 @@
 # AGENTS.md
 
-## Unwritten
-- Publishing: agents never push to `main` (the owner may); branch + PR, squash-merge after green CI. Agents cannot reach the production server (outbound SSH is blocked in agent sandboxes), so server work ships as ready commands or scripts for the owner. A deploy is `git pull`, build, `up -d` per `deploy/README.md`; the `api` container applies migrations on start, and the in-app «Деплой» button queues a request that `deploy/scripts/deploy-watcher.sh` (host cron) executes.
-- Gotchas: Alembic must keep exactly one head: run `git fetch` + `alembic heads` right before `alembic revision`, not only at session start, because the other agent may merge a migration meanwhile. Each pytest run recreates the `jirajura_test` DB via `alembic upgrade head` + `seed.sql` (`backend/tests/conftest.py`), so it needs local Postgres + PostGIS and every migration runs in CI. openpyxl `BarChart`/`LineChart` default both axes to `axPos="l"`; set `chart.x_axis.axPos = "b"` or Excel draws no category labels.
-- Checks: `cd backend && pytest -q`; `cd frontend && npm run lint && npm run build && npm test`; for a migration, `alembic upgrade head`, `alembic downgrade -1`, `alembic upgrade head` again. CI also validates proxy/nginx configs (`bash deploy/tests/test_*_proxy_config.sh`, `nginx -t` in Docker).
-- Conventions: UI text, commits, and PRs are in Russian. Branches carry the author prefix (`claude/...`, `codex/...`, `<login>/...`); never reuse another agent's prefix. One PR, one task; each agent keeps its own PR's CI green. Test data is generated in the test, never real names, phones, or logins.
-- Why: Alembic revisions are hand-written raw SQL (`op.execute`), not autogenerate, and use `IF NOT EXISTS` because fresh installs get `backend/schema.sql` and `upgrade head` then replays revisions over it; keep `schema.sql` in sync. All time metrics are Moscow time via `app.services.timezone.msk_day_bounds_utc`; timezone bugs were fixed here repeatedly, so do not write new TZ logic. The coordination rules below exist because in Aug 2026 both agents wrote the same `add_issue_categories` migration and PR #104 had to be closed over multiple heads.
+## Неочевидное
+- Публикация: агенты не пушат в `main` (это может только владелец); ветка + PR, squash-merge после зелёного CI. До продакшн-сервера агенты не достают (исходящий SSH в песочницах закрыт), поэтому серверная работа сдаётся готовыми командами или скриптами для владельца. Деплой — `git pull`, сборка, `up -d` по `deploy/README.md`; контейнер `api` сам применяет миграции при старте, а кнопка «Деплой» в приложении ставит запрос в очередь, которую выполняет `deploy/scripts/deploy-watcher.sh` (cron на хосте).
+- Подводные камни: у Alembic должна быть ровно одна голова — делай `git fetch` + `alembic heads` прямо перед `alembic revision`, а не только в начале сессии: другой агент мог за это время смержить свою миграцию. Каждый прогон pytest пересоздаёт базу `jirajura_test` через `alembic upgrade head` + `seed.sql` (`backend/tests/conftest.py`), поэтому нужен локальный Postgres + PostGIS, а все миграции прогоняются в CI. У openpyxl `BarChart`/`LineChart` обе оси по умолчанию `axPos="l"`; ставь `chart.x_axis.axPos = "b"`, иначе Excel не рисует подписи категорий.
+- Проверки: `cd backend && pytest -q`; `cd frontend && npm run lint && npm run build && npm test`; для миграции — `alembic upgrade head`, `alembic downgrade -1` и снова `alembic upgrade head`. CI дополнительно проверяет конфиги proxy/nginx (`bash deploy/tests/test_*_proxy_config.sh`, `nginx -t` в Docker).
+- Конвенции: интерфейс, коммиты и PR — на русском. Ветки с префиксом автора (`claude/...`, `codex/...`, `<login>/...`); чужой префикс не используй. Один PR — одна задача; каждый агент сам держит CI своего PR зелёным. Тестовые данные генерируются в тесте — никаких реальных ФИО, телефонов и логинов.
+- Почему так: ревизии Alembic пишутся вручную на raw SQL (`op.execute`), без autogenerate, и с `IF NOT EXISTS`, потому что новая установка получает `backend/schema.sql`, а `upgrade head` затем проигрывает ревизии поверх него; держи `schema.sql` в синхроне. Все метрики времени — по Москве через `app.services.timezone.msk_day_bounds_utc`; ошибки с часовыми поясами здесь чинили не раз, новую логику TZ не пиши. Правила координации ниже появились после того, как в августе 2026 оба агента написали одну и ту же миграцию `add_issue_categories` и PR #104 пришлось закрыть из-за нескольких голов.
 
-## Agent coordination
-- Claude Code and Codex CLI work independently with no live channel; they coordinate only through git history, PRs, review comments, and `docs/coordination/`.
-- Before any task: `git fetch origin main`, `git log --oneline -20 origin/main`, `gh pr list`, and check `docs/coordination/STATUS.md` for the area being `in_progress` elsewhere.
-- `STATUS.md` is the board (`planned → in_progress → review → approved → deployed`): whoever starts a task adds or updates its row, whoever closes the PR moves it on; update its «Handoff» section before ending a session with unfinished work.
-- `docs/coordination/DECISIONS.md` is an append-only log of decisions another agent would otherwise reconstruct from diffs. To disagree with another agent's decision, record the alternative there or comment on the open PR; escalate architecturally significant divergence to the owner instead of rewriting.
-- Review means opening the changed files, checking PR claims with a repo-wide grep, and running migrations up and down on a test DB.
+## Координация агентов
+- Claude Code и Codex CLI работают независимо, живого канала между ними нет; координация — только через историю git, PR, комментарии ревью и `docs/coordination/`.
+- Перед любой задачей: `git fetch origin main`, `git log --oneline -20 origin/main`, `gh pr list` и проверка `docs/coordination/STATUS.md` — не стоит ли эта область `in_progress` у другого.
+- `STATUS.md` — доска (`planned → in_progress → review → approved → deployed`): кто начинает задачу, добавляет или обновляет её строку, кто закрывает PR — двигает дальше; перед концом сессии с незавершённой работой обнови раздел «Handoff».
+- `docs/coordination/DECISIONS.md` — журнал решений только на дописывание: туда идёт то, что другой агент иначе восстанавливал бы по диффам. Несогласие с чужим решением — запиши альтернативу там или в комментарии к открытому PR; архитектурно значимое расхождение — к владельцу, а не переписывание.
+- Ревью — это открыть изменённые файлы, проверить утверждения PR grep'ом по всему репо, а если в изменении есть миграция — прогнать её upgrade/downgrade/upgrade на тестовой базе.
 
-## Pointers
-- **Writing** or reviewing code: apply `CODING_STANDARDS.md`; project config and linters win where they disagree.
-- **Security**-sensitive change (auth, permissions, untrusted input, secrets): read `docs/agents/security.md` first.
-- **Committing** or opening a PR: follow `docs/agents/git.md`.
-- **Risky** change (spans modules, migrates data, alters a public API): propose a phased plan and get approval before editing.
-- **Done** means you ran the project's own check commands and they are green, or you named the ones you could not run.
+## Указатели
+- **Пишешь** или ревьюишь код: применяй `CODING_STANDARDS.md`; конфиг проекта и линтеры важнее, если расходятся.
+- **Безопасность** (авторизация, права, недоверенный ввод, секреты): сначала прочитай `docs/agents/security.md`.
+- **Коммит** или PR: следуй `docs/agents/git.md`.
+- **Рискованное** изменение (несколько модулей, миграция данных, публичный API): предложи поэтапный план и получи одобрение до правок.
+- **Готово** — значит, ты запустил проверки проекта и они зелёные, либо назвал те, что запустить не смог.

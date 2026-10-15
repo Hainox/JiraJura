@@ -30,8 +30,9 @@ def parse_args():
                         '"Детская_площадка.kml=Детская площадка"; '
                         'параметр можно повторять для нескольких файлов')
     p.add_argument('--wipe', action='store_true',
-                   help='обязательное подтверждение: перед импортом удаляются ВСЕ '
-                        'площадки/дворы/районы и связанные обходы, замечания и фото')
+                   help='полностью удалить ВСЕ площадки/дворы/районы и связанные обходы, замечания и фото перед импортом')
+    p.add_argument('--upsert', action='store_true',
+                   help='обновить существующие площадки по ID и добавить новые БЕЗ удаления истории обходов')
     args = p.parse_args()
 
     args.kml_files = []
@@ -81,10 +82,10 @@ def parse_desc(text):
 
 def main():
     args = parse_args()
-    if not args.wipe:
-        print('Импорт полностью замещает данные: будут удалены все площадки, дворы,')
-        print('районы и связанные с ними обходы, замечания и фото. Если это')
-        print('действительно нужно — повторите команду с флагом --wipe.')
+    if not args.wipe and not args.upsert:
+        print('Укажите режим импорта:')
+        print('  --upsert : обновить существующие площадки по ID и добавить новые без удаления истории')
+        print('  --wipe   : полностью удалить все площадки, дворы, районы и историю обходов')
         sys.exit(2)
 
     conn = psycopg2.connect(args.db_url)
@@ -161,25 +162,30 @@ def main():
     print(f'Всего объектов после привязки: {len(known)}')
 
     # ── Фаза 3: БД ──────────────────────────────────────────────
-    print('Очищаем старые данные...')
-    cur.execute("DELETE FROM issue_status_history")
-    cur.execute("DELETE FROM issues")
-    cur.execute("DELETE FROM checklist_answers")
-    cur.execute("DELETE FROM inspections")
-    cur.execute("DELETE FROM photos")
-    cur.execute("DELETE FROM equipment")
-    cur.execute("DELETE FROM sites")
-    cur.execute("DELETE FROM courtyards")
-    cur.execute("DELETE FROM districts")
-    conn.commit()
+    if args.wipe:
+        print('Очищаем старые данные (--wipe)...')
+        cur.execute("DELETE FROM issue_status_history")
+        cur.execute("DELETE FROM issues")
+        cur.execute("DELETE FROM checklist_answers")
+        cur.execute("DELETE FROM inspections")
+        cur.execute("DELETE FROM photos")
+        cur.execute("DELETE FROM equipment")
+        cur.execute("DELETE FROM sites")
+        cur.execute("DELETE FROM courtyards")
+        cur.execute("DELETE FROM districts")
+        conn.commit()
+    else:
+        print('Режим обновления (--upsert): история обходов, замечаний и фото сохраняется.')
 
     print('Загружаем районы...')
     district_names = sorted(set(r[2] for r in known))
-    dist_map = {}
+    cur.execute("SELECT name, id FROM districts")
+    dist_map = dict(cur.fetchall())
     for name in district_names:
-        code = name.lower().replace(' ', '_')
-        cur.execute("INSERT INTO districts (name, code) VALUES (%s, %s) RETURNING id", (name, code))
-        dist_map[name] = cur.fetchone()[0]
+        if name not in dist_map:
+            code = name.lower().replace(' ', '_')
+            cur.execute("INSERT INTO districts (name, code) VALUES (%s, %s) RETURNING id", (name, code))
+            dist_map[name] = cur.fetchone()[0]
     conn.commit()
     print(f'  Районов: {len(dist_map)}')
 
@@ -197,24 +203,45 @@ def main():
     conn.commit()
     print(f'  Дворов: {len(court_map)}')
 
-    print('Загружаем площадки...')
-    count, skipped, batch = 0, 0, 0
+    print('Загружаем/обновляем площадки...')
+    inserted, updated, skipped, batch = 0, 0, 0, 0
     for lon, lat, district, courtyard, area, site_type, cleaning, wkt, pm_name in known:
         cid = court_map.get((district, courtyard))
         if cid is None:
             skipped += 1
             continue
         try:
-            cur.execute(
-                "INSERT INTO sites (courtyard_id, type, area_m2, cleaning_type, geometry, kml_original_id, is_active) "
-                "VALUES (%s, %s, %s, %s, ST_GeomFromText(%s, 4326), %s, TRUE)",
-                (cid, site_type, area, cleaning, wkt, pm_name[:200])
-            )
-            count += 1
+            if args.upsert:
+                cur.execute(
+                    "UPDATE sites "
+                    "SET courtyard_id = %s, type = %s, area_m2 = %s, cleaning_type = %s, "
+                    "    geometry = ST_GeomFromText(%s, 4326), is_active = TRUE, updated_at = now() "
+                    "WHERE kml_original_id = %s "
+                    "RETURNING id",
+                    (cid, site_type, area, cleaning, wkt, pm_name[:200])
+                )
+                res = cur.fetchone()
+                if res:
+                    updated += 1
+                else:
+                    cur.execute(
+                        "INSERT INTO sites (courtyard_id, type, area_m2, cleaning_type, geometry, kml_original_id, is_active) "
+                        "VALUES (%s, %s, %s, %s, ST_GeomFromText(%s, 4326), %s, TRUE)",
+                        (cid, site_type, area, cleaning, wkt, pm_name[:200])
+                    )
+                    inserted += 1
+            else:
+                cur.execute(
+                    "INSERT INTO sites (courtyard_id, type, area_m2, cleaning_type, geometry, kml_original_id, is_active) "
+                    "VALUES (%s, %s, %s, %s, ST_GeomFromText(%s, 4326), %s, TRUE)",
+                    (cid, site_type, area, cleaning, wkt, pm_name[:200])
+                )
+                inserted += 1
+
             batch += 1
             if batch >= 500:
                 conn.commit()
-                print(f'  ... {count}')
+                print(f'  ... обработано: {inserted + updated} (вставлено: {inserted}, обновлено: {updated})')
                 batch = 0
         except Exception as e:
             print(f'  SKIP {pm_name[:60]}: {e}')
@@ -223,7 +250,7 @@ def main():
             batch = 0
 
     conn.commit()
-    print(f'Загружено площадок: {count}, пропущено: {skipped}')
+    print(f'Итог: добавлено новых {inserted}, обновлено существующих {updated}, пропущено {skipped}')
     cur.close()
     conn.close()
     print('\n=== ИМПОРТ ЗАВЕРШЁН ===')

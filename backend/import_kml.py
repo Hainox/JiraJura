@@ -71,6 +71,10 @@ def wkt_polygon(pts):
     return f'POLYGON(({ring}))'
 
 
+def district_key(name):
+    return name.strip().lower().replace('ё', 'е')
+
+
 def parse_desc(text):
     d = {}
     for line in text.strip().split('\n'):
@@ -179,13 +183,21 @@ def main():
 
     print('Загружаем районы...')
     district_names = sorted(set(r[2] for r in known))
+    # Сопоставляем без регистра и «ё»: в выгрузке АСУ ОДС «Савеловский», в
+    # журнале — «Савёловский». Точное сравнение 15.10.2026 завело второй
+    # район и увело в него все площадки — сотрудники района видели пустую
+    # карту, потому что привязаны к старому району (и «Люки САО» тоже).
     cur.execute("SELECT name, id FROM districts")
-    dist_map = dict(cur.fetchall())
+    existing = {district_key(n): i for n, i in cur.fetchall()}
+    dist_map = {}
     for name in district_names:
-        if name not in dist_map:
+        if district_key(name) in existing:
+            dist_map[name] = existing[district_key(name)]
+        else:
             code = name.lower().replace(' ', '_')
             cur.execute("INSERT INTO districts (name, code) VALUES (%s, %s) RETURNING id", (name, code))
             dist_map[name] = cur.fetchone()[0]
+            existing[district_key(name)] = dist_map[name]
     conn.commit()
     print(f'  Районов: {len(dist_map)}')
 
